@@ -8,4 +8,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: multicluster-role-assignment
 repo: github.com/stolostron/multicluster-role-assignment
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: open-cluster-management.io
+  group: rbac
+  kind: MulticlusterRoleAssignment
+  path: github.com/stolostron/multicluster-role-assignment/api/v1alpha1
+  version: v1alpha1
 version: "3"
