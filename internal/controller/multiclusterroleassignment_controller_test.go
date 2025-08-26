@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
@@ -51,7 +52,18 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								ClusterRole: "test-role",
+								ClusterSets: []string{"test-cluster-set"},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
