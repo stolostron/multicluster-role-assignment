@@ -1,0 +1,9 @@
+apiVersion: rbac.open-cluster-management.io/v1alpha1
+kind: MulticlusterRoleAssignment
+metadata:
+  labels:
+    app.kubernetes.io/name: multicluster-role-assignment
+    app.kubernetes.io/managed-by: kustomize
+  name: multiclusterroleassignment-sample
+spec:
+  # TODO(user): Add fields here
