@@ -59,6 +59,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 						},
 						RoleAssignments: []rbacv1alpha1.RoleAssignment{
 							{
+								Name:        "test-assignment",
 								ClusterRole: "test-role",
 								ClusterSets: []string{"test-cluster-set"},
 							},
