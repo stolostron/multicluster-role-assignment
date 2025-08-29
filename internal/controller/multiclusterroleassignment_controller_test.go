@@ -96,9 +96,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 			found := false
 			for _, condition := range updatedMRA.Status.Conditions {
-				if condition.Type == "Validated" {
+				if condition.Type == ConditionTypeValidated {
 					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-					Expect(condition.Reason).To(Equal("SpecIsValid"))
+					Expect(condition.Reason).To(Equal(ReasonSpecIsValid))
 					found = true
 					break
 				}
@@ -203,35 +203,35 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 			Describe("setCondition", func() {
 				It("should add new condition when not present", func() {
-					reconciler.setCondition(mra, "Ready", metav1.ConditionTrue, "AllApplied", "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
 
 					Expect(mra.Status.Conditions).To(HaveLen(1))
 					condition := mra.Status.Conditions[0]
-					Expect(condition.Type).To(Equal("Ready"))
+					Expect(condition.Type).To(Equal(ConditionTypeReady))
 					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-					Expect(condition.Reason).To(Equal("AllApplied"))
+					Expect(condition.Reason).To(Equal(ReasonAllApplied))
 					Expect(condition.Message).To(Equal("All assignments applied"))
 					Expect(condition.ObservedGeneration).To(Equal(mra.Generation))
 				})
 
 				It("should update existing condition when status changes", func() {
-					reconciler.setCondition(mra, "Ready", metav1.ConditionTrue, "AllApplied", "All assignments applied")
-					reconciler.setCondition(mra, "Ready", metav1.ConditionFalse, "PartialFailure", "Some assignments failed")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionFalse, ReasonPartialFailure, "Some assignments failed")
 
 					Expect(mra.Status.Conditions).To(HaveLen(1))
 					condition := mra.Status.Conditions[0]
-					Expect(condition.Type).To(Equal("Ready"))
+					Expect(condition.Type).To(Equal(ConditionTypeReady))
 					Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-					Expect(condition.Reason).To(Equal("PartialFailure"))
+					Expect(condition.Reason).To(Equal(ReasonPartialFailure))
 					Expect(condition.Message).To(Equal("Some assignments failed"))
 				})
 
 				It("should only update ObservedGeneration when condition content is same", func() {
-					reconciler.setCondition(mra, "Ready", metav1.ConditionTrue, "AllApplied", "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
 					originalTime := mra.Status.Conditions[0].LastTransitionTime
 
 					mra.Generation = 2
-					reconciler.setCondition(mra, "Ready", metav1.ConditionTrue, "AllApplied", "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
 
 					Expect(mra.Status.Conditions).To(HaveLen(1))
 					condition := mra.Status.Conditions[0]
@@ -242,23 +242,23 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 			Describe("updateRoleAssignmentStatus", func() {
 				It("should add new role assignment status when not present", func() {
-					reconciler.setRoleAssignmentStatus(mra, "assignment1", "applied", "Successfully applied")
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypeApplied, "Successfully applied")
 
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 					status := mra.Status.RoleAssignments[0]
 					Expect(status.Name).To(Equal("assignment1"))
-					Expect(status.State).To(Equal("applied"))
+					Expect(status.State).To(Equal(StateTypeApplied))
 					Expect(status.Message).To(Equal("Successfully applied"))
 				})
 
 				It("should update existing role assignment status", func() {
-					reconciler.setRoleAssignmentStatus(mra, "assignment1", "pending", "Initializing")
-					reconciler.setRoleAssignmentStatus(mra, "assignment1", "applied", "Successfully applied")
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypePending, "Initializing")
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypeApplied, "Successfully applied")
 
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 					status := mra.Status.RoleAssignments[0]
 					Expect(status.Name).To(Equal("assignment1"))
-					Expect(status.State).To(Equal("applied"))
+					Expect(status.State).To(Equal(StateTypeApplied))
 					Expect(status.Message).To(Equal("Successfully applied"))
 				})
 			})
@@ -280,18 +280,18 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 					}
 
 					Expect(assignment1Status).NotTo(BeNil())
-					Expect(assignment1Status.State).To(Equal("pending"))
-					Expect(assignment1Status.Message).To(Equal("Initializing role assignment"))
+					Expect(assignment1Status.State).To(Equal(StateTypePending))
+					Expect(assignment1Status.Message).To(Equal(MessageInitializingRoleAssignment))
 					Expect(assignment2Status).NotTo(BeNil())
-					Expect(assignment2Status.State).To(Equal("pending"))
-					Expect(assignment2Status.Message).To(Equal("Initializing role assignment"))
+					Expect(assignment2Status.State).To(Equal(StateTypePending))
+					Expect(assignment2Status.Message).To(Equal(MessageInitializingRoleAssignment))
 				})
 
 				It("should not duplicate or change existing role assignment statuses", func() {
 					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
 						{
 							Name:    "assignment1",
-							State:   "applied",
+							State:   StateTypeApplied,
 							Message: "Already applied",
 						},
 					}
@@ -311,11 +311,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 					}
 
 					Expect(assignment1Status).NotTo(BeNil())
-					Expect(assignment1Status.State).To(Equal("applied"))
+					Expect(assignment1Status.State).To(Equal(StateTypeApplied))
 					Expect(assignment1Status.Message).To(Equal("Already applied"))
 					Expect(assignment2Status).NotTo(BeNil())
-					Expect(assignment2Status.State).To(Equal("pending"))
-					Expect(assignment2Status.Message).To(Equal("Initializing role assignment"))
+					Expect(assignment2Status.State).To(Equal(StateTypePending))
+					Expect(assignment2Status.Message).To(Equal(MessageInitializingRoleAssignment))
 				})
 			})
 
@@ -323,118 +323,118 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 				It("should return False when Validated condition is False", func() {
 					mra.Status.Conditions = []metav1.Condition{
 						{
-							Type:   "Validated",
+							Type:   ConditionTypeValidated,
 							Status: metav1.ConditionFalse,
 						},
 					}
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionFalse))
-					Expect(reason).To(Equal("ValidationFailed"))
-					Expect(message).To(Equal("Spec validation failed"))
+					Expect(reason).To(Equal(ReasonValidationFailed))
+					Expect(message).To(Equal(MessageSpecValidationFailed))
 				})
 
 				It("should return False when any role assignment failed", func() {
 					mra.Status.Conditions = []metav1.Condition{
 						{
-							Type:   "Validated",
+							Type:   ConditionTypeValidated,
 							Status: metav1.ConditionTrue,
 						},
 					}
 					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
 						{
 							Name:  "assignment1",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 						{
 							Name:  "assignment2",
-							State: "failed",
+							State: StateTypeFailed,
 						},
 					}
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionFalse))
-					Expect(reason).To(Equal("PartialFailure"))
+					Expect(reason).To(Equal(ReasonPartialFailure))
 					Expect(message).To(Equal("1 out of 2 role assignments failed"))
 				})
 
 				It("should return False when Applied condition is False", func() {
 					mra.Status.Conditions = []metav1.Condition{
 						{
-							Type:   "Validated",
+							Type:   ConditionTypeValidated,
 							Status: metav1.ConditionTrue,
 						},
 						{
-							Type:   "Applied",
+							Type:   ConditionTypeApplied,
 							Status: metav1.ConditionFalse,
 						},
 					}
 					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
 						{
 							Name:  "assignment1",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 						{
 							Name:  "assignment2",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 					}
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionFalse))
-					Expect(reason).To(Equal("ApplyFailed"))
-					Expect(message).To(Equal("Failed to apply ClusterPermissions"))
+					Expect(reason).To(Equal(ReasonApplyFailed))
+					Expect(message).To(Equal(MessageApplyClusterPermissionsFailed))
 				})
 
 				It("should return Unknown when some role assignments are pending", func() {
 					mra.Status.Conditions = []metav1.Condition{
 						{
-							Type:   "Validated",
+							Type:   ConditionTypeValidated,
 							Status: metav1.ConditionTrue,
 						},
 					}
 					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
 						{
 							Name:  "assignment1",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 						{
 							Name:  "assignment2",
-							State: "pending",
+							State: StateTypePending,
 						},
 					}
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionUnknown))
-					Expect(reason).To(Equal("InProgress"))
+					Expect(reason).To(Equal(ReasonInProgress))
 					Expect(message).To(Equal("1 role assignments pending"))
 				})
 
 				It("should return True when all role assignments are applied", func() {
 					mra.Status.Conditions = []metav1.Condition{
 						{
-							Type:   "Validated",
+							Type:   ConditionTypeValidated,
 							Status: metav1.ConditionTrue,
 						},
 						{
-							Type:   "Applied",
+							Type:   ConditionTypeApplied,
 							Status: metav1.ConditionTrue,
 						},
 					}
 					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
 						{
 							Name:  "assignment1",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 						{
 							Name:  "assignment2",
-							State: "applied",
+							State: StateTypeApplied,
 						},
 					}
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionTrue))
-					Expect(reason).To(Equal("AllApplied"))
+					Expect(reason).To(Equal(ReasonAllApplied))
 					Expect(message).To(Equal("All 2 role assignments applied successfully"))
 				})
 
@@ -443,8 +443,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 					status, reason, message := reconciler.calculateReadyCondition(mra)
 					Expect(status).To(Equal(metav1.ConditionUnknown))
-					Expect(reason).To(Equal("Unknown"))
-					Expect(message).To(Equal("Status cannot be determined"))
+					Expect(reason).To(Equal(ReasonUnknown))
+					Expect(message).To(Equal(MessageStatusCannotBeDetermined))
 				})
 			})
 		})

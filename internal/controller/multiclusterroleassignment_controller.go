@@ -30,6 +30,41 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 )
 
+// Condition types
+const (
+	ConditionTypeReady     = "Ready"
+	ConditionTypeValidated = "Validated"
+	ConditionTypeApplied   = "Applied"
+)
+
+// Condition reasons
+const (
+	ReasonValidationFailed = "ValidationFailed"
+	ReasonInvalidSpec      = "InvalidSpec"
+	ReasonSpecIsValid      = "SpecIsValid"
+	ReasonPartialFailure   = "PartialFailure"
+	ReasonApplyFailed      = "ApplyFailed"
+	ReasonInProgress       = "InProgress"
+	ReasonAllApplied       = "AllApplied"
+	ReasonUnknown          = "Unknown"
+)
+
+// Role assignment states
+const (
+	StateTypePending = "pending"
+	StateTypeApplied = "applied"
+	StateTypeFailed  = "failed"
+)
+
+// Status messages
+const (
+	MessageSpecValidationFailed        = "Spec validation failed"
+	MessageSpecValidationPassed       = "Spec validation passed"
+	MessageInitializingRoleAssignment  = "Initializing role assignment"
+	MessageApplyClusterPermissionsFailed = "Failed to apply ClusterPermissions"
+	MessageStatusCannotBeDetermined    = "Status cannot be determined"
+)
+
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
 	client.Client
@@ -62,7 +97,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	if err := r.validateSpec(&mra); err != nil {
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
 
-		r.setCondition(&mra, "Validated", metav1.ConditionFalse, "InvalidSpec", err.Error())
+		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, ReasonInvalidSpec, err.Error())
 		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after validation failure")
 			return ctrl.Result{}, statusErr
@@ -70,7 +105,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{}, err
 	}
 
-	r.setCondition(&mra, "Validated", metav1.ConditionTrue, "SpecIsValid", "Spec validation passed")
+	r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionTrue, ReasonSpecIsValid, MessageSpecValidationPassed)
 	if err := r.updateStatus(ctx, &mra); err != nil {
 		log.Error(err, "Failed to update status after validation success")
 		return ctrl.Result{}, err
@@ -99,7 +134,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context,
 	r.initializeRoleAssignmentStatuses(mra)
 
 	readyStatus, readyReason, readyMessage := r.calculateReadyCondition(mra)
-	r.setCondition(mra, "Ready", readyStatus, readyReason, readyMessage)
+	r.setCondition(mra, ConditionTypeReady, readyStatus, readyReason, readyMessage)
 
 	return r.Status().Update(ctx, mra)
 }
@@ -116,7 +151,7 @@ func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(
 			}
 		}
 		if !found {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, "pending", "Initializing role assignment")
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending, MessageInitializingRoleAssignment)
 		}
 	}
 }
@@ -147,47 +182,47 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 
 	for _, condition := range mra.Status.Conditions {
 		switch condition.Type {
-		case "Validated":
+		case ConditionTypeValidated:
 			validatedCondition = &condition
-		case "Applied":
+		case ConditionTypeApplied:
 			appliedCondition = &condition
 		}
 	}
 
 	if validatedCondition != nil && validatedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, "ValidationFailed", "Spec validation failed"
+		return metav1.ConditionFalse, ReasonValidationFailed, MessageSpecValidationFailed
 	}
 
 	var failedCount, appliedCount, pendingCount int
 
 	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		switch roleAssignmentStatus.State {
-		case "failed":
+		case StateTypeFailed:
 			failedCount++
-		case "applied":
+		case StateTypeApplied:
 			appliedCount++
-		case "pending":
+		case StateTypePending:
 			pendingCount++
 		}
 	}
 
 	if failedCount > 0 {
-		return metav1.ConditionFalse, "PartialFailure", fmt.Sprintf("%d out of %d role assignments failed", failedCount, len(mra.Status.RoleAssignments))
+		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d role assignments failed", failedCount, len(mra.Status.RoleAssignments))
 	}
 
 	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, "ApplyFailed", "Failed to apply ClusterPermissions"
+		return metav1.ConditionFalse, ReasonApplyFailed, MessageApplyClusterPermissionsFailed
 	}
 
 	if pendingCount > 0 {
-		return metav1.ConditionUnknown, "InProgress", fmt.Sprintf("%d role assignments pending", pendingCount)
+		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d role assignments pending", pendingCount)
 	}
 
 	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
-		return metav1.ConditionTrue, "AllApplied", fmt.Sprintf("All %d role assignments applied successfully", appliedCount)
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d role assignments applied successfully", appliedCount)
 	}
 
-	return metav1.ConditionUnknown, "Unknown", "Status cannot be determined"
+	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
 }
 
 // setCondition sets a condition in the MulticlusterRoleAssignment status.
