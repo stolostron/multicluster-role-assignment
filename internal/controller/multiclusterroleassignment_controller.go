@@ -62,14 +62,16 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	if err := r.validateSpec(&mra); err != nil {
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
 
-		if statusErr := r.updateValidationStatus(ctx, &mra, false, "InvalidSpec", err.Error()); statusErr != nil {
+		r.setCondition(&mra, "Validated", metav1.ConditionFalse, "InvalidSpec", err.Error())
+		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after validation failure")
 			return ctrl.Result{}, statusErr
 		}
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateValidationStatus(ctx, &mra, true, "SpecIsValid", "Spec validation passed"); err != nil {
+	r.setCondition(&mra, "Validated", metav1.ConditionTrue, "SpecIsValid", "Spec validation passed")
+	if err := r.updateStatus(ctx, &mra); err != nil {
 		log.Error(err, "Failed to update status after validation success")
 		return ctrl.Result{}, err
 	}
@@ -92,25 +94,121 @@ func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.Mu
 	return nil
 }
 
-// updateValidationStatus updates the Validated condition in the MulticlusterRoleAssignment status.
-func (r *MulticlusterRoleAssignmentReconciler) updateValidationStatus(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, isValid bool, reason, message string) error {
-	status := metav1.ConditionFalse
-	if isValid {
-		status = metav1.ConditionTrue
+// updateStatus performs a complete status update including all conditions and role assignment statuses.
+func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+	r.initializeRoleAssignmentStatuses(mra)
+
+	readyStatus, readyReason, readyMessage := r.calculateReadyCondition(mra)
+	r.setCondition(mra, "Ready", readyStatus, readyReason, readyMessage)
+
+	return r.Status().Update(ctx, mra)
+}
+
+// initializeRoleAssignmentStatuses initializes status entries for all new role assignments in the spec.
+func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		// Only initialize if status doesn't exist
+		found := false
+		for _, status := range mra.Status.RoleAssignments {
+			if status.Name == roleAssignment.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, "pending", "Initializing role assignment")
+		}
+	}
+}
+
+// setRoleAssignmentStatus sets a specific role assignment status.
+func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment, name, state, message string) {
+	found := false
+	for i, roleAssignmentStatus := range mra.Status.RoleAssignments {
+		if roleAssignmentStatus.Name == name {
+			mra.Status.RoleAssignments[i].State = state
+			mra.Status.RoleAssignments[i].Message = message
+			found = true
+			break
+		}
+	}
+	if !found {
+		mra.Status.RoleAssignments = append(mra.Status.RoleAssignments, rbacv1alpha1.RoleAssignmentStatus{
+			Name:    name,
+			State:   state,
+			Message: message,
+		})
+	}
+}
+
+// calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
+func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (metav1.ConditionStatus, string, string) {
+	var validatedCondition, appliedCondition *metav1.Condition
+
+	for _, condition := range mra.Status.Conditions {
+		switch condition.Type {
+		case "Validated":
+			validatedCondition = &condition
+		case "Applied":
+			appliedCondition = &condition
+		}
 	}
 
+	if validatedCondition != nil && validatedCondition.Status == metav1.ConditionFalse {
+		return metav1.ConditionFalse, "ValidationFailed", "Spec validation failed"
+	}
+
+	var failedCount, appliedCount, pendingCount int
+
+	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
+		switch roleAssignmentStatus.State {
+		case "failed":
+			failedCount++
+		case "applied":
+			appliedCount++
+		case "pending":
+			pendingCount++
+		}
+	}
+
+	if failedCount > 0 {
+		return metav1.ConditionFalse, "PartialFailure", fmt.Sprintf("%d out of %d role assignments failed", failedCount, len(mra.Status.RoleAssignments))
+	}
+
+	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
+		return metav1.ConditionFalse, "ApplyFailed", "Failed to apply ClusterPermissions"
+	}
+
+	if pendingCount > 0 {
+		return metav1.ConditionUnknown, "InProgress", fmt.Sprintf("%d role assignments pending", pendingCount)
+	}
+
+	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
+		return metav1.ConditionTrue, "AllApplied", fmt.Sprintf("All %d role assignments applied successfully", appliedCount)
+	}
+
+	return metav1.ConditionUnknown, "Unknown", "Status cannot be determined"
+}
+
+// setCondition sets a condition in the MulticlusterRoleAssignment status.
+func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment, conditionType string, status metav1.ConditionStatus, reason, message string) {
 	condition := metav1.Condition{
-		Type:               "Validated",
+		Type:               conditionType,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
 		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: mra.Generation,
 	}
 
 	found := false
 	for i, existingCondition := range mra.Status.Conditions {
-		if existingCondition.Type == "Validated" {
-			mra.Status.Conditions[i] = condition
+		if existingCondition.Type == conditionType {
+			if existingCondition.Status != status || existingCondition.Reason != reason || existingCondition.Message != message {
+				mra.Status.Conditions[i] = condition
+			} else {
+				mra.Status.Conditions[i].ObservedGeneration = mra.Generation
+			}
 			found = true
 			break
 		}
@@ -118,8 +216,6 @@ func (r *MulticlusterRoleAssignmentReconciler) updateValidationStatus(ctx contex
 	if !found {
 		mra.Status.Conditions = append(mra.Status.Conditions, condition)
 	}
-
-	return r.Status().Update(ctx, mra)
 }
 
 // SetupWithManager sets up the controller with the Manager.
