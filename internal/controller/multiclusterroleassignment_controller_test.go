@@ -227,11 +227,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 				})
 
 				It("should only update ObservedGeneration when condition content is same", func() {
-					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+						"All assignments applied")
 					originalTime := mra.Status.Conditions[0].LastTransitionTime
 
 					mra.Generation = 2
-					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+						"All assignments applied")
 
 					Expect(mra.Status.Conditions).To(HaveLen(1))
 					condition := mra.Status.Conditions[0]

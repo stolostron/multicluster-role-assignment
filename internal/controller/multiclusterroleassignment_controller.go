@@ -130,7 +130,8 @@ func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.Mu
 }
 
 // updateStatus performs a complete status update including all conditions and role assignment statuses.
-func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	r.initializeRoleAssignmentStatuses(mra)
 
 	readyStatus, readyReason, readyMessage := r.calculateReadyCondition(mra)
@@ -140,7 +141,8 @@ func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context,
 }
 
 // initializeRoleAssignmentStatuses initializes status entries for all new role assignments in the spec.
-func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
 		// Only initialize if status doesn't exist
 		found := false
@@ -157,7 +159,8 @@ func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(
 }
 
 // setRoleAssignmentStatus sets a specific role assignment status.
-func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment, name, state, message string) {
+func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment,
+	name, state, message string) {
 	found := false
 	for i, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		if roleAssignmentStatus.Name == name {
@@ -177,7 +180,8 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 }
 
 // calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
-func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (metav1.ConditionStatus, string, string) {
+func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (
+	metav1.ConditionStatus, string, string) {
 	var validatedCondition, appliedCondition *metav1.Condition
 
 	for _, condition := range mra.Status.Conditions {
@@ -207,7 +211,8 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 	}
 
 	if failedCount > 0 {
-		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d role assignments failed", failedCount, len(mra.Status.RoleAssignments))
+		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d role assignments failed",
+			failedCount, len(mra.Status.RoleAssignments))
 	}
 
 	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
@@ -219,14 +224,16 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 	}
 
 	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
-		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d role assignments applied successfully", appliedCount)
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d role assignments applied successfully",
+			appliedCount)
 	}
 
 	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
 }
 
 // setCondition sets a condition in the MulticlusterRoleAssignment status.
-func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment, conditionType string, status metav1.ConditionStatus, reason, message string) {
+func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment,
+	conditionType string, status metav1.ConditionStatus, reason, message string) {
 	condition := metav1.Condition{
 		Type:               conditionType,
 		Status:             status,
@@ -239,7 +246,8 @@ func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.Mu
 	found := false
 	for i, existingCondition := range mra.Status.Conditions {
 		if existingCondition.Type == conditionType {
-			if existingCondition.Status != status || existingCondition.Reason != reason || existingCondition.Message != message {
+			if existingCondition.Status != status || existingCondition.Reason != reason || existingCondition.Message !=
+				message {
 				mra.Status.Conditions[i] = condition
 			} else {
 				mra.Status.Conditions[i].ObservedGeneration = mra.Generation
