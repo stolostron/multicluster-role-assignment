@@ -59,6 +59,10 @@ spec:
                         type: string
                       minItems: 1
                       type: array
+                    name:
+                      description: Name defines the name of the role assignment.
+                      minLength: 1
+                      type: string
                     targetNamespaces:
                       description: |-
                         TargetNamespaces defines what namespaces the role should be applied in.
@@ -69,6 +73,7 @@ spec:
                   required:
                   - clusterRole
                   - clusterSets
+                  - name
                   type: object
                 minItems: 1
                 type: array
@@ -162,6 +167,31 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              roleAssignments:
+                description: RoleAssignments provides the status of each role assignment.
+                items:
+                  description: RoleAssignmentStatus defines the status of a specific
+                    role assignment.
+                  properties:
+                    message:
+                      description: Message provides additional details about the role
+                        assignment status.
+                      type: string
+                    name:
+                      description: Name defines the name of the role assignment.
+                      type: string
+                    state:
+                      description: State defines the current state of the role assignment.
+                      enum:
+                      - pending
+                      - applied
+                      - failed
+                      type: string
+                  required:
+                  - name
+                  - state
                   type: object
                 type: array
             type: object

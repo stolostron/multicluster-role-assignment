@@ -18,7 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,7 +30,42 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 )
 
-// MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object
+// Condition types
+const (
+	ConditionTypeReady     = "Ready"
+	ConditionTypeValidated = "Validated"
+	ConditionTypeApplied   = "Applied"
+)
+
+// Condition reasons
+const (
+	ReasonValidationFailed = "ValidationFailed"
+	ReasonInvalidSpec      = "InvalidSpec"
+	ReasonSpecIsValid      = "SpecIsValid"
+	ReasonPartialFailure   = "PartialFailure"
+	ReasonApplyFailed      = "ApplyFailed"
+	ReasonInProgress       = "InProgress"
+	ReasonAllApplied       = "AllApplied"
+	ReasonUnknown          = "Unknown"
+)
+
+// Role assignment states
+const (
+	StateTypePending = "pending"
+	StateTypeApplied = "applied"
+	StateTypeFailed  = "failed"
+)
+
+// Status messages
+const (
+	MessageSpecValidationFailed          = "Spec validation failed"
+	MessageSpecValidationPassed          = "Spec validation passed"
+	MessageInitializingRoleAssignment    = "Initializing role assignment"
+	MessageApplyClusterPermissionsFailed = "Failed to apply ClusterPermissions"
+	MessageStatusCannotBeDetermined      = "Status cannot be determined"
+)
+
+// MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -39,19 +77,180 @@ type MulticlusterRoleAssignmentReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the MulticlusterRoleAssignment object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	log.Info("Starting reconciliation", "multiclusterroleassignment", req.NamespacedName)
 
+	// Get the MulticlusterRoleAssignment resource
+	var mra rbacv1alpha1.MulticlusterRoleAssignment
+	if err := r.Get(ctx, req.NamespacedName, &mra); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("MulticlusterRoleAssignment resource not found, skipping reconciliation")
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get MulticlusterRoleAssignment")
+		return ctrl.Result{}, err
+	}
+
+	// Validate spec and update status
+	if err := r.validateSpec(&mra); err != nil {
+		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
+
+		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, ReasonInvalidSpec, err.Error())
+		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
+			log.Error(statusErr, "Failed to update status after validation failure")
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{}, err
+	}
+
+	r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionTrue, ReasonSpecIsValid, MessageSpecValidationPassed)
+	if err := r.updateStatus(ctx, &mra); err != nil {
+		log.Error(err, "Failed to update status after validation success")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Successfully validated MulticlusterRoleAssignment spec", "multiclusterroleassignment", req.NamespacedName)
 	return ctrl.Result{}, nil
+}
+
+// validateSpec performs validation on the MulticlusterRoleAssignment spec.
+func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
+	namesSet := make(map[string]bool)
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		if namesSet[roleAssignment.Name] {
+			return fmt.Errorf("duplicate role assignment name found: %s", roleAssignment.Name)
+		}
+		namesSet[roleAssignment.Name] = true
+	}
+
+	return nil
+}
+
+// updateStatus performs a complete status update including all conditions and role assignment statuses.
+func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+	r.initializeRoleAssignmentStatuses(mra)
+
+	readyStatus, readyReason, readyMessage := r.calculateReadyCondition(mra)
+	r.setCondition(mra, ConditionTypeReady, readyStatus, readyReason, readyMessage)
+
+	return r.Status().Update(ctx, mra)
+}
+
+// initializeRoleAssignmentStatuses initializes status entries for all new role assignments in the spec.
+func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		// Only initialize if status doesn't exist
+		found := false
+		for _, status := range mra.Status.RoleAssignments {
+			if status.Name == roleAssignment.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending, MessageInitializingRoleAssignment)
+		}
+	}
+}
+
+// setRoleAssignmentStatus sets a specific role assignment status.
+func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment, name, state, message string) {
+	found := false
+	for i, roleAssignmentStatus := range mra.Status.RoleAssignments {
+		if roleAssignmentStatus.Name == name {
+			mra.Status.RoleAssignments[i].State = state
+			mra.Status.RoleAssignments[i].Message = message
+			found = true
+			break
+		}
+	}
+	if !found {
+		mra.Status.RoleAssignments = append(mra.Status.RoleAssignments, rbacv1alpha1.RoleAssignmentStatus{
+			Name:    name,
+			State:   state,
+			Message: message,
+		})
+	}
+}
+
+// calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
+func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (metav1.ConditionStatus, string, string) {
+	var validatedCondition, appliedCondition *metav1.Condition
+
+	for _, condition := range mra.Status.Conditions {
+		switch condition.Type {
+		case ConditionTypeValidated:
+			validatedCondition = &condition
+		case ConditionTypeApplied:
+			appliedCondition = &condition
+		}
+	}
+
+	if validatedCondition != nil && validatedCondition.Status == metav1.ConditionFalse {
+		return metav1.ConditionFalse, ReasonValidationFailed, MessageSpecValidationFailed
+	}
+
+	var failedCount, appliedCount, pendingCount int
+
+	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
+		switch roleAssignmentStatus.State {
+		case StateTypeFailed:
+			failedCount++
+		case StateTypeApplied:
+			appliedCount++
+		case StateTypePending:
+			pendingCount++
+		}
+	}
+
+	if failedCount > 0 {
+		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d role assignments failed", failedCount, len(mra.Status.RoleAssignments))
+	}
+
+	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
+		return metav1.ConditionFalse, ReasonApplyFailed, MessageApplyClusterPermissionsFailed
+	}
+
+	if pendingCount > 0 {
+		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d role assignments pending", pendingCount)
+	}
+
+	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d role assignments applied successfully", appliedCount)
+	}
+
+	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
+}
+
+// setCondition sets a condition in the MulticlusterRoleAssignment status.
+func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment, conditionType string, status metav1.ConditionStatus, reason, message string) {
+	condition := metav1.Condition{
+		Type:               conditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: mra.Generation,
+	}
+
+	found := false
+	for i, existingCondition := range mra.Status.Conditions {
+		if existingCondition.Type == conditionType {
+			if existingCondition.Status != status || existingCondition.Reason != reason || existingCondition.Message != message {
+				mra.Status.Conditions[i] = condition
+			} else {
+				mra.Status.Conditions[i].ObservedGeneration = mra.Generation
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		mra.Status.Conditions = append(mra.Status.Conditions, condition)
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

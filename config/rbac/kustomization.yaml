@@ -25,4 +25,3 @@ resources:
 - multiclusterroleassignment_admin_role.yaml
 - multiclusterroleassignment_editor_role.yaml
 - multiclusterroleassignment_viewer_role.yaml
-
