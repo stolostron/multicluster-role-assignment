@@ -1,0 +1,18 @@
+-include /opt/build-harness/Makefile.prow
+-include Makefile
+
+.PHONY: push-prow
+push-prow: build-prow
+	docker push ${REPO_URL}/multicluster-role-assignment:${VERSION}
+	docker tag ${REPO_URL}/multicluster-role-assignment:${VERSION} ${REPO_URL}/multicluster-role-assignment:latest
+	docker push ${REPO_URL}/multicluster-role-assignment:latest
+
+.PHONY: build-prow
+build-prow: 
+	docker build -f Dockerfile . -t ${REPO_URL}/multicluster-role-assignment:${VERSION}
+
+# Runs test target from Makefile
+.PHONY: unit-tests
+unit-tests:
+	@echo "Run unit-tests"
+	go test $$(go list ./... | grep -v /e2e) -timeout 500s -v -short
