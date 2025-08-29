@@ -39,13 +39,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
-		multiclusterroleassignment := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind MulticlusterRoleAssignment")
-			err := k8sClient.Get(ctx, typeNamespacedName, multiclusterroleassignment)
+			err := k8sClient.Get(ctx, typeNamespacedName, mra)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &rbacv1alpha1.MulticlusterRoleAssignment{
 					ObjectMeta: metav1.ObjectMeta{
@@ -71,7 +71,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &rbacv1alpha1.MulticlusterRoleAssignment{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -90,8 +89,87 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+			err = k8sClient.Get(ctx, typeNamespacedName, &updatedMRA)
+			Expect(err).NotTo(HaveOccurred())
+
+			found := false
+			for _, condition := range updatedMRA.Status.Conditions {
+				if condition.Type == "Validated" {
+					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+					Expect(condition.Reason).To(Equal("SpecIsValid"))
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue(), "Validated condition status should be true")
+		})
+	})
+
+	Context("Validation Logic", func() {
+		var reconciler *MulticlusterRoleAssignmentReconciler
+
+		BeforeEach(func() {
+			reconciler = &MulticlusterRoleAssignmentReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+		})
+
+		Describe("validateSpec", func() {
+			It("should accept valid spec with unique role assignment names", func() {
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "assignment1",
+								ClusterRole: "role1",
+								ClusterSets: []string{"cluster-set1"},
+							},
+							{
+								Name:        "assignment2",
+								ClusterRole: "role2",
+								ClusterSets: []string{"cluster-set2"},
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(mra)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should reject spec with duplicate role assignment names", func() {
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "duplicate-name",
+								ClusterRole: "role1",
+								ClusterSets: []string{"cluster-set1"},
+							},
+							{
+								Name:        "duplicate-name",
+								ClusterRole: "role2",
+								ClusterSets: []string{"cluster-set2"},
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(mra)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("duplicate role assignment name found: duplicate-name"))
+			})
 		})
 	})
 })
