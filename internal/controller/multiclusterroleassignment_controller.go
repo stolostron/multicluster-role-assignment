@@ -18,7 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,7 +30,7 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 )
 
-// MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object
+// MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -39,19 +42,84 @@ type MulticlusterRoleAssignmentReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the MulticlusterRoleAssignment object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	log.Info("Starting reconciliation", "multiclusterroleassignment", req.NamespacedName)
 
+	// Get the MulticlusterRoleAssignment resource
+	var mra rbacv1alpha1.MulticlusterRoleAssignment
+	if err := r.Get(ctx, req.NamespacedName, &mra); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("MulticlusterRoleAssignment resource not found, skipping reconciliation")
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get MulticlusterRoleAssignment")
+		return ctrl.Result{}, err
+	}
+
+	// Validate spec and update status
+	if err := r.validateSpec(&mra); err != nil {
+		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
+
+		if statusErr := r.updateValidationStatus(ctx, &mra, false, "InvalidSpec", err.Error()); statusErr != nil {
+			log.Error(statusErr, "Failed to update status after validation failure")
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{}, err
+	}
+
+	if err := r.updateValidationStatus(ctx, &mra, true, "SpecIsValid", "Spec validation passed"); err != nil {
+		log.Error(err, "Failed to update status after validation success")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Successfully validated MulticlusterRoleAssignment spec", "multiclusterroleassignment", req.NamespacedName)
 	return ctrl.Result{}, nil
+}
+
+// validateSpec performs validation on the MulticlusterRoleAssignment spec.
+func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
+	namesSet := make(map[string]bool)
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		if namesSet[roleAssignment.Name] {
+			return fmt.Errorf("duplicate role assignment name found: %s", roleAssignment.Name)
+		}
+		namesSet[roleAssignment.Name] = true
+	}
+
+	return nil
+}
+
+// updateValidationStatus updates the Validated condition in the MulticlusterRoleAssignment status.
+func (r *MulticlusterRoleAssignmentReconciler) updateValidationStatus(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, isValid bool, reason, message string) error {
+	status := metav1.ConditionFalse
+	if isValid {
+		status = metav1.ConditionTrue
+	}
+
+	condition := metav1.Condition{
+		Type:               "Validated",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	}
+
+	found := false
+	for i, existingCondition := range mra.Status.Conditions {
+		if existingCondition.Type == "Validated" {
+			mra.Status.Conditions[i] = condition
+			found = true
+			break
+		}
+	}
+	if !found {
+		mra.Status.Conditions = append(mra.Status.Conditions, condition)
+	}
+
+	return r.Status().Update(ctx, mra)
 }
 
 // SetupWithManager sets up the controller with the Manager.
