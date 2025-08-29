@@ -58,11 +58,11 @@ const (
 
 // Status messages
 const (
-	MessageSpecValidationFailed        = "Spec validation failed"
-	MessageSpecValidationPassed       = "Spec validation passed"
-	MessageInitializingRoleAssignment  = "Initializing role assignment"
+	MessageSpecValidationFailed          = "Spec validation failed"
+	MessageSpecValidationPassed          = "Spec validation passed"
+	MessageInitializingRoleAssignment    = "Initializing role assignment"
 	MessageApplyClusterPermissionsFailed = "Failed to apply ClusterPermissions"
-	MessageStatusCannotBeDetermined    = "Status cannot be determined"
+	MessageStatusCannotBeDetermined      = "Status cannot be determined"
 )
 
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
