@@ -21,14 +21,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 )
 
 var _ = Describe("MulticlusterRoleAssignment Controller", func() {
@@ -44,6 +45,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 		multiclusterroleassignment := &rbacv1alpha1.MulticlusterRoleAssignment{}
 
 		BeforeEach(func() {
+			By("creating the ManagedClusterSet for the test")
+			testClusterSet := &clusterv1beta2.ManagedClusterSet{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-set"},
+			}
+			Expect(k8sClient.Create(ctx, testClusterSet)).To(Succeed())
+
 			By("creating the custom resource for the Kind MulticlusterRoleAssignment")
 			err := k8sClient.Get(ctx, typeNamespacedName, multiclusterroleassignment)
 			if err != nil && errors.IsNotFound(err) {
@@ -77,6 +84,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 
 			By("Cleanup the specific resource instance MulticlusterRoleAssignment")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			By("Cleanup the ManagedClusterSet")
+			testClusterSet := &clusterv1beta2.ManagedClusterSet{}
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-cluster-set"}, testClusterSet)
+			if err == nil {
+				k8sClient.Delete(ctx, testClusterSet)
+			}
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
@@ -89,8 +103,451 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+			err = k8sClient.Get(ctx, typeNamespacedName, &updatedMRA)
+			Expect(err).NotTo(HaveOccurred())
+
+			found := false
+			for _, condition := range updatedMRA.Status.Conditions {
+				if condition.Type == ConditionTypeValidated {
+					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+					Expect(condition.Reason).To(Equal(ReasonSpecIsValid))
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue(), "Validated condition status should be true")
+		})
+	})
+
+	Context("Validation Logic", func() {
+		var reconciler *MulticlusterRoleAssignmentReconciler
+
+		BeforeEach(func() {
+			reconciler = &MulticlusterRoleAssignmentReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+		})
+
+		Describe("validateSpec", func() {
+
+			It("should accept valid spec with unique role assignment names", func() {
+				ctx := context.Background()
+
+				// Create test ManagedClusterSets
+				testClusterSet1 := &clusterv1beta2.ManagedClusterSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster-set1"},
+				}
+				testClusterSet2 := &clusterv1beta2.ManagedClusterSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster-set2"},
+				}
+				Expect(k8sClient.Create(ctx, testClusterSet1)).To(Succeed())
+				Expect(k8sClient.Create(ctx, testClusterSet2)).To(Succeed())
+				defer func() {
+					k8sClient.Delete(ctx, testClusterSet1)
+					k8sClient.Delete(ctx, testClusterSet2)
+				}()
+
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "assignment1",
+								ClusterRole: "role1",
+								ClusterSets: []string{"cluster-set1"},
+							},
+							{
+								Name:        "assignment2",
+								ClusterRole: "role2",
+								ClusterSets: []string{"cluster-set2"},
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(ctx, mra)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should reject spec with duplicate role assignment names", func() {
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "duplicate-name",
+								ClusterRole: "role1",
+								ClusterSets: []string{}, // Empty to avoid cluster set validation
+							},
+							{
+								Name:        "duplicate-name",
+								ClusterRole: "role2",
+								ClusterSets: []string{}, // Empty to avoid cluster set validation
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(context.Background(), mra)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("duplicate role assignment name found: duplicate-name"))
+			})
+
+			It("should reject spec with missing ManagedClusterSets", func() {
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "assignment1",
+								ClusterRole: "role1",
+								ClusterSets: []string{"non-existent-cluster-set"},
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(context.Background(), mra)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing ManagedClusterSets"))
+				Expect(err.Error()).To(ContainSubstring("non-existent-cluster-set"))
+			})
+
+			It("should update role assignment status to failed for missing cluster sets", func() {
+				mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "assignment1",
+								ClusterRole: "role1",
+								ClusterSets: []string{"missing-set1", "missing-set2"},
+							},
+							{
+								Name:        "assignment2",
+								ClusterRole: "role2",
+								ClusterSets: []string{"missing-set1"},
+							},
+						},
+					},
+				}
+
+				err := reconciler.validateSpec(ctx, mra)
+				Expect(err).To(HaveOccurred())
+
+				// Check that role assignment statuses were updated
+				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+
+				var assignment1Status, assignment2Status *rbacv1alpha1.RoleAssignmentStatus
+				for i, status := range mra.Status.RoleAssignments {
+					switch status.Name {
+					case "assignment1":
+						assignment1Status = &mra.Status.RoleAssignments[i]
+					case "assignment2":
+						assignment2Status = &mra.Status.RoleAssignments[i]
+					}
+				}
+
+				Expect(assignment1Status).NotTo(BeNil())
+				Expect(assignment1Status.State).To(Equal(StateTypeFailed))
+				Expect(assignment1Status.Message).To(ContainSubstring("Missing ManagedClusterSets"))
+
+				Expect(assignment2Status).NotTo(BeNil())
+				Expect(assignment2Status.State).To(Equal(StateTypeFailed))
+				Expect(assignment2Status.Message).To(ContainSubstring("Missing ManagedClusterSets"))
+			})
+		})
+
+		Describe("Status Management", func() {
+			var mra *rbacv1alpha1.MulticlusterRoleAssignment
+
+			BeforeEach(func() {
+				mra = &rbacv1alpha1.MulticlusterRoleAssignment{
+					ObjectMeta: metav1.ObjectMeta{
+						Generation: 1,
+					},
+					Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+						Subject: rbacv1.Subject{
+							Kind: "User",
+							Name: "test-user",
+						},
+						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+							{
+								Name:        "assignment1",
+								ClusterRole: "role1",
+								ClusterSets: []string{"cluster-set1"},
+							},
+							{
+								Name:        "assignment2",
+								ClusterRole: "role2",
+								ClusterSets: []string{"cluster-set2"},
+							},
+						},
+					},
+				}
+			})
+
+			Describe("setCondition", func() {
+				It("should add new condition when not present", func() {
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+
+					Expect(mra.Status.Conditions).To(HaveLen(1))
+					condition := mra.Status.Conditions[0]
+					Expect(condition.Type).To(Equal(ConditionTypeReady))
+					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+					Expect(condition.Reason).To(Equal(ReasonAllApplied))
+					Expect(condition.Message).To(Equal("All assignments applied"))
+					Expect(condition.ObservedGeneration).To(Equal(mra.Generation))
+				})
+
+				It("should update existing condition when status changes", func() {
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionFalse, ReasonPartialFailure, "Some assignments failed")
+
+					Expect(mra.Status.Conditions).To(HaveLen(1))
+					condition := mra.Status.Conditions[0]
+					Expect(condition.Type).To(Equal(ConditionTypeReady))
+					Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+					Expect(condition.Reason).To(Equal(ReasonPartialFailure))
+					Expect(condition.Message).To(Equal("Some assignments failed"))
+				})
+
+				It("should only update ObservedGeneration when condition content is same", func() {
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+					originalTime := mra.Status.Conditions[0].LastTransitionTime
+
+					mra.Generation = 2
+					reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied, "All assignments applied")
+
+					Expect(mra.Status.Conditions).To(HaveLen(1))
+					condition := mra.Status.Conditions[0]
+					Expect(condition.LastTransitionTime).To(Equal(originalTime))
+					Expect(condition.ObservedGeneration).To(Equal(int64(2)))
+				})
+			})
+
+			Describe("updateRoleAssignmentStatus", func() {
+				It("should add new role assignment status when not present", func() {
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypeApplied, "Successfully applied")
+
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+					status := mra.Status.RoleAssignments[0]
+					Expect(status.Name).To(Equal("assignment1"))
+					Expect(status.State).To(Equal(StateTypeApplied))
+					Expect(status.Message).To(Equal("Successfully applied"))
+				})
+
+				It("should update existing role assignment status", func() {
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypePending, "Initializing")
+					reconciler.setRoleAssignmentStatus(mra, "assignment1", StateTypeApplied, "Successfully applied")
+
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+					status := mra.Status.RoleAssignments[0]
+					Expect(status.Name).To(Equal("assignment1"))
+					Expect(status.State).To(Equal(StateTypeApplied))
+					Expect(status.Message).To(Equal("Successfully applied"))
+				})
+			})
+
+			Describe("initializeRoleAssignmentStatuses", func() {
+				It("should initialize status for all role assignments", func() {
+					reconciler.initializeRoleAssignmentStatuses(mra)
+
+					Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+
+					var assignment1Status, assignment2Status *rbacv1alpha1.RoleAssignmentStatus
+					for i, status := range mra.Status.RoleAssignments {
+						switch status.Name {
+						case "assignment1":
+							assignment1Status = &mra.Status.RoleAssignments[i]
+						case "assignment2":
+							assignment2Status = &mra.Status.RoleAssignments[i]
+						}
+					}
+
+					Expect(assignment1Status).NotTo(BeNil())
+					Expect(assignment1Status.State).To(Equal(StateTypePending))
+					Expect(assignment1Status.Message).To(Equal(MessageInitializingRoleAssignment))
+					Expect(assignment2Status).NotTo(BeNil())
+					Expect(assignment2Status.State).To(Equal(StateTypePending))
+					Expect(assignment2Status.Message).To(Equal(MessageInitializingRoleAssignment))
+				})
+
+				It("should not duplicate or change existing role assignment statuses", func() {
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+						{
+							Name:    "assignment1",
+							State:   StateTypeApplied,
+							Message: "Already applied",
+						},
+					}
+
+					reconciler.initializeRoleAssignmentStatuses(mra)
+
+					Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+
+					var assignment1Status, assignment2Status *rbacv1alpha1.RoleAssignmentStatus
+					for i, status := range mra.Status.RoleAssignments {
+						switch status.Name {
+						case "assignment1":
+							assignment1Status = &mra.Status.RoleAssignments[i]
+						case "assignment2":
+							assignment2Status = &mra.Status.RoleAssignments[i]
+						}
+					}
+
+					Expect(assignment1Status).NotTo(BeNil())
+					Expect(assignment1Status.State).To(Equal(StateTypeApplied))
+					Expect(assignment1Status.Message).To(Equal("Already applied"))
+					Expect(assignment2Status).NotTo(BeNil())
+					Expect(assignment2Status.State).To(Equal(StateTypePending))
+					Expect(assignment2Status.Message).To(Equal(MessageInitializingRoleAssignment))
+				})
+			})
+
+			Describe("calculateReadyCondition", func() {
+				It("should return False when Validated condition is False", func() {
+					mra.Status.Conditions = []metav1.Condition{
+						{
+							Type:   ConditionTypeValidated,
+							Status: metav1.ConditionFalse,
+						},
+					}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionFalse))
+					Expect(reason).To(Equal(ReasonValidationFailed))
+					Expect(message).To(Equal(MessageSpecValidationFailed))
+				})
+
+				It("should return False when any role assignment failed", func() {
+					mra.Status.Conditions = []metav1.Condition{
+						{
+							Type:   ConditionTypeValidated,
+							Status: metav1.ConditionTrue,
+						},
+					}
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+						{
+							Name:  "assignment1",
+							State: StateTypeApplied,
+						},
+						{
+							Name:  "assignment2",
+							State: StateTypeFailed,
+						},
+					}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionFalse))
+					Expect(reason).To(Equal(ReasonPartialFailure))
+					Expect(message).To(Equal("1 out of 2 role assignments failed"))
+				})
+
+				It("should return False when Applied condition is False", func() {
+					mra.Status.Conditions = []metav1.Condition{
+						{
+							Type:   ConditionTypeValidated,
+							Status: metav1.ConditionTrue,
+						},
+						{
+							Type:   ConditionTypeApplied,
+							Status: metav1.ConditionFalse,
+						},
+					}
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+						{
+							Name:  "assignment1",
+							State: StateTypeApplied,
+						},
+						{
+							Name:  "assignment2",
+							State: StateTypeApplied,
+						},
+					}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionFalse))
+					Expect(reason).To(Equal(ReasonApplyFailed))
+					Expect(message).To(Equal(MessageApplyClusterPermissionsFailed))
+				})
+
+				It("should return Unknown when some role assignments are pending", func() {
+					mra.Status.Conditions = []metav1.Condition{
+						{
+							Type:   ConditionTypeValidated,
+							Status: metav1.ConditionTrue,
+						},
+					}
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+						{
+							Name:  "assignment1",
+							State: StateTypeApplied,
+						},
+						{
+							Name:  "assignment2",
+							State: StateTypePending,
+						},
+					}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionUnknown))
+					Expect(reason).To(Equal(ReasonInProgress))
+					Expect(message).To(Equal("1 role assignments pending"))
+				})
+
+				It("should return True when all role assignments are applied", func() {
+					mra.Status.Conditions = []metav1.Condition{
+						{
+							Type:   ConditionTypeValidated,
+							Status: metav1.ConditionTrue,
+						},
+						{
+							Type:   ConditionTypeApplied,
+							Status: metav1.ConditionTrue,
+						},
+					}
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+						{
+							Name:  "assignment1",
+							State: StateTypeApplied,
+						},
+						{
+							Name:  "assignment2",
+							State: StateTypeApplied,
+						},
+					}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionTrue))
+					Expect(reason).To(Equal(ReasonAllApplied))
+					Expect(message).To(Equal("All 2 role assignments applied successfully"))
+				})
+
+				It("should return Unknown when status cannot be determined", func() {
+					mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{}
+
+					status, reason, message := reconciler.calculateReadyCondition(mra)
+					Expect(status).To(Equal(metav1.ConditionUnknown))
+					Expect(reason).To(Equal(ReasonUnknown))
+					Expect(message).To(Equal(MessageStatusCannotBeDetermined))
+				})
+			})
 		})
 	})
 })
