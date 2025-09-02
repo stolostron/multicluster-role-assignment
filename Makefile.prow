@@ -15,4 +15,4 @@ build-prow:
 .PHONY: unit-tests
 unit-tests:
 	@echo "Run unit-tests"
-	go test $$(go list ./... | grep -v /e2e) -timeout 500s -v -short
+	go test $$(go list ./... | grep -v /e2e) -timeout 500s -v -short -coverprofile coverage.out
