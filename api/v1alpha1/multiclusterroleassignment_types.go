@@ -38,6 +38,11 @@ type MulticlusterRoleAssignmentSpec struct {
 
 // RoleAssignment defines a cluster role assignment to specific namespaces and cluster sets.
 type RoleAssignment struct {
+	// Name defines the name of the role assignment.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
 	// ClusterRole defines the cluster role name to be assigned.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -59,6 +64,30 @@ type MulticlusterRoleAssignmentStatus struct {
 	// Conditions is the condition list.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// RoleAssignments provides the status of each role assignment.
+	// +optional
+	RoleAssignments []RoleAssignmentStatus `json:"roleAssignments,omitempty"`
+}
+
+// RoleAssignmentStatus defines the status of a specific role assignment.
+type RoleAssignmentStatus struct {
+	// Name defines the name of the role assignment.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Status defines the current status of the role assignment.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=Pending;Active;Error
+	Status string `json:"status"`
+
+	// Reason provides a programmatic identifier for the role assignment status.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message provides additional human readable details about the role assignment status.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true

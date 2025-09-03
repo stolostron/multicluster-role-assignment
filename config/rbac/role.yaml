@@ -5,6 +5,14 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - managedclustersets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - rbac.open-cluster-management.io
   resources:
   - multiclusterroleassignments

@@ -29,10 +29,11 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,11 +63,14 @@ var _ = BeforeSuite(func() {
 	err = rbacv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = clusterv1beta2.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	// +kubebuilder:scaffold:scheme
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases"), filepath.Join("..", "..", "test", "crd")},
 		ErrorIfCRDPathMissing: true,
 	}
 
