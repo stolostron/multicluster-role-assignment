@@ -78,7 +78,7 @@ type RoleAssignmentStatus struct {
 
 	// State defines the current state of the role assignment.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=pending;applied;failed
+	// +kubebuilder:validation:Enum=Pending;Applied;Failed
 	State string `json:"state"`
 
 	// Message provides additional details about the role assignment status.

@@ -185,9 +185,9 @@ spec:
                     state:
                       description: State defines the current state of the role assignment.
                       enum:
-                      - pending
-                      - applied
-                      - failed
+                      - Pending
+                      - Applied
+                      - Failed
                       type: string
                   required:
                   - name

@@ -19,15 +19,17 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
+	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Condition types
@@ -39,31 +41,40 @@ const (
 
 // Condition reasons
 const (
-	ReasonValidationFailed = "ValidationFailed"
-	ReasonInvalidSpec      = "InvalidSpec"
-	ReasonSpecIsValid      = "SpecIsValid"
-	ReasonPartialFailure   = "PartialFailure"
-	ReasonApplyFailed      = "ApplyFailed"
-	ReasonInProgress       = "InProgress"
-	ReasonAllApplied       = "AllApplied"
-	ReasonUnknown          = "Unknown"
+	ReasonValidationFailed           = "ValidationFailed"
+	ReasonInvalidSpec                = "InvalidSpec"
+	ReasonSpecIsValid                = "SpecIsValid"
+	ReasonPartialFailure             = "PartialFailure"
+	ReasonApplyFailed                = "ApplyFailed"
+	ReasonInProgress                 = "InProgress"
+	ReasonAllApplied                 = "AllApplied"
+	ReasonUnknown                    = "Unknown"
+	ReasonMissingClusterSets         = "MissingClusterSets"
+	ReasonClusterSetValidationFailed = "ClusterSetValidationFailed"
 )
 
 // Role assignment states
 const (
-	StateTypePending = "pending"
-	StateTypeApplied = "applied"
-	StateTypeFailed  = "failed"
+	StateTypePending = "Pending"
+	StateTypeApplied = "Applied"
+	StateTypeFailed  = "Failed"
 )
 
 // Status messages
 const (
-	MessageSpecValidationFailed          = "Spec validation failed"
-	MessageSpecValidationPassed          = "Spec validation passed"
-	MessageInitializingRoleAssignment    = "Initializing role assignment"
-	MessageApplyClusterPermissionsFailed = "Failed to apply ClusterPermissions"
-	MessageStatusCannotBeDetermined      = "Status cannot be determined"
+	MessageSpecValidationFailed               = "Spec validation failed"
+	MessageSpecValidationPassed               = "Spec validation passed"
+	MessageInitializingRoleAssignment         = "Initializing role assignment"
+	MessageApplyClusterPermissionsFailed      = "Failed to apply ClusterPermissions"
+	MessageStatusCannotBeDetermined           = "Status cannot be determined"
+	MessageMissingManagedClusterSets          = "Missing ManagedClusterSets"
+	MessageManagedClusterSetValidationPassed  = "ManagedClusterSet validation passed"
+	MessageRoleAssignmentsFailed              = "role assignments failed"
+	MessageRoleAssignmentsPending             = "role assignments pending"
+	MessageRoleAssignmentsAppliedSuccessfully = "role assignments applied successfully"
 )
+
+//TODO: Make error constants for validateSpec functions
 
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
@@ -74,6 +85,7 @@ type MulticlusterRoleAssignmentReconciler struct {
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/finalizers,verbs=update
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclustersets,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -94,10 +106,16 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	}
 
 	// Validate spec and update status
-	if err := r.validateSpec(&mra); err != nil {
+	if err := r.validateSpec(ctx, &mra); err != nil {
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
 
-		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, ReasonInvalidSpec, err.Error())
+		reason := ReasonInvalidSpec
+		// TODO check logic, test should fail if error string contains does not matcj
+		if strings.Contains(err.Error(), "missing ManagedClusterSets") {
+			reason = ReasonMissingClusterSets
+		}
+
+		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, reason, err.Error())
 		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after validation failure")
 			return ctrl.Result{}, statusErr
@@ -116,7 +134,8 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 }
 
 // validateSpec performs validation on the MulticlusterRoleAssignment spec.
-func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+func (r *MulticlusterRoleAssignmentReconciler) validateSpec(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
 	namesSet := make(map[string]bool)
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
@@ -124,6 +143,50 @@ func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.Mu
 			return fmt.Errorf("duplicate role assignment name found: %s", roleAssignment.Name)
 		}
 		namesSet[roleAssignment.Name] = true
+	}
+
+	return r.validateClusterSets(ctx, mra)
+}
+
+// validateClusterSets validates that all referenced ManagedClusterSets exist and updates role assignment statuses
+// accordingly.
+func (r *MulticlusterRoleAssignmentReconciler) validateClusterSets(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+	log := logf.FromContext(ctx)
+
+	var allMissingClusterSets []string
+
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		var missingClusterSetsForRA []string
+
+		for _, clusterSet := range roleAssignment.ClusterSets {
+			var clusterSetGetResults clusterv1beta2.ManagedClusterSet
+			err := r.Get(ctx, client.ObjectKey{Name: clusterSet}, &clusterSetGetResults)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					log.Error(err, "Referenced ManagedClusterSet not found", "clusterSet", clusterSet, "roleAssignment",
+						roleAssignment.Name)
+					missingClusterSetsForRA = append(missingClusterSetsForRA, clusterSet)
+					allMissingClusterSets = append(allMissingClusterSets, clusterSet)
+				} else {
+					log.Error(err, "Failed to get ManagedClusterSet", "clusterSet", clusterSet, "roleAssignment",
+						roleAssignment.Name)
+					return fmt.Errorf("failed to validate cluster set %s: %w", clusterSet, err)
+				}
+			}
+		}
+
+		if len(missingClusterSetsForRA) > 0 {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypeFailed,
+				fmt.Sprintf("%s: %v", MessageMissingManagedClusterSets, missingClusterSetsForRA))
+		} else {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending,
+				MessageManagedClusterSetValidationPassed)
+		}
+	}
+
+	if len(allMissingClusterSets) > 0 {
+		return fmt.Errorf("missing ManagedClusterSets: %v", allMissingClusterSets)
 	}
 
 	return nil
@@ -211,8 +274,8 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 	}
 
 	if failedCount > 0 {
-		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d role assignments failed",
-			failedCount, len(mra.Status.RoleAssignments))
+		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d %s",
+			failedCount, len(mra.Status.RoleAssignments), MessageRoleAssignmentsFailed)
 	}
 
 	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
@@ -220,12 +283,13 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 	}
 
 	if pendingCount > 0 {
-		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d role assignments pending", pendingCount)
+		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d %s", pendingCount,
+			MessageRoleAssignmentsPending)
 	}
 
 	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
-		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d role assignments applied successfully",
-			appliedCount)
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d %s",
+			appliedCount, MessageRoleAssignmentsAppliedSuccessfully)
 	}
 
 	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
