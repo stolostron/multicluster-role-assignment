@@ -34,47 +34,75 @@ import (
 
 // Condition types
 const (
-	ConditionTypeReady     = "Ready"
+	// ConditionTypeValidated indicates whether the MulticlusterRoleAssignment spec has been validated.
+	// Status: True = spec is valid, False = spec is not valid, Unknown = unable to validate
 	ConditionTypeValidated = "Validated"
-	ConditionTypeApplied   = "Applied"
+
+	// ConditionTypeApplied indicates whether the ClusterPermission resources have been successfully created/updated
+	// across all target clusters.
+	// Status: True = all ClusterPermissions applied, False = some/all ClusterPermissions not applied, Unknown = unable
+	// to determine ClusterPermissions applied condition
+	ConditionTypeApplied = "Applied"
+
+	// ConditionTypeReady is the top-level condition indicating overall operational status.
+	// Status: True = ready and working, False = problems detected, Unknown = unable to determine ready condition
+	ConditionTypeReady = "Ready"
 )
 
-// Condition reasons
+// ConditionTypeValidated related constants
 const (
-	ReasonValidationFailed           = "ValidationFailed"
-	ReasonInvalidSpec                = "InvalidSpec"
-	ReasonSpecIsValid                = "SpecIsValid"
-	ReasonPartialFailure             = "PartialFailure"
-	ReasonApplyFailed                = "ApplyFailed"
-	ReasonInProgress                 = "InProgress"
-	ReasonAllApplied                 = "AllApplied"
-	ReasonUnknown                    = "Unknown"
-	ReasonMissingClusterSets         = "MissingClusterSets"
-	ReasonClusterSetValidationFailed = "ClusterSetValidationFailed"
+	// ConditionTypeValidated Reasons
+	ReasonInvalidSpec        = "InvalidSpec"
+	ReasonSpecIsValid        = "SpecIsValid"
+	ReasonMissingClusterSets = "MissingClusterSets"
+
+	// ConditionTypeValidated Messages
+	MessageSpecValidationPassed = "Spec validation passed"
+	MessageSpecValidationFailed = "Spec validation failed"
 )
 
-// Role assignment states
+// ConditionTypeApplied related constants
 const (
-	StateTypePending = "Pending"
-	StateTypeApplied = "Applied"
-	StateTypeFailed  = "Failed"
+// ConditionTypeApplied Reasons
+// TODO: Add ConditionTypeApplied reason constants
+
+// ConditionTypeApplied Messages
+// TODO: Add ConditionTypeApplied message constants
 )
 
-// Status messages
+// ConditionTypeReady related constants
 const (
-	MessageSpecValidationFailed               = "Spec validation failed"
-	MessageSpecValidationPassed               = "Spec validation passed"
-	MessageInitializingRoleAssignment         = "Initializing role assignment"
-	MessageApplyClusterPermissionsFailed      = "Failed to apply ClusterPermissions"
+	// ConditionTypeReady Reasons
+	ReasonPartialFailure = "PartialFailure"
+	ReasonInProgress     = "InProgress"
+	ReasonAllApplied     = "AllApplied"
+	ReasonApplyFailed    = "ApplyFailed"
+	ReasonUnknown        = "Unknown"
+
+	// ConditionTypeReady Messages
 	MessageStatusCannotBeDetermined           = "Status cannot be determined"
-	MessageMissingManagedClusterSets          = "Missing ManagedClusterSets"
-	MessageManagedClusterSetValidationPassed  = "ManagedClusterSet validation passed"
 	MessageRoleAssignmentsFailed              = "role assignments failed"
 	MessageRoleAssignmentsPending             = "role assignments pending"
 	MessageRoleAssignmentsAppliedSuccessfully = "role assignments applied successfully"
 )
 
-//TODO: Make error constants for validateSpec functions
+// RoleAssignmentStatus related constants
+const (
+	// RoleAssignmentStatus Statuses
+	StateTypePending = "Pending"
+	StateTypeActive  = "Active"
+	StateTypeError   = "Error"
+
+	// RoleAssignmentStatus Reasons
+	// TODO: Add RoleAssignmentStatus reason constants
+
+	// RoleAssignmentStatus Messages
+	MessageInitializingRoleAssignment        = "Initializing role assignment"
+	MessageMissingManagedClusterSets         = "Missing ManagedClusterSets"
+	MessageManagedClusterSetValidationPassed = "ManagedClusterSet validation passed"
+)
+
+// TODO: Make error constants for validateSpec functions
 
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
@@ -110,12 +138,12 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
 
 		reason := ReasonInvalidSpec
-		// TODO check logic, test should fail if error string contains does not matcj
 		if strings.Contains(err.Error(), "missing ManagedClusterSets") {
 			reason = ReasonMissingClusterSets
 		}
 
-		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, reason, err.Error())
+		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, reason, fmt.Sprintf("%s: %s",
+			MessageSpecValidationFailed, err.Error()))
 		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after validation failure")
 			return ctrl.Result{}, statusErr
@@ -177,7 +205,7 @@ func (r *MulticlusterRoleAssignmentReconciler) validateClusterSets(ctx context.C
 		}
 
 		if len(missingClusterSetsForRA) > 0 {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypeFailed,
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypeError,
 				fmt.Sprintf("%s: %v", MessageMissingManagedClusterSets, missingClusterSetsForRA))
 		} else {
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending,
@@ -227,7 +255,7 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 	found := false
 	for i, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		if roleAssignmentStatus.Name == name {
-			mra.Status.RoleAssignments[i].State = state
+			mra.Status.RoleAssignments[i].Status = state
 			mra.Status.RoleAssignments[i].Message = message
 			found = true
 			break
@@ -236,7 +264,7 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 	if !found {
 		mra.Status.RoleAssignments = append(mra.Status.RoleAssignments, rbacv1alpha1.RoleAssignmentStatus{
 			Name:    name,
-			State:   state,
+			Status:  state,
 			Message: message,
 		})
 	}
@@ -245,51 +273,44 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 // calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
 func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (
 	metav1.ConditionStatus, string, string) {
-	var validatedCondition, appliedCondition *metav1.Condition
+	var validatedCondition *metav1.Condition
 
 	for _, condition := range mra.Status.Conditions {
-		switch condition.Type {
-		case ConditionTypeValidated:
+		if condition.Type == ConditionTypeValidated {
 			validatedCondition = &condition
-		case ConditionTypeApplied:
-			appliedCondition = &condition
 		}
 	}
 
 	if validatedCondition != nil && validatedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, ReasonValidationFailed, MessageSpecValidationFailed
+		return metav1.ConditionFalse, ReasonInvalidSpec, MessageSpecValidationFailed
 	}
 
-	var failedCount, appliedCount, pendingCount int
+	var errorCount, activeCount, pendingCount int
 
 	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-		switch roleAssignmentStatus.State {
-		case StateTypeFailed:
-			failedCount++
-		case StateTypeApplied:
-			appliedCount++
+		switch roleAssignmentStatus.Status {
+		case StateTypeError:
+			errorCount++
+		case StateTypeActive:
+			activeCount++
 		case StateTypePending:
 			pendingCount++
 		}
 	}
 
-	if failedCount > 0 {
-		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d %s",
-			failedCount, len(mra.Status.RoleAssignments), MessageRoleAssignmentsFailed)
-	}
-
-	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, ReasonApplyFailed, MessageApplyClusterPermissionsFailed
+	if errorCount > 0 {
+		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d %s", errorCount,
+			len(mra.Status.RoleAssignments), MessageRoleAssignmentsFailed)
 	}
 
 	if pendingCount > 0 {
-		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d %s", pendingCount,
-			MessageRoleAssignmentsPending)
+		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d out of %d %s", pendingCount,
+			len(mra.Status.RoleAssignments), MessageRoleAssignmentsPending)
 	}
 
-	if appliedCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
-		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("All %d %s",
-			appliedCount, MessageRoleAssignmentsAppliedSuccessfully)
+	if activeCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("%d out of %d %s", activeCount,
+			len(mra.Status.RoleAssignments), MessageRoleAssignmentsAppliedSuccessfully)
 	}
 
 	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined

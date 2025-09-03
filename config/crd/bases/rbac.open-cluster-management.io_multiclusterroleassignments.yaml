@@ -176,22 +176,26 @@ spec:
                     role assignment.
                   properties:
                     message:
-                      description: Message provides additional details about the role
-                        assignment status.
+                      description: Message provides additional human readable details
+                        about the role assignment status.
                       type: string
                     name:
                       description: Name defines the name of the role assignment.
                       type: string
-                    state:
-                      description: State defines the current state of the role assignment.
+                    reason:
+                      description: Reason provides a programmatic identifier for the
+                        role assignment status.
+                      type: string
+                    status:
+                      description: Status defines the current status of the role assignment.
                       enum:
                       - Pending
-                      - Applied
-                      - Failed
+                      - Active
+                      - Error
                       type: string
                   required:
                   - name
-                  - state
+                  - status
                   type: object
                 type: array
             type: object
