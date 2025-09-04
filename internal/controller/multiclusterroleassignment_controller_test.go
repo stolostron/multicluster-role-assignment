@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
+	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
 var _ = Describe("MulticlusterRoleAssignment Controller", func() {
@@ -436,6 +437,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 			})
 		})
 	})
+
 	Context("Cluster Discovery Tests", func() {
 		const cluster1Name = "test-cluster-1"
 		const cluster2Name = "test-cluster-2"
@@ -559,6 +561,82 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 							": [test-cluster-3]"))
 					}
 				}
+			})
+		})
+	})
+
+	Context("ClusterPermission Operations", func() {
+		const testClusterNamespace = "default"
+		var cp *clusterpermissionv1alpha1.ClusterPermission
+
+		BeforeEach(func() {
+			cp = &clusterpermissionv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ClusterPermissionManagedName,
+					Namespace: testClusterNamespace,
+					Labels: map[string]string{
+						ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					},
+				},
+			}
+		})
+
+		AfterEach(func() {
+			k8sClient.Delete(ctx, cp)
+		})
+
+		Describe("getClusterPermission", func() {
+			It("Should return nil when ClusterPermission does not exist", func() {
+				cp, err := reconciler.getClusterPermission(ctx, testClusterNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cp).To(BeNil())
+			})
+
+			It("Should return error when ClusterPermission exists with name but missing management label", func() {
+				cp.Labels = nil
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				cp, err := reconciler.getClusterPermission(ctx, testClusterNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("ClusterPermission found but not managed by this controller"))
+				Expect(err.Error()).To(ContainSubstring(testClusterNamespace))
+				Expect(err.Error()).To(ContainSubstring(ClusterPermissionManagedName))
+				Expect(cp).To(BeNil())
+			})
+
+			It("Should return ClusterPermission when it exists and is managed", func() {
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				cp, err := reconciler.getClusterPermission(ctx, testClusterNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cp).NotTo(BeNil())
+				Expect(cp.Name).To(Equal(ClusterPermissionManagedName))
+				Expect(cp.Namespace).To(Equal(testClusterNamespace))
+			})
+		})
+
+		Describe("isClusterPermissionManaged", func() {
+			It("Should return false when labels are nil", func() {
+				cp.Labels = nil
+				Expect(reconciler.isClusterPermissionManaged(cp)).To(BeFalse())
+			})
+
+			It("Should return false when management label is missing", func() {
+				cp.Labels = map[string]string{
+					"other-label": "value",
+				}
+				Expect(reconciler.isClusterPermissionManaged(cp)).To(BeFalse())
+			})
+
+			It("Should return false when management label has wrong value", func() {
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: "wrong-value",
+				}
+				Expect(reconciler.isClusterPermissionManaged(cp)).To(BeFalse())
+			})
+
+			It("Should return true when management label is correct", func() {
+				Expect(reconciler.isClusterPermissionManaged(cp)).To(BeTrue())
 			})
 		})
 	})

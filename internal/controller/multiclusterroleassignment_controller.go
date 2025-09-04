@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
+	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -110,6 +111,13 @@ const (
 	MessageManagedClustersDiscovered         = "Managed clusters discovered"
 )
 
+// ClusterPermission management constants
+const (
+	ClusterPermissionManagedByLabel = "rbac.open-cluster-management.io/managed-by"
+	ClusterPermissionManagedByValue = "multiclusterroleassignment-controller"
+	ClusterPermissionManagedName    = "mra-managed-permissions"
+)
+
 // TODO: Make error constants for validateSpec functions
 
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
@@ -121,6 +129,7 @@ type MulticlusterRoleAssignmentReconciler struct {
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/finalizers,verbs=update
+// +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=clusterpermissions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclustersets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 
@@ -305,6 +314,46 @@ func (r *MulticlusterRoleAssignmentReconciler) discoverManagedClusters(ctx conte
 
 	log.Info("Total unique clusters discovered", "clusterCount", len(allClusters))
 	return allClusters, nil
+}
+
+// getClusterPermission fetches the managed ClusterPermission for a specific cluster namespace. Returns nil if not
+// found or if it doesn't have the management label.
+func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(ctx context.Context, clusterNamespace string) (
+	*clusterpermissionv1alpha1.ClusterPermission, error) {
+	log := logf.FromContext(ctx)
+
+	var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      ClusterPermissionManagedName,
+		Namespace: clusterNamespace,
+	}, &clusterPermission)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("ClusterPermission not found", "namespace", clusterNamespace, "name", ClusterPermissionManagedName)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get ClusterPermission: %w", err)
+	}
+
+	if !r.isClusterPermissionManaged(&clusterPermission) {
+		err := fmt.Errorf("ClusterPermission found but not managed by this controller in namespace %s with name %s",
+			clusterNamespace, ClusterPermissionManagedName)
+		log.Error(err, "ClusterPermission conflict detected", "namespace", clusterNamespace, "name",
+			ClusterPermissionManagedName)
+		return nil, err
+	}
+
+	return &clusterPermission, nil
+}
+
+// isClusterPermissionManaged checks if a ClusterPermission has the correct management label
+func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionManaged(
+	cp *clusterpermissionv1alpha1.ClusterPermission) bool {
+	if cp.Labels == nil {
+		return false
+	}
+	return cp.Labels[ClusterPermissionManagedByLabel] == ClusterPermissionManagedByValue
 }
 
 // updateStatus updates and saves the current status state. It also updates some statuses before saving.
