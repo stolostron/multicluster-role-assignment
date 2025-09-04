@@ -45,16 +45,16 @@ spec:
                   for different roles, namespaces, and cluster sets.
                 items:
                   description: RoleAssignment defines a cluster role assignment to
-                    specific namespaces and cluster sets.
+                    specific namespaces and clusters.
                   properties:
                     clusterRole:
                       description: ClusterRole defines the cluster role name to be
                         assigned.
                       minLength: 1
                       type: string
-                    clusterSets:
-                      description: ClusterSets defines the cluster sets where the
-                        role should be applied.
+                    clusters:
+                      description: Clusters defines the clusters where the role should
+                        be applied.
                       items:
                         type: string
                       minItems: 1
@@ -72,7 +72,7 @@ spec:
                       type: array
                   required:
                   - clusterRole
-                  - clusterSets
+                  - clusters
                   - name
                   type: object
                 minItems: 1

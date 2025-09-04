@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,7 +27,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
-	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -96,19 +94,15 @@ const (
 
 	// RoleAssignmentStatus Reasons
 	ReasonInitializing        = "Initializing"
-	ReasonMissingClusterSets  = "MissingClusterSets"
-	ReasonClusterSetValid     = "ClusterSetValid"
-	ReasonDiscoveringClusters = "DiscoveringClusters"
-	ReasonClustersDiscovered  = "ClustersDiscovered"
-	ReasonNoClustersFound     = "NoClustersFound"
+	ReasonMissingClusters     = "MissingClusters"
+	ReasonAggregatingClusters = "AggregatingClusters"
+	ReasonClustersValid       = "ClustersValid"
 
 	// RoleAssignmentStatus Messages
-	MessageInitializingRoleAssignment        = "Initializing role assignment"
-	MessageMissingManagedClusterSets         = "Missing managed cluster sets"
-	MessageManagedClusterSetValidationPassed = "Managed cluster set validation passed"
-	MessageDiscoveringTargetClusters         = "Discovering managed clusters"
-	MessageNoClustersFoundInClusterSets      = "No managed clusters found in specified managed cluster sets"
-	MessageManagedClustersDiscovered         = "Managed clusters discovered"
+	MessageInitializingRoleAssignment = "Initializing role assignment"
+	MessageMissingClusters            = "Missing managed clusters"
+	MessageAggregatingClusters        = "Aggregating target clusters"
+	MessageClustersValid              = "All managed clusters are valid"
 )
 
 // ClusterPermission management constants
@@ -130,7 +124,6 @@ type MulticlusterRoleAssignmentReconciler struct {
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=clusterpermissions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclustersets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -152,15 +145,10 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	}
 
 	// Validate spec and update status
-	if err := r.validateSpec(ctx, &mra); err != nil {
+	if err := r.validateSpec(&mra); err != nil {
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
 
-		reason := ReasonInvalidSpec
-		if strings.Contains(err.Error(), "missing ManagedClusterSets") {
-			reason = ReasonMissingClusterSets
-		}
-
-		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, reason, fmt.Sprintf("%s: %s",
+		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, ReasonInvalidSpec, fmt.Sprintf("%s: %s",
 			MessageSpecValidationFailed, err.Error()))
 		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after validation failure")
@@ -177,24 +165,24 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	log.Info("Successfully validated MulticlusterRoleAssignment spec", "multiclusterroleassignment", req.NamespacedName)
 
-	managedClusters, err := r.discoverManagedClusters(ctx, &mra)
+	managedClusters, err := r.aggregateClusters(ctx, &mra)
 	if err != nil {
-		log.Error(err, "Failed to discover managed clusters")
+		log.Error(err, "Failed to aggregate target clusters")
 		return ctrl.Result{}, err
 	}
 
 	if err := r.updateStatus(ctx, &mra); err != nil {
-		log.Error(err, "Failed to update status after cluster discovery")
+		log.Error(err, "Failed to update status after cluster aggregation")
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Successfully discovered managed clusters", "multiclusterroleassignment", req.NamespacedName,
+	log.Info("Successfully aggregated target clusters", "multiclusterroleassignment", req.NamespacedName,
 		"managedclusters", managedClusters)
 	return ctrl.Result{}, nil
 }
 
-// validateSpec performs validation on the MulticlusterRoleAssignment spec.
-func (r *MulticlusterRoleAssignmentReconciler) validateSpec(ctx context.Context,
+// validateSpec performs basic validation on the MulticlusterRoleAssignment spec.
+func (r *MulticlusterRoleAssignmentReconciler) validateSpec(
 	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
 	namesMap := make(map[string]bool)
@@ -205,114 +193,62 @@ func (r *MulticlusterRoleAssignmentReconciler) validateSpec(ctx context.Context,
 		namesMap[roleAssignment.Name] = true
 	}
 
-	return r.validateClusterSets(ctx, mra)
-}
-
-// validateClusterSets validates that all referenced ManagedClusterSets exist and updates role assignment statuses
-// accordingly.
-func (r *MulticlusterRoleAssignmentReconciler) validateClusterSets(ctx context.Context,
-	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
-	log := logf.FromContext(ctx)
-
-	var allMissingClusterSets []string
-
-	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		var missingClusterSetsForRA []string
-
-		for _, clusterSet := range roleAssignment.ClusterSets {
-			var clusterSetGetResults clusterv1beta2.ManagedClusterSet
-			err := r.Get(ctx, client.ObjectKey{Name: clusterSet}, &clusterSetGetResults)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					log.Error(err, "Referenced ManagedClusterSet not found", "clusterSet", clusterSet, "roleAssignment",
-						roleAssignment.Name)
-					missingClusterSetsForRA = append(missingClusterSetsForRA, clusterSet)
-					allMissingClusterSets = append(allMissingClusterSets, clusterSet)
-				} else {
-					log.Error(err, "Failed to get ManagedClusterSet", "clusterSet", clusterSet, "roleAssignment",
-						roleAssignment.Name)
-					return fmt.Errorf("failed to validate cluster set %s: %w", clusterSet, err)
-				}
-			}
-		}
-
-		if len(missingClusterSetsForRA) > 0 {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonMissingClusterSets,
-				fmt.Sprintf("%s: %v", MessageMissingManagedClusterSets, missingClusterSetsForRA))
-		} else {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClusterSetValid,
-				MessageManagedClusterSetValidationPassed)
-		}
-	}
-
-	if len(allMissingClusterSets) > 0 {
-		return fmt.Errorf("missing ManagedClusterSets: %v", allMissingClusterSets)
-	}
-
 	return nil
 }
 
-// TODO: Refactor to improve efficiency - validateClusterSets and discoverManagedClusters both loop over
-
-// discoverManagedClusters discovers all ManagedCluster resources from the specified ManagedClusterSets and returns a
-// deduplicated list of cluster names. Updates role assignment statuses during discovery.
-func (r *MulticlusterRoleAssignmentReconciler) discoverManagedClusters(ctx context.Context,
+// aggregateClusters aggregates all cluster names from RoleAssignment specs and returns a deduplicated list of cluster
+// names. Validates clusters exist and updates role assignment statuses.
+func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Context,
 	mra *rbacv1alpha1.MulticlusterRoleAssignment) ([]string, error) {
 	log := logf.FromContext(ctx)
 
+	allActiveClustersMap := make(map[string]bool)
+	allMissingClustersMap := make(map[string]bool)
 	var allClusters []string
-	allClustersMap := make(map[string]bool)
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonDiscoveringClusters,
-			MessageDiscoveringTargetClusters)
+		r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonAggregatingClusters,
+			MessageAggregatingClusters)
 
-		var clustersInRA []string
-		for _, clusterSetName := range roleAssignment.ClusterSets {
-			var clusterSet clusterv1beta2.ManagedClusterSet
-			err := r.Get(ctx, client.ObjectKey{Name: clusterSetName}, &clusterSet)
+		var missingClustersInRA []string
+
+		for _, clusterName := range roleAssignment.Clusters {
+			if allActiveClustersMap[clusterName] {
+				continue
+			} else if allMissingClustersMap[clusterName] {
+				missingClustersInRA = append(missingClustersInRA, clusterName)
+				continue
+			}
+
+			var cluster clusterv1.ManagedCluster
+			err := r.Get(ctx, client.ObjectKey{Name: clusterName}, &cluster)
 			if err != nil {
 				if apierrors.IsNotFound(err) {
-					log.Error(err, "ManagedClusterSet not found during discovery", "clusterSet", clusterSetName)
-					continue
+					log.Error(err, "Referenced ManagedCluster not found", "cluster", clusterName, "roleAssignment",
+						roleAssignment.Name)
+					missingClustersInRA = append(missingClustersInRA, clusterName)
+					allMissingClustersMap[clusterName] = true
+				} else {
+					log.Error(err, "Failed to get ManagedCluster", "cluster", clusterName, "roleAssignment",
+						roleAssignment.Name)
+					return nil, fmt.Errorf("failed to validate cluster %s: %w", clusterName, err)
 				}
-				return nil, fmt.Errorf("failed to get ManagedClusterSet %s: %w", clusterSetName, err)
+			} else {
+				allActiveClustersMap[clusterName] = true
+				allClusters = append(allClusters, clusterName)
 			}
-
-			var managedClusterList clusterv1.ManagedClusterList
-			labelSelector := client.MatchingLabels{
-				"cluster.open-cluster-management.io/clusterset": clusterSetName,
-			}
-
-			err = r.List(ctx, &managedClusterList, labelSelector)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list ManagedClusters for cluster set %s: %w", clusterSetName, err)
-			}
-
-			var clustersInSet []string
-			for _, cluster := range managedClusterList.Items {
-				clustersInSet = append(clustersInSet, cluster.Name)
-				clustersInRA = append(clustersInRA, cluster.Name)
-				if !allClustersMap[cluster.Name] {
-					allClustersMap[cluster.Name] = true
-					allClusters = append(allClusters, cluster.Name)
-				}
-			}
-
-			log.Info("Discovered clusters for cluster set", "clusterSet", clusterSetName, "clusterCount",
-				len(clustersInSet), "clusters", clustersInSet)
 		}
 
-		if len(clustersInRA) > 0 {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClustersDiscovered,
-				fmt.Sprintf("%s: %v", MessageManagedClustersDiscovered, clustersInRA))
+		if len(missingClustersInRA) > 0 {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonMissingClusters,
+				fmt.Sprintf("%s: %v", MessageMissingClusters, missingClustersInRA))
 		} else {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonNoClustersFound,
-				MessageNoClustersFoundInClusterSets)
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClustersValid,
+				MessageClustersValid)
 		}
 	}
 
-	log.Info("Total unique clusters discovered", "clusterCount", len(allClusters))
+	log.Info("All clusters checked and aggregated successfully")
 	return allClusters, nil
 }
 
@@ -380,7 +316,8 @@ func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(
 			}
 		}
 		if !found {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonInitializing, MessageInitializingRoleAssignment)
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonInitializing,
+				MessageInitializingRoleAssignment)
 		}
 	}
 }
