@@ -36,7 +36,7 @@ type MulticlusterRoleAssignmentSpec struct {
 	RoleAssignments []RoleAssignment `json:"roleAssignments"`
 }
 
-// RoleAssignment defines a cluster role assignment to specific namespaces and cluster sets.
+// RoleAssignment defines a cluster role assignment to specific namespaces and clusters.
 type RoleAssignment struct {
 	// Name defines the name of the role assignment.
 	// +kubebuilder:validation:Required
@@ -53,10 +53,10 @@ type RoleAssignment struct {
 	// +kubebuilder:validation:Optional
 	TargetNamespaces []string `json:"targetNamespaces,omitempty"`
 
-	// ClusterSets defines the cluster sets where the role should be applied.
+	// Clusters defines the clusters where the role should be applied.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	ClusterSets []string `json:"clusterSets"`
+	Clusters []string `json:"clusters"`
 }
 
 // MulticlusterRoleAssignmentStatus defines the observed state of MulticlusterRoleAssignment.
