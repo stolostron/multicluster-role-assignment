@@ -241,10 +241,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypeError))
 					Expect(roleAssignmentStatus.Message).To(ContainSubstring(MessageMissingManagedClusterSets))
 					switch roleAssignmentStatus.Name {
-					case "test-assignment-1":
+					case roleAssignment1Name:
 						Expect(roleAssignmentStatus.Message).To(ContainSubstring("missing-set1"))
 						Expect(roleAssignmentStatus.Message).To(ContainSubstring("missing-set2"))
-					case "test-assignment-2":
+					case roleAssignment2Name:
 						Expect(roleAssignmentStatus.Message).To(ContainSubstring("missing-set1"))
 						Expect(roleAssignmentStatus.Message).NotTo(ContainSubstring("missing-set2"))
 					}
@@ -582,7 +582,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", func() {
 		})
 
 		AfterEach(func() {
-			k8sClient.Delete(ctx, cp)
+			_ = k8sClient.Delete(ctx, cp)
 		})
 
 		Describe("getClusterPermission", func() {
