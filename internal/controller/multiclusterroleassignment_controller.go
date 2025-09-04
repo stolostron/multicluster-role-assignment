@@ -27,6 +27,7 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -52,9 +53,8 @@ const (
 // ConditionTypeValidated related constants
 const (
 	// ConditionTypeValidated Reasons
-	ReasonInvalidSpec        = "InvalidSpec"
-	ReasonSpecIsValid        = "SpecIsValid"
-	ReasonMissingClusterSets = "MissingClusterSets"
+	ReasonInvalidSpec = "InvalidSpec"
+	ReasonSpecIsValid = "SpecIsValid"
 
 	// ConditionTypeValidated Messages
 	MessageSpecValidationPassed = "Spec validation passed"
@@ -89,17 +89,25 @@ const (
 // RoleAssignmentStatus related constants
 const (
 	// RoleAssignmentStatus Statuses
-	StateTypePending = "Pending"
-	StateTypeActive  = "Active"
-	StateTypeError   = "Error"
+	StatusTypePending = "Pending"
+	StatusTypeActive  = "Active"
+	StatusTypeError   = "Error"
 
 	// RoleAssignmentStatus Reasons
-	// TODO: Add RoleAssignmentStatus reason constants
+	ReasonInitializing        = "Initializing"
+	ReasonMissingClusterSets  = "MissingClusterSets"
+	ReasonClusterSetValid     = "ClusterSetValid"
+	ReasonDiscoveringClusters = "DiscoveringClusters"
+	ReasonClustersDiscovered  = "ClustersDiscovered"
+	ReasonNoClustersFound     = "NoClustersFound"
 
 	// RoleAssignmentStatus Messages
 	MessageInitializingRoleAssignment        = "Initializing role assignment"
-	MessageMissingManagedClusterSets         = "Missing ManagedClusterSets"
-	MessageManagedClusterSetValidationPassed = "ManagedClusterSet validation passed"
+	MessageMissingManagedClusterSets         = "Missing managed cluster sets"
+	MessageManagedClusterSetValidationPassed = "Managed cluster set validation passed"
+	MessageDiscoveringTargetClusters         = "Discovering managed clusters"
+	MessageNoClustersFoundInClusterSets      = "No managed clusters found in specified managed cluster sets"
+	MessageManagedClustersDiscovered         = "Managed clusters discovered"
 )
 
 // TODO: Make error constants for validateSpec functions
@@ -114,6 +122,7 @@ type MulticlusterRoleAssignmentReconciler struct {
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclustersets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -158,6 +167,20 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	}
 
 	log.Info("Successfully validated MulticlusterRoleAssignment spec", "multiclusterroleassignment", req.NamespacedName)
+
+	managedClusters, err := r.discoverManagedClusters(ctx, &mra)
+	if err != nil {
+		log.Error(err, "Failed to discover managed clusters")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.updateStatus(ctx, &mra); err != nil {
+		log.Error(err, "Failed to update status after cluster discovery")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Successfully discovered managed clusters", "multiclusterroleassignment", req.NamespacedName,
+		"managedclusters", managedClusters)
 	return ctrl.Result{}, nil
 }
 
@@ -165,12 +188,12 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 func (r *MulticlusterRoleAssignmentReconciler) validateSpec(ctx context.Context,
 	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
-	namesSet := make(map[string]bool)
+	namesMap := make(map[string]bool)
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if namesSet[roleAssignment.Name] {
+		if namesMap[roleAssignment.Name] {
 			return fmt.Errorf("duplicate role assignment name found: %s", roleAssignment.Name)
 		}
-		namesSet[roleAssignment.Name] = true
+		namesMap[roleAssignment.Name] = true
 	}
 
 	return r.validateClusterSets(ctx, mra)
@@ -205,10 +228,10 @@ func (r *MulticlusterRoleAssignmentReconciler) validateClusterSets(ctx context.C
 		}
 
 		if len(missingClusterSetsForRA) > 0 {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypeError,
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonMissingClusterSets,
 				fmt.Sprintf("%s: %v", MessageMissingManagedClusterSets, missingClusterSetsForRA))
 		} else {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending,
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClusterSetValid,
 				MessageManagedClusterSetValidationPassed)
 		}
 	}
@@ -220,7 +243,71 @@ func (r *MulticlusterRoleAssignmentReconciler) validateClusterSets(ctx context.C
 	return nil
 }
 
-// updateStatus performs a complete status update including all conditions and role assignment statuses.
+// TODO: Refactor to improve efficiency - validateClusterSets and discoverManagedClusters both loop over
+
+// discoverManagedClusters discovers all ManagedCluster resources from the specified ManagedClusterSets and returns a
+// deduplicated list of cluster names. Updates role assignment statuses during discovery.
+func (r *MulticlusterRoleAssignmentReconciler) discoverManagedClusters(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) ([]string, error) {
+	log := logf.FromContext(ctx)
+
+	var allClusters []string
+	allClustersMap := make(map[string]bool)
+
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonDiscoveringClusters,
+			MessageDiscoveringTargetClusters)
+
+		var clustersInRA []string
+		for _, clusterSetName := range roleAssignment.ClusterSets {
+			var clusterSet clusterv1beta2.ManagedClusterSet
+			err := r.Get(ctx, client.ObjectKey{Name: clusterSetName}, &clusterSet)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					log.Error(err, "ManagedClusterSet not found during discovery", "clusterSet", clusterSetName)
+					continue
+				}
+				return nil, fmt.Errorf("failed to get ManagedClusterSet %s: %w", clusterSetName, err)
+			}
+
+			var managedClusterList clusterv1.ManagedClusterList
+			labelSelector := client.MatchingLabels{
+				"cluster.open-cluster-management.io/clusterset": clusterSetName,
+			}
+
+			err = r.List(ctx, &managedClusterList, labelSelector)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list ManagedClusters for cluster set %s: %w", clusterSetName, err)
+			}
+
+			var clustersInSet []string
+			for _, cluster := range managedClusterList.Items {
+				clustersInSet = append(clustersInSet, cluster.Name)
+				clustersInRA = append(clustersInRA, cluster.Name)
+				if !allClustersMap[cluster.Name] {
+					allClustersMap[cluster.Name] = true
+					allClusters = append(allClusters, cluster.Name)
+				}
+			}
+
+			log.Info("Discovered clusters for cluster set", "clusterSet", clusterSetName, "clusterCount",
+				len(clustersInSet), "clusters", clustersInSet)
+		}
+
+		if len(clustersInRA) > 0 {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClustersDiscovered,
+				fmt.Sprintf("%s: %v", MessageManagedClustersDiscovered, clustersInRA))
+		} else {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonNoClustersFound,
+				MessageNoClustersFoundInClusterSets)
+		}
+	}
+
+	log.Info("Total unique clusters discovered", "clusterCount", len(allClusters))
+	return allClusters, nil
+}
+
+// updateStatus updates and saves the current status state. It also updates some statuses before saving.
 func (r *MulticlusterRoleAssignmentReconciler) updateStatus(ctx context.Context,
 	mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	r.initializeRoleAssignmentStatuses(mra)
@@ -244,18 +331,19 @@ func (r *MulticlusterRoleAssignmentReconciler) initializeRoleAssignmentStatuses(
 			}
 		}
 		if !found {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StateTypePending, MessageInitializingRoleAssignment)
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonInitializing, MessageInitializingRoleAssignment)
 		}
 	}
 }
 
 // setRoleAssignmentStatus sets a specific role assignment status.
 func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment,
-	name, state, message string) {
+	name, state, reason, message string) {
 	found := false
 	for i, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		if roleAssignmentStatus.Name == name {
 			mra.Status.RoleAssignments[i].Status = state
+			mra.Status.RoleAssignments[i].Reason = reason
 			mra.Status.RoleAssignments[i].Message = message
 			found = true
 			break
@@ -265,6 +353,7 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 		mra.Status.RoleAssignments = append(mra.Status.RoleAssignments, rbacv1alpha1.RoleAssignmentStatus{
 			Name:    name,
 			Status:  state,
+			Reason:  reason,
 			Message: message,
 		})
 	}
@@ -289,11 +378,11 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 
 	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		switch roleAssignmentStatus.Status {
-		case StateTypeError:
+		case StatusTypeError:
 			errorCount++
-		case StateTypeActive:
+		case StatusTypeActive:
 			activeCount++
-		case StateTypePending:
+		case StatusTypePending:
 			pendingCount++
 		}
 	}
@@ -304,7 +393,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 	}
 
 	if pendingCount > 0 {
-		return metav1.ConditionUnknown, ReasonInProgress, fmt.Sprintf("%d out of %d %s", pendingCount,
+		return metav1.ConditionFalse, ReasonInProgress, fmt.Sprintf("%d out of %d %s", pendingCount,
 			len(mra.Status.RoleAssignments), MessageRoleAssignmentsPending)
 	}
 

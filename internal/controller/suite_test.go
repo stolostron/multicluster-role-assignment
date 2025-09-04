@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	// +kubebuilder:scaffold:imports
@@ -61,6 +62,9 @@ var _ = BeforeSuite(func() {
 
 	var err error
 	err = rbacv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clusterv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = clusterv1beta2.AddToScheme(scheme.Scheme)
