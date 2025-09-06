@@ -374,11 +374,14 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *rbac
 // calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
 func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment) (
 	metav1.ConditionStatus, string, string) {
-	var validatedCondition *metav1.Condition
+	var validatedCondition, appliedCondition *metav1.Condition
 
 	for _, condition := range mra.Status.Conditions {
 		if condition.Type == ConditionTypeValidated {
 			validatedCondition = &condition
+		}
+		if condition.Type == ConditionTypeApplied {
+			appliedCondition = &condition
 		}
 	}
 
@@ -386,7 +389,12 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 		return metav1.ConditionFalse, ReasonInvalidSpec, MessageSpecValidationFailed
 	}
 
+	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
+		return metav1.ConditionFalse, ReasonApplyFailed, MessageClusterPermissionFailed
+	}
+
 	var errorCount, activeCount, pendingCount int
+	totalRoleAssignments := len(mra.Status.RoleAssignments)
 
 	for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
 		switch roleAssignmentStatus.Status {
@@ -401,17 +409,17 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(mra *rbac
 
 	if errorCount > 0 {
 		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d %s", errorCount,
-			len(mra.Status.RoleAssignments), MessageRoleAssignmentsFailed)
+			totalRoleAssignments, MessageRoleAssignmentsFailed)
 	}
 
 	if pendingCount > 0 {
 		return metav1.ConditionFalse, ReasonInProgress, fmt.Sprintf("%d out of %d %s", pendingCount,
-			len(mra.Status.RoleAssignments), MessageRoleAssignmentsPending)
+			totalRoleAssignments, MessageRoleAssignmentsPending)
 	}
 
-	if activeCount == len(mra.Status.RoleAssignments) && len(mra.Status.RoleAssignments) > 0 {
-		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("%d out of %d %s", activeCount,
-			len(mra.Status.RoleAssignments), MessageRoleAssignmentsAppliedSuccessfully)
+	if activeCount == totalRoleAssignments && totalRoleAssignments > 0 {
+		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("%d out of %d %s", activeCount, totalRoleAssignments,
+			MessageRoleAssignmentsAppliedSuccessfully)
 	}
 
 	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
@@ -522,7 +530,8 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
 				errorParts = append(errorParts, fmt.Sprintf("%s for cluster %s: %v", MessageClusterPermissionFailed,
 					cluster, err))
 			}
-			finalMessage := strings.Join(errorParts, "; ")
+			finalMessage := fmt.Sprintf("Failed on %d/%d clusters: %s", len(failedClustersForRA),
+				len(failedClustersForRA)+len(successClustersForRA), strings.Join(errorParts, "; "))
 
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonClusterPermissionFailed,
 				finalMessage)

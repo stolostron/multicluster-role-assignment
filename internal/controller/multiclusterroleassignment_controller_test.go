@@ -458,6 +458,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(message).To(Equal(MessageSpecValidationFailed))
 			})
 
+			It("Should return False when Applied condition is False", func() {
+				mra.Status.Conditions[1].Status = metav1.ConditionFalse
+
+				status, reason, message := reconciler.calculateReadyCondition(mra)
+				Expect(status).To(Equal(metav1.ConditionFalse))
+				Expect(reason).To(Equal(ReasonApplyFailed))
+				Expect(message).To(Equal(MessageClusterPermissionFailed))
+			})
+
 			It("Should return False when any role assignment failed", func() {
 				mra.Status.RoleAssignments[1].Status = StatusTypeError
 
@@ -467,7 +476,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(message).To(Equal(fmt.Sprintf("1 out of 2 %s", MessageRoleAssignmentsFailed)))
 			})
 
-			It("Should return Unknown when some role assignments are pending", func() {
+			It("Should return Pending when some role assignments are pending", func() {
 				mra.Status.RoleAssignments[1].Status = StatusTypePending
 				mra.Status.Conditions = mra.Status.Conditions[:1] // Keep only Validated condition
 
@@ -906,7 +915,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
 						Expect(status.Status).To(Equal(StatusTypeError))
 						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
-						Expect(status.Message).To(Equal(fmt.Sprintf("%s for cluster %s: %s; %s for cluster %s: %s",
+						Expect(status.Message).To(Equal(fmt.Sprintf(
+							"Failed on 2/2 clusters: %s for cluster %s: %s; %s for cluster %s: %s",
 							MessageClusterPermissionFailed, cluster1Name, "connection timeout",
 							MessageClusterPermissionFailed, cluster2Name, "permission denied")))
 						found = true
