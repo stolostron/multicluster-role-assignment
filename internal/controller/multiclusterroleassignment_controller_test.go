@@ -552,9 +552,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				var newValidatedCondition, newReadyCondition *metav1.Condition
 				for i, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeValidated {
+					switch condition.Type {
+					case ConditionTypeValidated:
 						newValidatedCondition = &mra.Status.Conditions[i]
-					} else if condition.Type == ConditionTypeReady {
+					case ConditionTypeReady:
 						newReadyCondition = &mra.Status.Conditions[i]
 					}
 				}
@@ -607,7 +608,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					reconciler.clearStaleStatus(mra)
 				}).NotTo(Panic())
 
-				Expect(mra.Status.RoleAssignments).To(HaveLen(0))
+				Expect(mra.Status.RoleAssignments).To(BeEmpty())
 			})
 		})
 
