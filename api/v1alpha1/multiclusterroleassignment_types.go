@@ -48,8 +48,8 @@ type RoleAssignment struct {
 	// +kubebuilder:validation:MinLength=1
 	ClusterRole string `json:"clusterRole"`
 
-	// TargetNamespaces defines what namespaces the role should be applied in.
-	// If TargetNamespaces is not present, the role will be applied to all cluster namespaces.
+	// TargetNamespaces defines what namespaces the role should be applied in for all selected clusters in the role
+	// assignment. If TargetNamespaces is not present, the role will be applied to all clusters' namespaces.
 	// +kubebuilder:validation:Optional
 	TargetNamespaces []string `json:"targetNamespaces,omitempty"`
 
