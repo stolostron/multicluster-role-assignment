@@ -142,8 +142,8 @@ func (in *RoleAssignment) DeepCopyInto(out *RoleAssignment) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.ClusterSets != nil {
-		in, out := &in.ClusterSets, &out.ClusterSets
+	if in.Clusters != nil {
+		in, out := &in.Clusters, &out.Clusters
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
