@@ -424,6 +424,193 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
+		Describe("hasSpecChanged", func() {
+			It("Should return true when no Ready condition exists", func() {
+				mra.Status.Conditions = []metav1.Condition{}
+
+				result := reconciler.hasSpecChanged(mra)
+
+				Expect(result).To(BeTrue())
+			})
+
+			It("Should return true when observed generation differs from current generation", func() {
+				mra.Generation = 2
+				mra.Status.Conditions = []metav1.Condition{
+					{
+						Type:               ConditionTypeReady,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 1,
+					},
+				}
+
+				result := reconciler.hasSpecChanged(mra)
+
+				Expect(result).To(BeTrue())
+			})
+
+			It("Should return false when observed generation matches current generation", func() {
+				mra.Generation = 2
+				mra.Status.Conditions = []metav1.Condition{
+					{
+						Type:               ConditionTypeReady,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 2,
+					},
+				}
+
+				result := reconciler.hasSpecChanged(mra)
+
+				Expect(result).To(BeFalse())
+			})
+
+			It("Should return true when multiple conditions exist but only non-Ready conditions", func() {
+				mra.Generation = 2
+				mra.Status.Conditions = []metav1.Condition{
+					{
+						Type:               ConditionTypeValidated,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 2,
+					},
+					{
+						Type:               ConditionTypeApplied,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 2,
+					},
+				}
+
+				result := reconciler.hasSpecChanged(mra)
+
+				Expect(result).To(BeTrue())
+			})
+		})
+
+		Describe("clearStaleStatus", func() {
+			BeforeEach(func() {
+				mra.Generation = 2
+				mra.Status.Conditions = []metav1.Condition{
+					{
+						Type:               ConditionTypeValidated,
+						Status:             metav1.ConditionTrue,
+						Reason:             ReasonSpecIsValid,
+						Message:            MessageSpecValidationPassed,
+						ObservedGeneration: 1,
+					},
+					{
+						Type:               ConditionTypeApplied,
+						Status:             metav1.ConditionTrue,
+						Reason:             ReasonClusterPermissionApplied,
+						Message:            MessageClusterPermissionApplied,
+						ObservedGeneration: 1,
+					},
+					{
+						Type:               ConditionTypeReady,
+						Status:             metav1.ConditionTrue,
+						Reason:             ReasonAllApplied,
+						Message:            MessageRoleAssignmentsAppliedSuccessfully,
+						ObservedGeneration: 1,
+					},
+				}
+				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+					{
+						Name:    roleAssignment1Name,
+						Status:  StatusTypeActive,
+						Reason:  ReasonClusterPermissionApplied,
+						Message: MessageClusterPermissionApplied,
+					},
+					{
+						Name:    roleAssignment2Name,
+						Status:  StatusTypeActive,
+						Reason:  ReasonClusterPermissionApplied,
+						Message: MessageClusterPermissionApplied,
+					},
+				}
+			})
+
+			It("Should reset Applied condition to Unknown status", func() {
+				reconciler.clearStaleStatus(mra)
+
+				var appliedCondition *metav1.Condition
+				for i, condition := range mra.Status.Conditions {
+					if condition.Type == ConditionTypeApplied {
+						appliedCondition = &mra.Status.Conditions[i]
+						break
+					}
+				}
+
+				Expect(appliedCondition).NotTo(BeNil())
+				Expect(appliedCondition.Status).To(Equal(metav1.ConditionUnknown))
+				Expect(appliedCondition.Reason).To(Equal(ReasonApplyInProgress))
+				Expect(appliedCondition.Message).To(Equal(MessageSpecChangedReEvaluating))
+				Expect(appliedCondition.ObservedGeneration).To(Equal(mra.Generation))
+			})
+
+			It("Should not modify other conditions", func() {
+				originalValidatedCondition := mra.Status.Conditions[0]
+				originalReadyCondition := mra.Status.Conditions[2]
+
+				reconciler.clearStaleStatus(mra)
+
+				var newValidatedCondition, newReadyCondition *metav1.Condition
+				for i, condition := range mra.Status.Conditions {
+					if condition.Type == ConditionTypeValidated {
+						newValidatedCondition = &mra.Status.Conditions[i]
+					} else if condition.Type == ConditionTypeReady {
+						newReadyCondition = &mra.Status.Conditions[i]
+					}
+				}
+
+				Expect(newValidatedCondition.Status).To(Equal(originalValidatedCondition.Status))
+				Expect(newValidatedCondition.Reason).To(Equal(originalValidatedCondition.Reason))
+				Expect(newValidatedCondition.Message).To(Equal(originalValidatedCondition.Message))
+				Expect(newValidatedCondition.ObservedGeneration).To(Equal(originalValidatedCondition.ObservedGeneration))
+
+				Expect(newReadyCondition.Status).To(Equal(originalReadyCondition.Status))
+				Expect(newReadyCondition.Reason).To(Equal(originalReadyCondition.Reason))
+				Expect(newReadyCondition.Message).To(Equal(originalReadyCondition.Message))
+				Expect(newReadyCondition.ObservedGeneration).To(Equal(originalReadyCondition.ObservedGeneration))
+			})
+
+			It("Should reset all role assignment statuses to Pending", func() {
+				reconciler.clearStaleStatus(mra)
+
+				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
+					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypePending))
+					Expect(roleAssignmentStatus.Reason).To(Equal(ReasonInitializing))
+					Expect(roleAssignmentStatus.Message).To(Equal(MessageInitializing))
+				}
+			})
+
+			It("Should handle missing Applied condition gracefully", func() {
+				mra.Status.Conditions = []metav1.Condition{
+					{
+						Type:               ConditionTypeValidated,
+						Status:             metav1.ConditionTrue,
+						Reason:             ReasonSpecIsValid,
+						Message:            MessageSpecValidationPassed,
+						ObservedGeneration: 1,
+					},
+				}
+
+				Expect(func() {
+					reconciler.clearStaleStatus(mra)
+				}).NotTo(Panic())
+
+				Expect(mra.Status.Conditions).To(HaveLen(1))
+				Expect(mra.Status.Conditions[0].Type).To(Equal(ConditionTypeValidated))
+			})
+
+			It("Should handle empty role assignments gracefully", func() {
+				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{}
+
+				Expect(func() {
+					reconciler.clearStaleStatus(mra)
+				}).NotTo(Panic())
+
+				Expect(mra.Status.RoleAssignments).To(HaveLen(0))
+			})
+		})
+
 		Describe("calculateReadyCondition", func() {
 			BeforeEach(func() {
 				mra.Status.Conditions = []metav1.Condition{
