@@ -1,0 +1,35 @@
+---
+globs: *.go
+---
+
+# Go Coding Standards
+
+## General Guidelines:
+
+- Follow standard Go formatting with `gofmt`
+- Use meaningful variable and function names
+- Add comments for exported functions and types
+- Handle errors appropriately - don't ignore them
+- Use context.Context for cancellation and timeouts
+
+## Operator-Specific Patterns:
+
+- Controllers should follow the controller-runtime patterns
+- Use structured logging with the controller-runtime logger
+- Implement proper reconciliation logic with error handling
+- Use client-go patterns for Kubernetes API interactions
+- Follow the operator SDK conventions
+
+## Error Handling:
+
+- Return errors from functions that can fail
+- Wrap errors with context using fmt.Errorf
+- Use appropriate error types for different scenarios
+- Log errors at appropriate levels
+
+## Testing:
+
+- Write unit tests for business logic
+- Use testify/assert for assertions
+- Mock external dependencies properly
+- Test error scenarios and edge cases
