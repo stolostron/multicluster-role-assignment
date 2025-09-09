@@ -283,7 +283,7 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 
 		var missingClustersInRA []string
 
-		for _, cluster := range roleAssignment.Clusters {
+		for _, cluster := range roleAssignment.ClusterSelection.ClusterNames {
 			if allActiveClustersMap[cluster] {
 				continue
 			} else if allMissingClustersMap[cluster] {
@@ -700,7 +700,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
 	roleAssignment rbacv1alpha1.RoleAssignment, cluster string) bool {
 
-	return slices.Contains(roleAssignment.Clusters, cluster)
+	return slices.Contains(roleAssignment.ClusterSelection.ClusterNames, cluster)
 }
 
 // hasSpecChanged checks if the spec has changed since the last reconciliation.

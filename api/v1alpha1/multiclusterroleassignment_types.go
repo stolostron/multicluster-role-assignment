@@ -53,10 +53,21 @@ type RoleAssignment struct {
 	// +kubebuilder:validation:Optional
 	TargetNamespaces []string `json:"targetNamespaces,omitempty"`
 
-	// Clusters defines the clusters where the role should be applied.
+	// ClusterSelection defines the type of cluster selection and the clusters to be selected.
+	// +kubebuilder:validation:Required
+	ClusterSelection ClusterSelection `json:"clusterSelection"`
+}
+
+type ClusterSelection struct {
+	// Type defines the type of cluster selection.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum={clusterNames}
+	Type string `json:"type"`
+
+	// ClusterNames defines the clusters where the role should be applied.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	Clusters []string `json:"clusters"`
+	ClusterNames []string `json:"clusterNames"`
 }
 
 // MulticlusterRoleAssignmentStatus defines the observed state of MulticlusterRoleAssignment.
