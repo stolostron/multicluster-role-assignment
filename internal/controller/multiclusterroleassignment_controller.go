@@ -269,7 +269,7 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Con
 
 		var missingClustersInRA []string
 
-		for _, cluster := range roleAssignment.Clusters {
+		for _, cluster := range roleAssignment.ClusterSelection.ClusterNames {
 			if allActiveClustersMap[cluster] {
 				continue
 			} else if allMissingClustersMap[cluster] {
@@ -685,7 +685,7 @@ func (r *MulticlusterRoleAssignmentReconciler) buildClusterPermissionSpec(
 // isRoleAssignmentTargetingCluster checks if a role assignment targets a specific cluster.
 func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
 	roleAssignment rbacv1alpha1.RoleAssignment, cluster string) bool {
-	return slices.Contains(roleAssignment.Clusters, cluster)
+	return slices.Contains(roleAssignment.ClusterSelection.ClusterNames, cluster)
 }
 
 // isClusterPermissionSpecEqual compares two ClusterPermission specs for equality.

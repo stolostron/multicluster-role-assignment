@@ -52,13 +52,26 @@ spec:
                         assigned.
                       minLength: 1
                       type: string
-                    clusters:
-                      description: Clusters defines the clusters where the role should
-                        be applied.
-                      items:
-                        type: string
-                      minItems: 1
-                      type: array
+                    clusterSelection:
+                      description: ClusterSelection defines the type of cluster selection
+                        and the clusters to be selected.
+                      properties:
+                        clusterNames:
+                          description: ClusterNames defines the clusters where the
+                            role should be applied.
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        type:
+                          description: Type defines the type of cluster selection.
+                          enum:
+                          - clusterNames
+                          type: string
+                      required:
+                      - clusterNames
+                      - type
+                      type: object
                     name:
                       description: Name defines the name of the role assignment.
                       minLength: 1
@@ -72,7 +85,7 @@ spec:
                       type: array
                   required:
                   - clusterRole
-                  - clusters
+                  - clusterSelection
                   - name
                   type: object
                 minItems: 1
