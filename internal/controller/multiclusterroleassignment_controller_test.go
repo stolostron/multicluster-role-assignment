@@ -690,6 +690,66 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(message).To(Equal(MessageStatusCannotBeDetermined))
 			})
 		})
+
+		Describe("updateRoleAssignmentStatuses", func() {
+			It("Should accumulate error messages for multi-cluster failures", func() {
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name, cluster2Name}
+				reconciler.initializeRoleAssignmentStatuses(mra)
+
+				state := &ClusterPermissionProcessingState{
+					FailedClusters: map[string]error{
+						cluster1Name: fmt.Errorf("connection timeout"),
+						cluster2Name: fmt.Errorf("permission denied"),
+					},
+				}
+
+				reconciler.updateRoleAssignmentStatuses(mra, []string{cluster1Name, cluster2Name}, state)
+
+				found := false
+				for _, status := range mra.Status.RoleAssignments {
+					if status.Name == mra.Spec.RoleAssignments[0].Name {
+						Expect(status.Status).To(Equal(StatusTypeError))
+						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
+						Expect(status.Message).To(Equal(fmt.Sprintf(
+							"Failed on 2/2 clusters: %s for cluster %s: %s; %s for cluster %s: %s",
+							MessageClusterPermissionFailed, cluster1Name, "connection timeout",
+							MessageClusterPermissionFailed, cluster2Name, "permission denied")))
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Role assignment should have accumulated error messages")
+			})
+
+			It("Should preserve existing error status from cluster validation", func() {
+				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+					{
+						Name:    mra.Spec.RoleAssignments[0].Name,
+						Status:  StatusTypeError,
+						Reason:  ReasonMissingClusters,
+						Message: "Missing managed clusters: [missing-cluster]",
+					},
+				}
+
+				state := &ClusterPermissionProcessingState{
+					SuccessClusters: []string{cluster1Name},
+				}
+
+				reconciler.updateRoleAssignmentStatuses(mra, []string{cluster1Name}, state)
+
+				found := false
+				for _, status := range mra.Status.RoleAssignments {
+					if status.Name == mra.Spec.RoleAssignments[0].Name {
+						Expect(status.Status).To(Equal(StatusTypeError))
+						Expect(status.Reason).To(Equal(ReasonMissingClusters))
+						Expect(status.Message).To(Equal("Missing managed clusters: [missing-cluster]"))
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Existing error status should be preserved")
+			})
+		})
 	})
 
 	Context("Cluster Aggregation Tests", func() {
@@ -826,136 +886,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
-		Describe("buildClusterPermissionSpec", func() {
-			It("Should create ClusterRoleBinding when target namespaces are not provided", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
-					{
-						Name:        "cluster-admin-role",
-						ClusterRole: "cluster-admin",
-						Clusters:    []string{cluster1Name, "other-cluster"},
-					},
-				}
-
-				spec := reconciler.buildClusterPermissionSpec(mra, cluster1Name)
-
-				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
-				Expect(*spec.ClusterRoleBindings).To(HaveLen(1))
-				Expect(spec.RoleBindings).To(BeNil())
-
-				crb := (*spec.ClusterRoleBindings)[0]
-				Expect(crb.Name).To(Equal("mra-open-cluster-management-global-set-test-multicluster-role-assignment-cluster-admin-role"))
-				Expect(crb.RoleRef.Kind).To(Equal(ClusterRoleKind))
-				Expect(crb.RoleRef.Name).To(Equal("cluster-admin"))
-				Expect(crb.RoleRef.APIGroup).To(Equal(rbacv1.GroupName))
-				Expect(crb.Subjects).To(HaveLen(1))
-				Expect(crb.Subjects[0]).To(Equal(mra.Spec.Subject))
-			})
-
-			It("Should ignore role assignments not targeting the cluster", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
-					{
-						Name:        "other-cluster-role",
-						ClusterRole: "admin",
-						Clusters:    []string{"other-cluster"},
-					},
-				}
-
-				spec := reconciler.buildClusterPermissionSpec(mra, cluster1Name)
-
-				Expect(spec.ClusterRoleBindings).To(BeNil())
-				Expect(spec.RoleBindings).To(BeNil())
-			})
-
-			It("Should create RoleBindings when target namespaces are provided", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
-					{
-						Name:             "namespace-admin-role",
-						ClusterRole:      "admin",
-						Clusters:         []string{cluster1Name},
-						TargetNamespaces: []string{"namespace-1", "namespace-2"},
-					},
-				}
-
-				spec := reconciler.buildClusterPermissionSpec(mra, cluster1Name)
-
-				Expect(spec.RoleBindings).NotTo(BeNil())
-				Expect(*spec.RoleBindings).To(HaveLen(2))
-				Expect(spec.ClusterRoleBindings).To(BeNil())
-
-				expectedBaseName := "mra-open-cluster-management-global-set-test-multicluster-role-assignment-namespace-admin-role"
-				roleBindings := *spec.RoleBindings
-
-				Expect(roleBindings[0].Name).To(Equal(expectedBaseName + "-namespace-1"))
-				Expect(roleBindings[0].Namespace).To(Equal("namespace-1"))
-				Expect(roleBindings[0].RoleRef.Kind).To(Equal(ClusterRoleKind))
-				Expect(roleBindings[0].RoleRef.Name).To(Equal("admin"))
-				Expect(roleBindings[0].RoleRef.APIGroup).To(Equal(rbacv1.GroupName))
-				Expect(roleBindings[0].Subjects).To(ContainElement(mra.Spec.Subject))
-
-				Expect(roleBindings[1].Name).To(Equal(expectedBaseName + "-namespace-2"))
-				Expect(roleBindings[1].Namespace).To(Equal("namespace-2"))
-				Expect(roleBindings[1].RoleRef.Name).To(Equal("admin"))
-				Expect(roleBindings[1].Subjects).To(ContainElement(mra.Spec.Subject))
-			})
-
-			It("Should create both ClusterRoleBindings and RoleBindings", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
-					{
-						Name:        "cluster-wide",
-						ClusterRole: "view",
-						Clusters:    []string{cluster1Name},
-					},
-					{
-						Name:             "namespace-specific",
-						ClusterRole:      "edit",
-						Clusters:         []string{cluster1Name, "other-cluster"},
-						TargetNamespaces: []string{"app-namespace"},
-					},
-				}
-
-				spec := reconciler.buildClusterPermissionSpec(mra, cluster1Name)
-
-				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
-				Expect(*spec.ClusterRoleBindings).To(HaveLen(1))
-				Expect(spec.RoleBindings).NotTo(BeNil())
-				Expect(*spec.RoleBindings).To(HaveLen(1))
-
-				crb := (*spec.ClusterRoleBindings)[0]
-				Expect(crb.Name).To(Equal("mra-open-cluster-management-global-set-test-multicluster-role-assignment-cluster-wide"))
-				Expect(crb.RoleRef.Name).To(Equal("view"))
-
-				rb := (*spec.RoleBindings)[0]
-				Expect(rb.Name).To(Equal("mra-open-cluster-management-global-set-test-multicluster-role-assignment-namespace-specific-app-namespace"))
-				Expect(rb.Namespace).To(Equal("app-namespace"))
-				Expect(rb.RoleRef.Name).To(Equal("edit"))
-			})
-		})
-
-		Describe("ensureClusterPermission", func() {
-			It("Should create new ClusterPermission when none exists", func() {
-				err := reconciler.ensureClusterPermission(ctx, mra, cluster2Name)
-				Expect(err).NotTo(HaveOccurred())
-
-				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
-					Namespace: cluster2Name,
-				}, cp)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cp.Name).To(Equal(ClusterPermissionManagedName))
-				Expect(cp.Namespace).To(Equal(cluster2Name))
-				Expect(cp.Labels[ClusterPermissionManagedByLabel]).To(Equal(ClusterPermissionManagedByValue))
-				Expect(cp.ResourceVersion).NotTo(BeEmpty())
-			})
-
-			It("Should update existing managed ClusterPermission", func() {
-				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
-				initialResourceVersion := cp.ResourceVersion
-				initialSpec := cp.Spec
-
-				// Match role assignment cluster with cluster permission
+		Describe("ensureClusterPermissionAttempt", func() {
+			It("Should create new ClusterPermission with MRA contributions", func() {
 				mra.Spec.RoleAssignments[0].Clusters = []string{cluster2Name}
 
-				err := reconciler.ensureClusterPermission(ctx, mra, cluster2Name)
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -963,15 +898,93 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cp.ResourceVersion).NotTo(Equal(initialResourceVersion))
-				Expect(cp.Spec).NotTo(Equal(initialSpec))
+				Expect(cp.Labels[ClusterPermissionManagedByLabel]).To(Equal(ClusterPermissionManagedByValue))
+
+				Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(1))
+
+				binding := (*cp.Spec.ClusterRoleBindings)[0]
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1")
+				Expect(binding.Name).To(Equal(expectedBindingName))
+				Expect(binding.RoleRef.Name).To(Equal("test-role"))
 			})
 
-			It("Should fail when unmanaged ClusterPermission exists (missing management label)", func() {
-				cp.Labels = nil
+			It("Should update existing ClusterPermission while preserving other MRA contributions", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
+				}
+				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					{
+						Name: "other-binding",
+						RoleRef: &rbacv1.RoleRef{
+							Kind:     ClusterRoleKind,
+							Name:     "other-role",
+							APIGroup: rbacv1.GroupName,
+						},
+						Subjects: []rbacv1.Subject{{Kind: "User", Name: "other-user"}},
+					},
+				}
 				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
 
-				err := reconciler.ensureClusterPermission(ctx, mra, cluster2Name)
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster2Name}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: cluster2Name,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(2))
+
+				Expect(cp.Annotations[OwnerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1")
+				expectedKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
+				Expect(cp.Annotations[expectedKey]).To(Equal(fmt.Sprintf(
+					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)))
+			})
+
+			It("Should handle namespace scoped role assignments (RoleBindings)", func() {
+				mra.Spec.RoleAssignments[0].Name = "namespaced-role"
+				mra.Spec.RoleAssignments[0].ClusterRole = "edit"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster2Name}
+				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"namespace1", "namespace2"}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: cluster2Name,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(cp.Spec.ClusterRoleBindings).To(BeNil())
+				Expect(cp.Spec.RoleBindings).NotTo(BeNil())
+				Expect(*cp.Spec.RoleBindings).To(HaveLen(2))
+
+				expectedBindingName := reconciler.generateBindingName(mra, "namespaced-role")
+				expectedKey1 := reconciler.generateOwnerAnnotationKey(fmt.Sprintf("%s-namespace1", expectedBindingName))
+				expectedKey2 := reconciler.generateOwnerAnnotationKey(fmt.Sprintf("%s-namespace2", expectedBindingName))
+				expectedValue := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
+
+				Expect(cp.Annotations[expectedKey1]).To(Equal(expectedValue))
+				Expect(cp.Annotations[expectedKey2]).To(Equal(expectedValue))
+			})
+
+			It("Should fail when unmanaged ClusterPermission exists", func() {
+				unmanagedCP := &clusterpermissionv1alpha1.ClusterPermission{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ClusterPermissionManagedName,
+						Namespace: cluster2Name,
+					},
+				}
+				Expect(k8sClient.Create(ctx, unmanagedCP)).To(Succeed())
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("not managed by this controller"))
 			})
@@ -1084,63 +1097,516 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
-		Describe("updateRoleAssignmentStatuses", func() {
-			It("Should accumulate error messages for multi-cluster failures", func() {
-				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name, cluster2Name}
-				reconciler.initializeRoleAssignmentStatuses(mra)
+		Describe("generateBindingName", func() {
+			It("Should generate deterministic hash based binding names", func() {
+				bindingName1 := reconciler.generateBindingName(mra, "test-role")
+				bindingName2 := reconciler.generateBindingName(mra, "test-role")
 
-				state := &ClusterPermissionProcessingState{
-					FailedClusters: map[string]error{
-						cluster1Name: fmt.Errorf("connection timeout"),
-						cluster2Name: fmt.Errorf("permission denied"),
-					},
-				}
-
-				reconciler.updateRoleAssignmentStatuses(mra, []string{cluster1Name, cluster2Name}, state)
-
-				found := false
-				for _, status := range mra.Status.RoleAssignments {
-					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
-						Expect(status.Message).To(Equal(fmt.Sprintf(
-							"Failed on 2/2 clusters: %s for cluster %s: %s; %s for cluster %s: %s",
-							MessageClusterPermissionFailed, cluster1Name, "connection timeout",
-							MessageClusterPermissionFailed, cluster2Name, "permission denied")))
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "Role assignment should have accumulated error messages")
+				Expect(bindingName1).To(Equal(bindingName2))
+				Expect(bindingName1).To(HavePrefix("mra-"))
+				// Should be exactly 16 characters: "mra-" (4) + 12-char hash (12) = 16
+				Expect(bindingName1).To(HaveLen(16))
 			})
 
-			It("Should preserve existing error status from cluster validation", func() {
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
-					{
-						Name:    mra.Spec.RoleAssignments[0].Name,
-						Status:  StatusTypeError,
-						Reason:  ReasonMissingClusters,
-						Message: "Missing managed clusters: [missing-cluster]",
+			It("Should generate different names for different inputs", func() {
+				bindingName1 := reconciler.generateBindingName(mra, "admin-role")
+				bindingName2 := reconciler.generateBindingName(mra, "viewer-role")
+
+				Expect(bindingName1).NotTo(Equal(bindingName2))
+				Expect(bindingName1).To(HavePrefix("mra-"))
+				Expect(bindingName2).To(HavePrefix("mra-"))
+			})
+
+			It("Should generate different names for different MRAs", func() {
+				otherMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-mra",
+						Namespace: "other-namespace",
 					},
 				}
 
-				state := &ClusterPermissionProcessingState{
-					SuccessClusters: []string{cluster1Name},
+				bindingName1 := reconciler.generateBindingName(mra, "test-role")
+				bindingName2 := reconciler.generateBindingName(otherMRA, "test-role")
+
+				Expect(bindingName1).NotTo(Equal(bindingName2))
+			})
+		})
+
+		Describe("generateOwnerAnnotationKey", func() {
+			It("Should generate correct annotation key with prefix", func() {
+				bindingName := "mra-abcd1234efgh"
+				key := reconciler.generateOwnerAnnotationKey(bindingName)
+				expected := OwnerAnnotationPrefix + bindingName
+				Expect(key).To(Equal(expected))
+			})
+		})
+
+		Describe("generateMulticlusterRoleAssignmentIdentifier", func() {
+			It("Should generate namespace/name identifier", func() {
+				identifier := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
+				expected := fmt.Sprintf("%s/%s", mra.Namespace, mra.Name)
+				Expect(identifier).To(Equal(expected))
+			})
+		})
+
+		Describe("extractOwnedBindingNames", func() {
+			It("Should extract owned binding names from annotations", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "binding1": fmt.Sprintf(
+						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
+					OwnerAnnotationPrefix + "binding2": "other-namespace/other-mra",
+					OwnerAnnotationPrefix + "binding3": fmt.Sprintf(
+						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
+					"unrelated-annotation": "value",
 				}
 
-				reconciler.updateRoleAssignmentStatuses(mra, []string{cluster1Name}, state)
+				ownedBindings := reconciler.extractOwnedBindingNames(cp, mra)
+				Expect(ownedBindings).To(HaveLen(2))
+				Expect(ownedBindings).To(ContainElements("binding1", "binding3"))
+			})
 
-				found := false
-				for _, status := range mra.Status.RoleAssignments {
-					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonMissingClusters))
-						Expect(status.Message).To(Equal("Missing managed clusters: [missing-cluster]"))
-						found = true
-						break
-					}
+			It("Should return empty list when no annotations exist", func() {
+				cp.Annotations = nil
+
+				ownedBindings := reconciler.extractOwnedBindingNames(cp, mra)
+				Expect(ownedBindings).To(BeEmpty())
+			})
+
+			It("Should return empty list when no owned bindings exist", func() {
+				cp.Annotations = map[string]string{
+					"owner.rbac.open-cluster-management.io/binding1": "other-namespace/other-mra",
+					"unrelated-annotation":                           "value",
 				}
-				Expect(found).To(BeTrue(), "Existing error status should be preserved")
+
+				ownedBindings := reconciler.extractOwnedBindingNames(cp, mra)
+				Expect(ownedBindings).To(BeEmpty())
+			})
+		})
+
+		Describe("calculateDesiredClusterPermissionSlice", func() {
+			It("Should calculate cluster scoped (ClusterRoleBinding) permissions when no target namespaces", func() {
+				mra.Spec.RoleAssignments[0].Name = "cluster-admin-role"
+				mra.Spec.RoleAssignments[0].ClusterRole = "cluster-admin"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name}
+				mra.Spec.RoleAssignments[0].TargetNamespaces = nil
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
+				Expect(slice.RoleBindings).To(BeEmpty())
+				Expect(slice.OwnerAnnotations).To(HaveLen(1))
+
+				binding := slice.ClusterRoleBindings[0]
+				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role")
+				Expect(binding.Name).To(Equal(expectedBindingName))
+				Expect(binding.RoleRef.Name).To(Equal("cluster-admin"))
+				Expect(binding.Subjects).To(HaveLen(1))
+				Expect(binding.Subjects[0].Name).To(Equal("test-user"))
+			})
+
+			It("Should calculate namespace scoped permissions (RoleBinding) when target namespaces specified", func() {
+				mra.Spec.RoleAssignments[0].Name = "namespaced-role1"
+				mra.Spec.RoleAssignments[0].ClusterRole = "admin"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name}
+				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"namespace1", "namespace2"}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.ClusterRoleBindings).To(BeEmpty())
+				Expect(slice.RoleBindings).To(HaveLen(2))
+				Expect(slice.OwnerAnnotations).To(HaveLen(2))
+
+				for _, binding := range slice.RoleBindings {
+					Expect(binding.RoleRef.Name).To(Equal("admin"))
+					Expect(binding.Subjects).To(HaveLen(1))
+					Expect(binding.Subjects[0].Name).To(Equal("test-user"))
+					Expect([]string{"namespace1", "namespace2"}).To(ContainElement(binding.Namespace))
+				}
+			})
+
+			It("Should return empty slice when role assignment does not target cluster", func() {
+				mra.Spec.RoleAssignments[0].Name = "other-cluster-role"
+				mra.Spec.RoleAssignments[0].ClusterRole = "view"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster2Name} // Different cluster
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.ClusterRoleBindings).To(BeEmpty())
+				Expect(slice.RoleBindings).To(BeEmpty())
+				Expect(slice.OwnerAnnotations).To(BeEmpty())
+			})
+
+			It("Should generate correct owner annotations for cluster-scoped permissions", func() {
+				mra.Spec.RoleAssignments[0].Name = "cluster-admin-role"
+				mra.Spec.RoleAssignments[0].ClusterRole = "cluster-admin"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name}
+				mra.Spec.RoleAssignments[0].TargetNamespaces = nil
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.OwnerAnnotations).To(HaveLen(1))
+
+				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role")
+				expectedAnnotationKey := OwnerAnnotationPrefix + expectedBindingName
+				expectedMRAIdentifier := fmt.Sprintf("%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedAnnotationKey, expectedMRAIdentifier))
+			})
+
+			It("Should generate correct owner annotations for namespace scoped permissions", func() {
+				mra.Spec.RoleAssignments[0].Name = "namespaced-role2"
+				mra.Spec.RoleAssignments[0].ClusterRole = "edit"
+				mra.Spec.RoleAssignments[0].Clusters = []string{cluster1Name}
+				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"ns1", "ns2"}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.OwnerAnnotations).To(HaveLen(2))
+
+				baseBindingName := reconciler.generateBindingName(mra, "namespaced-role2")
+				expectedMRAIdentifier := fmt.Sprintf(
+					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+
+				expectedKey1 := OwnerAnnotationPrefix + baseBindingName + "-ns1"
+				expectedKey2 := OwnerAnnotationPrefix + baseBindingName + "-ns2"
+
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey1, expectedMRAIdentifier))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey2, expectedMRAIdentifier))
+			})
+
+			It("Should generate annotations for multiple role assignments targeting same cluster", func() {
+				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "admin-role",
+						ClusterRole: "cluster-admin",
+						Clusters:    []string{cluster1Name},
+					},
+					{
+						Name:             "edit-role",
+						ClusterRole:      "edit",
+						Clusters:         []string{cluster1Name},
+						TargetNamespaces: []string{"development"},
+					},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name)
+
+				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
+				Expect(slice.RoleBindings).To(HaveLen(1))
+				Expect(slice.OwnerAnnotations).To(HaveLen(2))
+
+				expectedMRAIdentifier := fmt.Sprintf(
+					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+
+				adminBindingName := reconciler.generateBindingName(mra, "admin-role")
+				editBindingName := reconciler.generateBindingName(mra, "edit-role")
+
+				expectedAdminKey := OwnerAnnotationPrefix + adminBindingName
+				expectedEditKey := OwnerAnnotationPrefix + editBindingName + "-development"
+
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedAdminKey, expectedMRAIdentifier))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedEditKey, expectedMRAIdentifier))
+			})
+		})
+
+		Describe("extractOthersClusterPermissionSlice", func() {
+			It("Should extract bindings not owned by current MRA", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "cluster-role-binding1": fmt.Sprintf(
+						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
+					OwnerAnnotationPrefix + "cluster-role-binding2": "other-namespace/other-mra",
+					OwnerAnnotationPrefix + "role-binding1": fmt.Sprintf(
+						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
+					OwnerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
+					"unrelated-annotation":                  "value",
+				}
+				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					{Name: "cluster-role-binding1"}, // Owned by current MRA
+					{Name: "cluster-role-binding2"}, // Owned by other MRA
+					{Name: "cluster-role-binding4"}, // Not in annotations (orphan, should get removed)
+				}
+				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+					{Name: "role-binding1", Namespace: "ns1"}, // Owned by current MRA
+					{Name: "role-binding2", Namespace: "ns2"}, // Owned by other MRA
+				}
+
+				slice := reconciler.extractOthersClusterPermissionSlice(cp, mra)
+
+				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
+				Expect(slice.RoleBindings).To(HaveLen(1))
+				Expect(slice.OwnerAnnotations).To(HaveLen(3))
+
+				var allBindingNames []string
+				for _, binding := range slice.ClusterRoleBindings {
+					allBindingNames = append(allBindingNames, binding.Name)
+				}
+				for _, binding := range slice.RoleBindings {
+					allBindingNames = append(allBindingNames, binding.Name)
+				}
+				Expect(allBindingNames).To(ContainElements("cluster-role-binding2", "role-binding2"))
+				Expect(allBindingNames).NotTo(ContainElements(
+					"cluster-role-binding1", "cluster-role-binding4", "role-binding1"))
+			})
+
+			It("Should return empty slice when ClusterPermission is nil", func() {
+				slice := reconciler.extractOthersClusterPermissionSlice(nil, mra)
+
+				Expect(slice.ClusterRoleBindings).To(BeEmpty())
+				Expect(slice.RoleBindings).To(BeEmpty())
+				Expect(slice.OwnerAnnotations).To(BeEmpty())
+			})
+
+			It("Should exclude orphaned bindings with no ownership annotations", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
+					"unrelated-annotation":                    "value",
+				}
+				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					{Name: "tracked-binding"},   // Has ownership annotation
+					{Name: "orphaned-binding1"}, // No ownership annotation
+					{Name: "orphaned-binding2"}, // No ownership annotation
+				}
+				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+					{Name: "orphaned-role-binding"}, // No ownership annotation
+				}
+
+				slice := reconciler.extractOthersClusterPermissionSlice(cp, mra)
+
+				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
+				Expect(slice.ClusterRoleBindings[0].Name).To(Equal("tracked-binding"))
+				Expect(slice.RoleBindings).To(BeEmpty())
+				Expect(slice.OwnerAnnotations).To(HaveLen(2))
+			})
+
+			It("Should preserve annotations from other MRAs while excluding current MRA annotations", func() {
+				currentMRAIdentifier := fmt.Sprintf(
+					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					OwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					OwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra1",
+					OwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra2",
+					OwnerAnnotationPrefix + "other-binding3":   "other-namespace/other-mra3",
+					"unrelated-annotation":                     "should-be-preserved",
+					"another-unrelated":                        "also-preserved",
+				}
+				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					{Name: "current-binding1"},
+					{Name: "other-binding1"},
+					{Name: "other-binding2"},
+				}
+				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+					{Name: "current-binding2", Namespace: "ns1"},
+					{Name: "other-binding3", Namespace: "ns2"},
+				}
+
+				slice := reconciler.extractOthersClusterPermissionSlice(cp, mra)
+
+				Expect(slice.OwnerAnnotations).To(HaveLen(5))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
+					OwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra1"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
+					OwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra2"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
+					OwnerAnnotationPrefix+"other-binding3", "other-namespace/other-mra3"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("unrelated-annotation", "should-be-preserved"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("another-unrelated", "also-preserved"))
+
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding2"))
+			})
+
+			It("Should exclude orphaned annotations that have no corresponding bindings", func() {
+				currentMRAIdentifier := fmt.Sprintf("%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					OwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					OwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra",
+					OwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra",
+					OwnerAnnotationPrefix + "missing-binding1": "other-namespace/other-mra",
+					OwnerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
+					"non-owner-annotation":                     "preserved",
+				}
+				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					{Name: "current-binding1"},
+					{Name: "other-binding1"},
+				}
+				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+					{Name: "current-binding2", Namespace: "ns1"},
+					{Name: "other-binding2", Namespace: "ns2"},
+				}
+
+				slice := reconciler.extractOthersClusterPermissionSlice(cp, mra)
+
+				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
+				Expect(slice.ClusterRoleBindings[0].Name).To(Equal("other-binding1"))
+				Expect(slice.RoleBindings).To(HaveLen(1))
+				Expect(slice.RoleBindings[0].Name).To(Equal("other-binding2"))
+
+				Expect(slice.OwnerAnnotations).To(HaveLen(3))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
+					OwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
+					OwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra"))
+				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("non-owner-annotation", "preserved"))
+
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "missing-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "missing-binding2"))
+
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding2"))
+			})
+		})
+
+		Describe("mergeClusterPermissionSpecs", func() {
+			It("Should merge ClusterRoleBindings from both slices", func() {
+				others := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "other-binding1"},
+						{Name: "other-binding2"},
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "desired-binding1"},
+					},
+				}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*spec.ClusterRoleBindings).To(HaveLen(3))
+
+				var bindingNames []string
+				for _, binding := range *spec.ClusterRoleBindings {
+					bindingNames = append(bindingNames, binding.Name)
+				}
+				Expect(bindingNames).To(ContainElements("other-binding1", "other-binding2", "desired-binding1"))
+			})
+
+			It("Should merge RoleBindings from both slices", func() {
+				others := ClusterPermissionBindingSlice{
+					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+						{Name: "other-role-binding1"},
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+						{Name: "desired-role-binding1"},
+						{Name: "desired-role-binding2"},
+					},
+				}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.RoleBindings).NotTo(BeNil())
+				Expect(*spec.RoleBindings).To(HaveLen(3))
+			})
+
+			It("Should handle empty slices", func() {
+				others := ClusterPermissionBindingSlice{}
+				desired := ClusterPermissionBindingSlice{}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.ClusterRoleBindings).To(BeNil())
+				Expect(spec.RoleBindings).To(BeNil())
+			})
+
+			It("Should merge both ClusterRoleBindings and RoleBindings together", func() {
+				others := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "other-cluster-binding1"},
+						{Name: "other-cluster-binding2"},
+					},
+					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+						{Name: "other-role-binding1", Namespace: "ns1"},
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "desired-cluster-binding1"},
+					},
+					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+						{Name: "desired-role-binding1", Namespace: "ns2"},
+						{Name: "desired-role-binding2", Namespace: "ns3"},
+					},
+				}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*spec.ClusterRoleBindings).To(HaveLen(3))
+				Expect(spec.RoleBindings).NotTo(BeNil())
+				Expect(*spec.RoleBindings).To(HaveLen(3))
+
+				var clusterBindingNames []string
+				for _, binding := range *spec.ClusterRoleBindings {
+					clusterBindingNames = append(clusterBindingNames, binding.Name)
+				}
+				Expect(clusterBindingNames).To(ContainElements(
+					"other-cluster-binding1", "other-cluster-binding2", "desired-cluster-binding1"))
+
+				var roleBindingNames []string
+				for _, binding := range *spec.RoleBindings {
+					roleBindingNames = append(roleBindingNames, binding.Name)
+				}
+				Expect(roleBindingNames).To(ContainElements(
+					"other-role-binding1", "desired-role-binding1", "desired-role-binding2"))
+			})
+		})
+
+		Describe("mergeClusterPermissionAnnotations", func() {
+			It("Should merge annotations from both slices", func() {
+				others := ClusterPermissionBindingSlice{
+					OwnerAnnotations: map[string]string{
+						OwnerAnnotationPrefix + "binding1": "other/mra1",
+						OwnerAnnotationPrefix + "binding2": "other/mra2",
+						"unrelated-annotation":             "value",
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					OwnerAnnotations: map[string]string{
+						OwnerAnnotationPrefix + "binding3": "current/mra",
+						OwnerAnnotationPrefix + "binding4": "current/mra",
+					},
+				}
+
+				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
+
+				Expect(annotations).To(HaveLen(5))
+				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("other/mra1"))
+				Expect(annotations[OwnerAnnotationPrefix+"binding2"]).To(Equal("other/mra2"))
+				Expect(annotations[OwnerAnnotationPrefix+"binding3"]).To(Equal("current/mra"))
+				Expect(annotations[OwnerAnnotationPrefix+"binding4"]).To(Equal("current/mra"))
+				Expect(annotations["unrelated-annotation"]).To(Equal("value"))
+			})
+
+			It("Should handle empty annotation maps", func() {
+				others := ClusterPermissionBindingSlice{OwnerAnnotations: map[string]string{}}
+				desired := ClusterPermissionBindingSlice{OwnerAnnotations: map[string]string{}}
+
+				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
+
+				Expect(annotations).To(BeEmpty())
+			})
+
+			It("Should overwrite duplicate keys with desired values", func() {
+				others := ClusterPermissionBindingSlice{
+					OwnerAnnotations: map[string]string{
+						OwnerAnnotationPrefix + "binding1": "other/mra",
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					OwnerAnnotations: map[string]string{
+						OwnerAnnotationPrefix + "binding1": "current/mra",
+					},
+				}
+
+				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
+
+				Expect(annotations).To(HaveLen(1))
+				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
 		})
 	})
