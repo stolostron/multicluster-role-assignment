@@ -22,11 +22,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 
+	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	"github.com/stolostron/multicluster-role-assignment/test/utils"
 )
 
@@ -41,6 +47,12 @@ const metricsServiceName = "multicluster-role-assignment-controller-manager-metr
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
 const metricsRoleBindingName = "multicluster-role-assignment-metrics-binding"
+
+// openClusterManagementGlobalSetNamespace is the namespace for all MulticlusterRoleAssignments
+const openClusterManagementGlobalSetNamespace = "open-cluster-management-global-set"
+
+// testMulticlusterRoleAssignmentName is the name of the test MulticlusterRoleAssignment
+const testMulticlusterRoleAssignmentName = "test-multicluster-role-assignment"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -65,6 +77,40 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
+		By("applying the external CRDs required for all tests")
+		cmd = exec.Command("kubectl", "apply", "-f", "test/crd/")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By(fmt.Sprintf("creating the %s namespace", openClusterManagementGlobalSetNamespace))
+		cmd = exec.Command("kubectl", "create", "ns", openClusterManagementGlobalSetNamespace)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating managed cluster namespaces and ManagedClusters")
+		for i := 1; i <= 3; i++ {
+			clusterName := fmt.Sprintf("managedcluster%02d", i)
+
+			By(fmt.Sprintf("creating the %s namespace", clusterName))
+			cmd = exec.Command("kubectl", "create", "ns", clusterName)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By(fmt.Sprintf("creating ManagedCluster %s", clusterName))
+			managedClusterTemplate, err := os.ReadFile("test/testdata/managedcluster-template.yaml")
+			Expect(err).NotTo(HaveOccurred())
+
+			managedCluster := strings.ReplaceAll(
+				string(managedClusterTemplate), "CLUSTER_NAME_PLACEHOLDER", clusterName)
+			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
+			err = os.WriteFile(managedClusterFile, []byte(managedCluster), os.FileMode(0o644))
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "apply", "-f", managedClusterFile)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		}
+
 		By("deploying the controller-manager")
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
 		_, err = utils.Run(cmd)
@@ -76,6 +122,22 @@ var _ = Describe("Manager", Ordered, func() {
 	AfterAll(func() {
 		By("cleaning up the curl pod for metrics")
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
+		_, _ = utils.Run(cmd)
+
+		By("cleaning up managed clusters and namespaces")
+		for i := 1; i <= 3; i++ {
+			clusterName := fmt.Sprintf("managedcluster%02d", i)
+			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
+
+			cmd := exec.Command("kubectl", "delete", "-f", managedClusterFile)
+			_, _ = utils.Run(cmd)
+
+			cmd = exec.Command("kubectl", "delete", "ns", clusterName)
+			_, _ = utils.Run(cmd)
+		}
+
+		By(fmt.Sprintf("cleaning up %s namespace", openClusterManagementGlobalSetNamespace))
+		cmd = exec.Command("kubectl", "delete", "ns", openClusterManagementGlobalSetNamespace)
 		_, _ = utils.Run(cmd)
 
 		By("undeploying the controller-manager")
@@ -95,6 +157,24 @@ var _ = Describe("Manager", Ordered, func() {
 	// and pod descriptions for debugging.
 	AfterEach(func() {
 		specReport := CurrentSpecReport()
+
+		// Skip error checking for tests that expect controller errors. To skip error checking for a specific test, add
+		// the "allows-errors" label: It("should handle invalid input", Label("allows-errors"), func() { ... })
+		if !slices.Contains(specReport.Labels(), "allows-errors") {
+			By("Checking controller logs for errors")
+			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+			controllerLogs, err := utils.Run(cmd)
+			if err == nil {
+				lowerLogs := strings.ToLower(controllerLogs)
+				// Set max length to 0 for this specific assertion to avoid truncation
+				originalMaxLength := format.MaxLength
+				format.MaxLength = 0
+				Expect(lowerLogs).NotTo(ContainSubstring("error"), "Controller logs should not contain errors")
+				format.MaxLength = originalMaxLength
+			}
+		}
+
+		specReport = CurrentSpecReport()
 		if specReport.Failed() {
 			By("Fetching controller manager pod logs")
 			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
@@ -259,16 +339,86 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput := getMetricsOutput()
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+		It("should create ClusterPermission when MulticlusterRoleAssignment is created", func() {
+			var clusterPermissionJSON string
+
+			By("creating a MulticlusterRoleAssignment with one RoleAssignment")
+			cmd := exec.Command(
+				"kubectl", "apply", "-f", "config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for ClusterPermission to be created and fetching it")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl",
+					"get", "clusterpermissions", "mra-managed-permissions", "-n", "managedcluster01", "-o", "json")
+				clusterPermissionJSON, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(clusterPermissionJSON).NotTo(BeEmpty())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying ClusterPermission has correct ClusterRoleBinding")
+			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+			err = json.Unmarshal([]byte(clusterPermissionJSON), &clusterPermission)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
+			clusterRoleBinding := (*clusterPermission.Spec.ClusterRoleBindings)[0]
+			Expect(clusterRoleBinding.RoleRef.Name).To(Equal("view"))
+			Expect(clusterRoleBinding.Subjects).To(HaveLen(1))
+			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal("test-user"))
+
+			By("verifying MulticlusterRoleAssignment status is updated")
+			var mraJSON string
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "multiclusterroleassignment",
+					testMulticlusterRoleAssignmentName, "-n", openClusterManagementGlobalSetNamespace, "-o", "json")
+				mraJSON, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(mraJSON).NotTo(BeEmpty())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying all MulticlusterRoleAssignment conditions and statuses")
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			err = json.Unmarshal([]byte(mraJSON), &mra)
+			Expect(err).NotTo(HaveOccurred())
+
+			readyCondition := findCondition(mra.Status.Conditions, "Ready")
+			Expect(readyCondition).NotTo(BeNil())
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCondition.Reason).To(Equal("AllApplied"))
+
+			Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+			roleAssignmentStatus := mra.Status.RoleAssignments[0]
+
+			Expect(roleAssignmentStatus.Name).To(Equal("test-role-assignment"))
+			Expect(roleAssignmentStatus.Status).NotTo(BeEmpty())
+
+			Expect(roleAssignmentStatus.Status).To(BeElementOf([]string{"Pending", "Active", "Error"}))
+
+			for _, condition := range mra.Status.Conditions {
+				Expect(condition.Type).NotTo(BeEmpty())
+				Expect(condition.Status).NotTo(BeEmpty())
+				Expect(condition.LastTransitionTime).NotTo(BeNil())
+			}
+
+			By("cleaning up test MulticlusterRoleAssignment")
+			cmd = exec.Command(
+				"kubectl", "delete", "-f", "config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
+			_, _ = utils.Run(cmd)
+		})
 	})
 })
+
+// findCondition finds a condition by type in a slice of conditions
+func findCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly sending a request

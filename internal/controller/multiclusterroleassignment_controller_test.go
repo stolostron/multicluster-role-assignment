@@ -430,66 +430,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
-		Describe("hasSpecChanged", func() {
-			It("Should return true when no Ready condition exists", func() {
-				mra.Status.Conditions = []metav1.Condition{}
-
-				result := reconciler.hasSpecChanged(mra)
-
-				Expect(result).To(BeTrue())
-			})
-
-			It("Should return true when observed generation differs from current generation", func() {
-				mra.Generation = 2
-				mra.Status.Conditions = []metav1.Condition{
-					{
-						Type:               ConditionTypeReady,
-						Status:             metav1.ConditionTrue,
-						ObservedGeneration: 1,
-					},
-				}
-
-				result := reconciler.hasSpecChanged(mra)
-
-				Expect(result).To(BeTrue())
-			})
-
-			It("Should return false when observed generation matches current generation", func() {
-				mra.Generation = 2
-				mra.Status.Conditions = []metav1.Condition{
-					{
-						Type:               ConditionTypeReady,
-						Status:             metav1.ConditionTrue,
-						ObservedGeneration: 2,
-					},
-				}
-
-				result := reconciler.hasSpecChanged(mra)
-
-				Expect(result).To(BeFalse())
-			})
-
-			It("Should return true when multiple conditions exist but only non-Ready conditions", func() {
-				mra.Generation = 2
-				mra.Status.Conditions = []metav1.Condition{
-					{
-						Type:               ConditionTypeValidated,
-						Status:             metav1.ConditionTrue,
-						ObservedGeneration: 2,
-					},
-					{
-						Type:               ConditionTypeApplied,
-						Status:             metav1.ConditionTrue,
-						ObservedGeneration: 2,
-					},
-				}
-
-				result := reconciler.hasSpecChanged(mra)
-
-				Expect(result).To(BeTrue())
-			})
-		})
-
 		Describe("clearStaleStatus", func() {
 			BeforeEach(func() {
 				mra.Generation = 2
