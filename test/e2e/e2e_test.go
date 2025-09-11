@@ -77,7 +77,7 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
-		By("applying the external CRDs required for all tests")
+		By("installing the external CRDs required for all tests")
 		cmd = exec.Command("kubectl", "apply", "-f", "test/crd/")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
@@ -153,13 +153,13 @@ var _ = Describe("Manager", Ordered, func() {
 		_, _ = utils.Run(cmd)
 	})
 
-	// After each test, check for failures and collect logs, events,
-	// and pod descriptions for debugging.
 	AfterEach(func() {
 		specReport := CurrentSpecReport()
 
 		// Skip error checking for tests that expect controller errors. To skip error checking for a specific test, add
-		// the "allows-errors" label: It("should handle invalid input", Label("allows-errors"), func() { ... })
+		// the "allows-errors" label: It("should handle invalid input", Label("allows-errors"), func() { ... }). Since
+		// error logs will remain in the controller logs from all tests, we should put expected error tests at the end
+		// of all success tests, or we have to rethink how we check for errors.
 		if !slices.Contains(specReport.Labels(), "allows-errors") {
 			By("Checking controller logs for errors")
 			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
@@ -174,7 +174,7 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 		}
 
-		specReport = CurrentSpecReport()
+		// After each test, check for failures and collect logs, events, and pod descriptions for debugging.
 		if specReport.Failed() {
 			By("Fetching controller manager pod logs")
 			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
@@ -211,6 +211,18 @@ var _ = Describe("Manager", Ordered, func() {
 			} else {
 				fmt.Println("Failed to describe controller pod")
 			}
+		}
+
+		By("cleaning up any existing MulticlusterRoleAssignments")
+		cmd := exec.Command(
+			"kubectl", "delete", "multiclusterroleassignments", "--all", "-n", openClusterManagementGlobalSetNamespace)
+		_, _ = utils.Run(cmd)
+
+		By("cleaning up any existing ClusterPermissions")
+		for i := 1; i <= 3; i++ {
+			clusterName := fmt.Sprintf("managedcluster%02d", i)
+			cmd := exec.Command("kubectl", "delete", "clusterpermissions", "--all", "-n", clusterName)
+			_, _ = utils.Run(cmd)
 		}
 	})
 
@@ -368,7 +380,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(clusterRoleBinding.Subjects).To(HaveLen(1))
 			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal("test-user"))
 
-			By("verifying MulticlusterRoleAssignment status is updated")
+			By("fetching MulticlusterRoleAssignment to check status")
 			var mraJSON string
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "multiclusterroleassignment",
@@ -388,24 +400,18 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCondition.Reason).To(Equal("AllApplied"))
 
+			appliedCondition := findCondition(mra.Status.Conditions, "Applied")
+			Expect(appliedCondition).NotTo(BeNil())
+			Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(appliedCondition.Reason).To(Equal("ClusterPermissionApplied"))
+
 			Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 			roleAssignmentStatus := mra.Status.RoleAssignments[0]
 
 			Expect(roleAssignmentStatus.Name).To(Equal("test-role-assignment"))
-			Expect(roleAssignmentStatus.Status).NotTo(BeEmpty())
-
-			Expect(roleAssignmentStatus.Status).To(BeElementOf([]string{"Pending", "Active", "Error"}))
-
-			for _, condition := range mra.Status.Conditions {
-				Expect(condition.Type).NotTo(BeEmpty())
-				Expect(condition.Status).NotTo(BeEmpty())
-				Expect(condition.LastTransitionTime).NotTo(BeNil())
-			}
-
-			By("cleaning up test MulticlusterRoleAssignment")
-			cmd = exec.Command(
-				"kubectl", "delete", "-f", "config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
-			_, _ = utils.Run(cmd)
+			Expect(roleAssignmentStatus.Status).To(Equal("Active"))
+			Expect(roleAssignmentStatus.Reason).To(Equal("ClusterPermissionApplied"))
+			Expect(roleAssignmentStatus.Message).To(Equal("ClusterPermission applied successfully"))
 		})
 	})
 })
