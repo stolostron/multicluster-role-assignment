@@ -1,0 +1,62 @@
+apiVersion: rbac.open-cluster-management.io/v1alpha1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: test-multicluster-role-assignment-multiple-2
+  namespace: open-cluster-management-global-set
+spec:
+  subject:
+    kind: User
+    name: test-user-multiple-2
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+  - name: admin-assignment-cluster-1
+    clusterRole: admin
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster01
+  - name: view-assignment-all-clusters
+    clusterRole: view
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster01
+      - managedcluster02
+      - managedcluster03
+  - name: edit-assignment-single-namespace
+    clusterRole: edit
+    targetNamespaces:
+    - default
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster02
+  - name: monitoring-assignment-multi-namespace-single-cluster
+    clusterRole: system:monitoring
+    targetNamespaces:
+    - monitoring
+    - observability
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster03
+  - name: dev-assignment-single-namespace-multi-cluster
+    clusterRole: edit
+    targetNamespaces:
+    - development
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster01
+      - managedcluster02
+  - name: logging-assignment-multi-namespace-multi-cluster
+    clusterRole: view
+    targetNamespaces:
+    - logging
+    - kube-system
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster01
+      - managedcluster02
+      - managedcluster03

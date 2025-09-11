@@ -1,12 +1,12 @@
 apiVersion: rbac.open-cluster-management.io/v1alpha1
 kind: MulticlusterRoleAssignment
 metadata:
-  name: test-multicluster-role-assignment-multiple
+  name: test-multicluster-role-assignment-multiple-1
   namespace: open-cluster-management-global-set
 spec:
   subject:
     kind: User
-    name: test-user-multiple
+    name: test-user-multiple-1
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
   - name: view-assignment-namespaced-clusters-1-2

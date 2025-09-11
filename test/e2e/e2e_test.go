@@ -51,12 +51,21 @@ const metricsRoleBindingName = "multicluster-role-assignment-metrics-binding"
 // openClusterManagementGlobalSetNamespace is the namespace for all MulticlusterRoleAssignments
 const openClusterManagementGlobalSetNamespace = "open-cluster-management-global-set"
 
-// testMulticlusterRoleAssignmentSingleName is the name of the test MulticlusterRoleAssignment with a single assignment
-const testMulticlusterRoleAssignmentSingleName = "test-multicluster-role-assignment-single"
+// testMulticlusterRoleAssignmentSingleCRBName is the name of the test MulticlusterRoleAssignment with a single cluster
+// role binding single assignment
+const testMulticlusterRoleAssignmentSingleCRBName = "test-multicluster-role-assignment-single-clusterrolebinding"
 
-// testMulticlusterRoleAssignmentMultipleName is the name of the test MulticlusterRoleAssignment with multiple
-// assignments
-const testMulticlusterRoleAssignmentMultipleName = "test-multicluster-role-assignment-multiple"
+// testMulticlusterRoleAssignmentSingleRBName is the name of the test MulticlusterRoleAssignment with a single
+// role binding single assignment
+const testMulticlusterRoleAssignmentSingleRBName = "test-multicluster-role-assignment-single-rolebinding"
+
+// testMulticlusterRoleAssignmentMultipleName is the name of the test MulticlusterRoleAssignment with multiple mixed
+// assignments - #1
+const testMulticlusterRoleAssignmentMultiple1Name = "test-multicluster-role-assignment-multiple-1"
+
+// testMulticlusterRoleAssignmentMultipleName is the name of the test MulticlusterRoleAssignment with multiple mixed
+// assignments - #2
+const testMulticlusterRoleAssignmentMultiple2Name = "test-multicluster-role-assignment-multiple-2"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -343,12 +352,14 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		Context("should create single ClusterPermission when MulticlusterRoleAssignment is created", func() {
+		Context("should create single ClusterPermission with single ClusterRoleBinding when "+
+			"MulticlusterRoleAssignment is created", func() {
+
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleName, []string{"managedcluster01"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("resource creation and fetching", func() {
@@ -356,14 +367,14 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for controller to process the MulticlusterRoleAssignment")
 					time.Sleep(2 * time.Second)
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
-						testMulticlusterRoleAssignmentSingleName, openClusterManagementGlobalSetNamespace)
+						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
 
 					By("unmarshaling MulticlusterRoleAssignment json")
 					unmarshalJSON(mraJSON, &mra)
@@ -388,7 +399,8 @@ var _ = Describe("Manager", Ordered, func() {
 					expectedBindings := []ExpectedBinding{
 						{RoleName: "view", Namespace: ""},
 					}
-					validateClusterPermissionBindings(clusterPermission, "test-user", expectedBindings)
+					validateClusterPermissionBindings(
+						clusterPermission, "test-user-single-clusterrolebinding", expectedBindings)
 				})
 			})
 
@@ -408,13 +420,86 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
+		Context("should create single ClusterPermission with single RoleBinding when MulticlusterRoleAssignment "+
+			"is created", func() {
+
+			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+			})
+
+			Context("resource creation and fetching", func() {
+				var clusterPermissionJSON, mraJSON string
+
+				It("should create and fetch MulticlusterRoleAssignment", func() {
+					By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
+
+					By("waiting for controller to process the MulticlusterRoleAssignment")
+					time.Sleep(2 * time.Second)
+
+					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleRBName, openClusterManagementGlobalSetNamespace)
+
+					By("unmarshaling MulticlusterRoleAssignment json")
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch ClusterPermission", func() {
+					By("waiting for ClusterPermission to be created and fetching it")
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
+						"mra-managed-permissions", "managedcluster02")
+
+					By("unmarshaling ClusterPermission json")
+					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
+				})
+			})
+
+			Context("ClusterPermission validation", func() {
+				It("should have correct RoleBindings", func() {
+					By("verifying ClusterPermission has correct RoleBindings")
+					Expect(clusterPermission.Spec.ClusterRoleBindings).To(BeNil())
+					Expect(clusterPermission.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission.Spec.RoleBindings).To(HaveLen(5))
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "edit", Namespace: "default"},
+						{RoleName: "edit", Namespace: "kube-system"},
+						{RoleName: "edit", Namespace: "monitoring"},
+						{RoleName: "edit", Namespace: "observability"},
+						{RoleName: "edit", Namespace: "logging"},
+					}
+					validateClusterPermissionBindings(
+						clusterPermission, "test-user-single-rolebinding", expectedBindings)
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation", func() {
+				It("should have correct conditions", func() {
+					By("verifying MulticlusterRoleAssignment conditions")
+					validateMRASuccessConditions(mra)
+				})
+
+				It("should have correct role assignment status", func() {
+					By("verifying role assignment status details")
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+
+					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment-namespaced")
+				})
+			})
+		})
+
 		Context("should create multiple ClusterPermissions across different clusters", func() {
 			var clusterPermission01, clusterPermission02,
 				clusterPermission03 clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentMultipleName, []string{
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
 					"managedcluster01", "managedcluster02", "managedcluster03"})
 			})
 
@@ -424,14 +509,14 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple.yaml")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("waiting for controller to process the MulticlusterRoleAssignment")
 					time.Sleep(2 * time.Second)
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
-						testMulticlusterRoleAssignmentMultipleName, openClusterManagementGlobalSetNamespace)
+						testMulticlusterRoleAssignmentMultiple1Name, openClusterManagementGlobalSetNamespace)
 
 					By("unmarshaling MulticlusterRoleAssignment json")
 					unmarshalJSON(mraJSON, &mra)
@@ -469,7 +554,7 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "system:monitoring", Namespace: "monitoring"},
 						{RoleName: "system:monitoring", Namespace: "observability"},
 					}
-					validateClusterPermissionBindings(clusterPermission01, "test-user-multiple", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission01, "test-user-multiple-1", expectedBindings)
 				})
 
 				It("should have correct content for managedcluster02", func() {
@@ -484,7 +569,7 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "system:monitoring", Namespace: "monitoring"},
 						{RoleName: "system:monitoring", Namespace: "observability"},
 					}
-					validateClusterPermissionBindings(clusterPermission02, "test-user-multiple", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission02, "test-user-multiple-1", expectedBindings)
 				})
 
 				It("should have correct content for managedcluster03", func() {
@@ -499,7 +584,7 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "system:monitoring", Namespace: "monitoring"},
 						{RoleName: "system:monitoring", Namespace: "observability"},
 					}
-					validateClusterPermissionBindings(clusterPermission03, "test-user-multiple", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission03, "test-user-multiple-1", expectedBindings)
 				})
 			})
 
@@ -575,7 +660,8 @@ func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alph
 			}
 		}
 
-		Expect(found).To(BeTrue())
+		Expect(found).To(BeTrue(), fmt.Sprintf("Expected binding with role %s and namespace %s not found",
+			expected.RoleName, expected.Namespace))
 	}
 }
 
