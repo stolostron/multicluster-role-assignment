@@ -51,8 +51,12 @@ const metricsRoleBindingName = "multicluster-role-assignment-metrics-binding"
 // openClusterManagementGlobalSetNamespace is the namespace for all MulticlusterRoleAssignments
 const openClusterManagementGlobalSetNamespace = "open-cluster-management-global-set"
 
-// testMulticlusterRoleAssignmentName is the name of the test MulticlusterRoleAssignment
-const testMulticlusterRoleAssignmentName = "test-multicluster-role-assignment"
+// testMulticlusterRoleAssignmentSingleName is the name of the test MulticlusterRoleAssignment with a single assignment
+const testMulticlusterRoleAssignmentSingleName = "test-multicluster-role-assignment-single"
+
+// testMulticlusterRoleAssignmentMultipleName is the name of the test MulticlusterRoleAssignment with multiple
+// assignments
+const testMulticlusterRoleAssignmentMultipleName = "test-multicluster-role-assignment-multiple"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -212,18 +216,6 @@ var _ = Describe("Manager", Ordered, func() {
 				fmt.Println("Failed to describe controller pod")
 			}
 		}
-
-		By("cleaning up any existing MulticlusterRoleAssignments")
-		cmd := exec.Command(
-			"kubectl", "delete", "multiclusterroleassignments", "--all", "-n", openClusterManagementGlobalSetNamespace)
-		_, _ = utils.Run(cmd)
-
-		By("cleaning up any existing ClusterPermissions")
-		for i := 1; i <= 3; i++ {
-			clusterName := fmt.Sprintf("managedcluster%02d", i)
-			cmd := exec.Command("kubectl", "delete", "clusterpermissions", "--all", "-n", clusterName)
-			_, _ = utils.Run(cmd)
-		}
 	})
 
 	SetDefaultEventuallyTimeout(2 * time.Minute)
@@ -351,72 +343,264 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		It("should create ClusterPermission when MulticlusterRoleAssignment is created", func() {
-			var clusterPermissionJSON string
-
-			By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-			cmd := exec.Command(
-				"kubectl", "apply", "-f", "config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("waiting for ClusterPermission to be created and fetching it")
-			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl",
-					"get", "clusterpermissions", "mra-managed-permissions", "-n", "managedcluster01", "-o", "json")
-				clusterPermissionJSON, err = utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(clusterPermissionJSON).NotTo(BeEmpty())
-			}, 2*time.Minute).Should(Succeed())
-
-			By("verifying ClusterPermission has correct ClusterRoleBinding")
+		Context("should create single ClusterPermission when MulticlusterRoleAssignment is created", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			err = json.Unmarshal([]byte(clusterPermissionJSON), &clusterPermission)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
-			clusterRoleBinding := (*clusterPermission.Spec.ClusterRoleBindings)[0]
-			Expect(clusterRoleBinding.RoleRef.Name).To(Equal("view"))
-			Expect(clusterRoleBinding.Subjects).To(HaveLen(1))
-			Expect(clusterRoleBinding.Subjects[0].Name).To(Equal("test-user"))
-
-			By("fetching MulticlusterRoleAssignment to check status")
-			var mraJSON string
-			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "multiclusterroleassignment",
-					testMulticlusterRoleAssignmentName, "-n", openClusterManagementGlobalSetNamespace, "-o", "json")
-				mraJSON, err = utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(mraJSON).NotTo(BeEmpty())
-			}, 2*time.Minute).Should(Succeed())
-
-			By("verifying all MulticlusterRoleAssignment conditions and statuses")
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
-			err = json.Unmarshal([]byte(mraJSON), &mra)
-			Expect(err).NotTo(HaveOccurred())
 
-			readyCondition := findCondition(mra.Status.Conditions, "Ready")
-			Expect(readyCondition).NotTo(BeNil())
-			Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCondition.Reason).To(Equal("AllApplied"))
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleName, []string{"managedcluster01"})
+			})
 
-			appliedCondition := findCondition(mra.Status.Conditions, "Applied")
-			Expect(appliedCondition).NotTo(BeNil())
-			Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(appliedCondition.Reason).To(Equal("ClusterPermissionApplied"))
+			Context("resource creation and fetching", func() {
+				var clusterPermissionJSON, mraJSON string
 
-			Expect(mra.Status.RoleAssignments).To(HaveLen(1))
-			roleAssignmentStatus := mra.Status.RoleAssignments[0]
+				It("should create and fetch MulticlusterRoleAssignment", func() {
+					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single.yaml")
 
-			Expect(roleAssignmentStatus.Name).To(Equal("test-role-assignment"))
-			Expect(roleAssignmentStatus.Status).To(Equal("Active"))
-			Expect(roleAssignmentStatus.Reason).To(Equal("ClusterPermissionApplied"))
-			Expect(roleAssignmentStatus.Message).To(Equal("ClusterPermission applied successfully"))
+					By("waiting for controller to process the MulticlusterRoleAssignment")
+					time.Sleep(2 * time.Second)
+
+					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleName, openClusterManagementGlobalSetNamespace)
+
+					By("unmarshaling MulticlusterRoleAssignment json")
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch ClusterPermission", func() {
+					By("waiting for ClusterPermission to be created and fetching it")
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
+						"mra-managed-permissions", "managedcluster01")
+
+					By("unmarshaling ClusterPermission json")
+					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
+				})
+			})
+
+			Context("ClusterPermission validation", func() {
+				It("should have correct ClusterRoleBinding", func() {
+					By("verifying ClusterPermission has correct ClusterRoleBinding")
+					Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "view", Namespace: ""},
+					}
+					validateClusterPermissionBindings(clusterPermission, "test-user", expectedBindings)
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation", func() {
+				It("should have correct conditions", func() {
+					By("verifying MulticlusterRoleAssignment conditions")
+					validateMRASuccessConditions(mra)
+				})
+
+				It("should have correct role assignment status", func() {
+					By("verifying role assignment status details")
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+
+					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
+				})
+			})
+		})
+
+		Context("should create multiple ClusterPermissions across different clusters", func() {
+			var clusterPermission01, clusterPermission02,
+				clusterPermission03 clusterpermissionv1alpha1.ClusterPermission
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentMultipleName, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+			})
+
+			Context("resource creation and fetching", func() {
+				var mraJSON string
+				var clusterPermissionJSONs [3]string
+
+				It("should create and fetch MulticlusterRoleAssignment", func() {
+					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple.yaml")
+
+					By("waiting for controller to process the MulticlusterRoleAssignment")
+					time.Sleep(2 * time.Second)
+
+					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentMultipleName, openClusterManagementGlobalSetNamespace)
+
+					By("unmarshaling MulticlusterRoleAssignment json")
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch ClusterPermissions from all managed clusters", func() {
+					clusterPermissions := []*clusterpermissionv1alpha1.ClusterPermission{
+						&clusterPermission01, &clusterPermission02, &clusterPermission03}
+
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf(
+							"waiting for ClusterPermission to be created and fetching it from %s", clusterName))
+						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
+							"mra-managed-permissions", clusterName)
+
+						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
+						unmarshalJSON(clusterPermissionJSONs[i-1], clusterPermissions[i-1])
+					}
+				})
+			})
+
+			Context("ClusterPermission validation", func() {
+				It("should have correct content for managedcluster01", func() {
+					By("verifying ClusterPermission content in managedcluster01 namespace")
+					Expect(clusterPermission01.Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission01.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission01.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission01.Spec.RoleBindings).To(HaveLen(4))
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "admin", Namespace: ""},
+						{RoleName: "view", Namespace: "default"},
+						{RoleName: "view", Namespace: "kube-system"},
+						{RoleName: "system:monitoring", Namespace: "monitoring"},
+						{RoleName: "system:monitoring", Namespace: "observability"},
+					}
+					validateClusterPermissionBindings(clusterPermission01, "test-user-multiple", expectedBindings)
+				})
+
+				It("should have correct content for managedcluster02", func() {
+					By("verifying ClusterPermission content in managedcluster02 namespace")
+					Expect(clusterPermission02.Spec.ClusterRoleBindings).To(BeNil())
+					Expect(clusterPermission02.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission02.Spec.RoleBindings).To(HaveLen(4))
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "view", Namespace: "default"},
+						{RoleName: "view", Namespace: "kube-system"},
+						{RoleName: "system:monitoring", Namespace: "monitoring"},
+						{RoleName: "system:monitoring", Namespace: "observability"},
+					}
+					validateClusterPermissionBindings(clusterPermission02, "test-user-multiple", expectedBindings)
+				})
+
+				It("should have correct content for managedcluster03", func() {
+					By("verifying ClusterPermission content in managedcluster03 namespace")
+					Expect(clusterPermission03.Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission03.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission03.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission03.Spec.RoleBindings).To(HaveLen(2))
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "edit", Namespace: ""},
+						{RoleName: "system:monitoring", Namespace: "monitoring"},
+						{RoleName: "system:monitoring", Namespace: "observability"},
+					}
+					validateClusterPermissionBindings(clusterPermission03, "test-user-multiple", expectedBindings)
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation", func() {
+				It("should have correct conditions", func() {
+					By("verifying MulticlusterRoleAssignment conditions")
+					validateMRASuccessConditions(mra)
+				})
+
+				It("should have correct role assignment statuses", func() {
+					By("verifying all role assignment status details")
+					Expect(mra.Status.RoleAssignments).To(HaveLen(4))
+
+					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName,
+						"view-assignment-namespaced-clusters-1-2")
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "edit-assignment-cluster-3")
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "admin-assignment-cluster-1")
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName,
+						"monitoring-assignment-namespaced-all-clusters")
+				})
+			})
 		})
 	})
 })
 
-// findCondition finds a condition by type in a slice of conditions
+// ExpectedBinding represents a role binding we expect to find in a ClusterPermission.
+type ExpectedBinding struct {
+	// RoleName is the name of the role
+	RoleName string
+	// Namespace is the namespace for the binding. If binding is cluster scoped, leave this as an empty string
+	Namespace string
+}
+
+// validateClusterPermissionBindings validates that a ClusterPermission contains expected bindings with correct subject.
+func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alpha1.ClusterPermission,
+	expectedSubjectName string, expectedBindings []ExpectedBinding) {
+
+	if clusterPermission.Spec.RoleBindings != nil {
+		for _, binding := range *clusterPermission.Spec.RoleBindings {
+			Expect(binding.Subjects).To(HaveLen(1))
+			Expect(binding.Subjects[0].Name).To(Equal(expectedSubjectName))
+		}
+	}
+
+	if clusterPermission.Spec.ClusterRoleBindings != nil {
+		for _, binding := range *clusterPermission.Spec.ClusterRoleBindings {
+			Expect(binding.Subjects).To(HaveLen(1))
+			Expect(binding.Subjects[0].Name).To(Equal(expectedSubjectName))
+		}
+	}
+
+	for _, expected := range expectedBindings {
+		found := false
+
+		if expected.Namespace == "" {
+			if clusterPermission.Spec.ClusterRoleBindings != nil {
+				for _, binding := range *clusterPermission.Spec.ClusterRoleBindings {
+					if binding.RoleRef.Name == expected.RoleName {
+						found = true
+						break
+					}
+				}
+			}
+		} else {
+			if clusterPermission.Spec.RoleBindings != nil {
+				for _, binding := range *clusterPermission.Spec.RoleBindings {
+					if binding.RoleRef.Name == expected.RoleName && binding.Namespace == expected.Namespace {
+						found = true
+						break
+					}
+				}
+			}
+		}
+
+		Expect(found).To(BeTrue())
+	}
+}
+
+// validateMRASuccessConditions validates the expected success conditions for a MulticlusterRoleAssignment.
+func validateMRASuccessConditions(mra rbacv1alpha1.MulticlusterRoleAssignment) {
+	readyCondition := findCondition(mra.Status.Conditions, "Ready")
+	Expect(readyCondition).NotTo(BeNil())
+	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
+	Expect(readyCondition.Reason).To(Equal("AllApplied"))
+	Expect(readyCondition.Message).To(ContainSubstring("role assignments applied successfully"))
+
+	appliedCondition := findCondition(mra.Status.Conditions, "Applied")
+	Expect(appliedCondition).NotTo(BeNil())
+	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
+	Expect(appliedCondition.Reason).To(Equal("ClusterPermissionApplied"))
+	Expect(appliedCondition.Message).To(Equal("ClusterPermission applied successfully"))
+
+	validatedCondition := findCondition(mra.Status.Conditions, "Validated")
+	Expect(validatedCondition).NotTo(BeNil())
+	Expect(validatedCondition.Status).To(Equal(metav1.ConditionTrue))
+	Expect(validatedCondition.Reason).To(Equal("SpecIsValid"))
+	Expect(validatedCondition.Message).To(Equal("Spec validation passed"))
+}
+
+// findCondition finds a condition by type in a slice of conditions.
 func findCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
 	for i := range conditions {
 		if conditions[i].Type == conditionType {
@@ -424,6 +608,68 @@ func findCondition(conditions []metav1.Condition, conditionType string) *metav1.
 		}
 	}
 	return nil
+}
+
+// mapRoleAssignmentsByName creates a map of role assignments indexed by name.
+func mapRoleAssignmentsByName(
+	mra rbacv1alpha1.MulticlusterRoleAssignment) map[string]rbacv1alpha1.RoleAssignmentStatus {
+
+	roleAssignmentsByName := make(map[string]rbacv1alpha1.RoleAssignmentStatus)
+	for _, ra := range mra.Status.RoleAssignments {
+		roleAssignmentsByName[ra.Name] = ra
+	}
+	return roleAssignmentsByName
+}
+
+// validateRoleAssignmentSuccessStatus validates that a role assignment has the expected success statuses.
+func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus,
+	name string) {
+
+	assignment := roleAssignmentsByName[name]
+	Expect(assignment.Name).To(Equal(name))
+	Expect(assignment.Status).To(Equal("Active"))
+	Expect(assignment.Reason).To(Equal("ClusterPermissionApplied"))
+	Expect(assignment.Message).To(Equal("ClusterPermission applied successfully"))
+}
+
+// applyK8sManifest applies a Kubernetes manifest file using kubectl.
+func applyK8sManifest(manifestPath string) {
+	cmd := exec.Command("kubectl", "apply", "-f", manifestPath)
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// fetchK8sResourceJSON waits for a Kubernetes resource to be available and returns its JSON representation
+func fetchK8sResourceJSON(resourceType, resourceName, namespace string) string {
+	var resourceJSON string
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", resourceType, resourceName, "-n", namespace, "-o", "json")
+		var err error
+		resourceJSON, err = utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(resourceJSON).NotTo(BeEmpty())
+	}, 2*time.Minute).Should(Succeed())
+	return resourceJSON
+}
+
+// unmarshalJSON unmarshals JSON data into the provided target struct.
+func unmarshalJSON(jsonData string, target any) {
+	err := json.Unmarshal([]byte(jsonData), target)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// cleanupTestResources cleans up MulticlusterRoleAssignment and ClusterPermissions for a test.
+func cleanupTestResources(mraName string, clusterNames []string) {
+	By(fmt.Sprintf("cleaning up MulticlusterRoleAssignment %s", mraName))
+	cmd := exec.Command(
+		"kubectl", "delete", "multiclusterroleassignment", mraName, "-n", openClusterManagementGlobalSetNamespace)
+	_, _ = utils.Run(cmd)
+
+	By("cleaning up ClusterPermissions")
+	for _, clusterName := range clusterNames {
+		cmd = exec.Command("kubectl", "delete", "clusterpermissions", "mra-managed-permissions", "-n", clusterName)
+		_, _ = utils.Run(cmd)
+	}
 }
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
