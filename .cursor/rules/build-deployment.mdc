@@ -1,0 +1,54 @@
+---
+globs: Makefile*,Dockerfile,*.mk
+---
+
+# Build and Deployment Guidelines
+
+## Makefile Standards:
+
+- Use consistent target naming conventions
+- Add help target with descriptions for all targets
+- Include proper dependencies between targets
+- Use variables for commonly repeated values
+- Add comments for complex targets
+
+## Common Targets:
+
+- `build` - Build the operator binary
+- `test` - Run all tests
+- `lint` - Run linting tools
+- `docker-build` - Build container image
+- `deploy` - Deploy to Kubernetes cluster
+- `install` - Install CRDs
+- `uninstall` - Remove CRDs and resources
+
+## Docker Best Practices:
+
+- Use multi-stage builds for smaller images
+- Run as non-root user when possible
+- Use specific base image versions
+- Minimize layers and image size
+- Include proper labels and metadata
+
+## Kubernetes Deployment:
+
+- Use Kustomize for environment-specific configurations
+- Follow security best practices in manifests
+- Include proper resource limits and requests
+- Use health checks and readiness probes
+- Configure proper RBAC permissions
+
+## CI/CD Integration:
+
+- Ensure all targets work in CI environments
+- Use reproducible builds
+- Include security scanning in build process
+- Tag images with proper versioning
+- Validate Kubernetes manifests before deployment
+
+## Development Workflow:
+
+- Provide local development setup targets
+- Include targets for running against local clusters
+- Add debugging and troubleshooting targets
+- Support different deployment modes (dev/staging/prod)

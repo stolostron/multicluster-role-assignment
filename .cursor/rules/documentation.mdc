@@ -1,0 +1,48 @@
+---
+globs: *.md,*.txt
+---
+
+# Documentation Guidelines
+
+## Code Documentation:
+
+- Add godoc comments for all exported types and functions
+- Include usage examples in documentation comments
+- Document complex algorithms and business logic
+- Keep comments up-to-date with code changes
+
+## README Structure:
+
+- Include project description and purpose
+- Add installation and usage instructions
+- Document prerequisites and dependencies
+- Provide examples and common use cases
+- Include troubleshooting section
+
+## API Documentation:
+
+- Document CRD fields and their purposes
+- Include validation rules and constraints
+- Provide examples of valid resources
+- Document status fields and their meanings
+
+## Development Documentation:
+
+- Document build and test procedures
+- Include contribution guidelines
+- Document local development setup
+- Add debugging and troubleshooting guides
+
+## Changelog and Releases:
+
+- Maintain clear changelog with versions
+- Document breaking changes prominently
+- Include upgrade instructions
+- Follow semantic versioning
+
+## Comments in Code:
+
+- Explain "why" not "what" in comments
+- Document non-obvious design decisions
+- Add TODO comments for future improvements
+- Use proper comment formatting for tools

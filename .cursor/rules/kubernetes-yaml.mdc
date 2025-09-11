@@ -1,0 +1,40 @@
+---
+globs: *.yaml,*.yml
+---
+
+# Kubernetes YAML Guidelines
+
+## General YAML Standards:
+
+- Use 2-space indentation consistently
+- Include proper apiVersion and kind for all resources
+- Add meaningful labels and annotations
+- Use descriptive names for resources
+
+## CRD Best Practices:
+
+- Include proper validation schemas
+- Add descriptions for all fields
+- Use semantic versioning for API versions
+- Include status subresources when appropriate
+
+## RBAC Configuration:
+
+- Follow principle of least privilege
+- Group related permissions logically
+- Add comments explaining permission purposes
+- Separate cluster-wide and namespaced permissions
+
+## Kustomize Usage:
+
+- Use patches for environment-specific changes
+- Organize resources logically in kustomization.yaml
+- Use proper resource references
+- Avoid hardcoding values - use replacements or vars
+
+## Resource Definitions:
+
+- Include resource limits and requests
+- Add proper health check configurations
+- Use meaningful namespace organization
+- Include proper metadata and labels

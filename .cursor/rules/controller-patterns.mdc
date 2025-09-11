@@ -1,0 +1,48 @@
+---
+description: Guidelines for Kubernetes controller development patterns
+---
+
+# Controller Development Patterns
+
+## Reconciliation Logic:
+
+- Implement idempotent reconciliation functions
+- Use the controller-runtime Reconcile interface
+- Return appropriate Result and error values
+- Handle resource not found scenarios gracefully
+
+## Resource Management:
+
+- Use owner references for dependent resources
+- Implement proper cleanup with finalizers when needed
+- Check resource existence before creation
+- Update status subresources to reflect current state
+
+## Error Handling in Controllers:
+
+- Distinguish between retryable and non-retryable errors
+- Use exponential backoff for retries
+- Log errors with appropriate context
+- Update resource status to indicate error conditions
+
+## Event Handling:
+
+- Watch relevant resources efficiently
+- Use predicates to filter unnecessary events
+- Implement proper event handlers for create/update/delete
+- Avoid unnecessary reconciliation triggers
+
+## Best Practices:
+
+- Keep reconciliation logic stateless
+- Use controller-runtime client for API operations
+- Implement proper RBAC for controller permissions
+- Add metrics and observability where appropriate
+- Follow the operator pattern guidelines
+
+## Testing Controllers:
+
+- Use envtest for integration testing
+- Mock external dependencies
+- Test various resource states and transitions
+- Verify finalizer and cleanup behavior

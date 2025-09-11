@@ -1,0 +1,48 @@
+---
+globs: *_test.go,**/test/**
+---
+
+# Testing Conventions
+
+## Test File Organization:
+
+- Place unit tests in `*_test.go` files alongside source code
+- Use `test/` directory for integration and e2e tests
+- Group related tests in test suites when appropriate
+- Keep test utilities in separate files
+
+## Unit Testing:
+
+- Test public APIs and exported functions
+- Use table-driven tests for multiple test cases
+- Mock external dependencies using interfaces
+- Test both success and error scenarios
+- Aim for good test coverage but focus on critical paths
+
+## Integration Testing:
+
+- Use envtest for controller testing with real Kubernetes API
+- Set up proper test environments in BeforeSuite/AfterSuite
+- Clean up resources after each test
+- Test full reconciliation loops
+
+## E2E Testing:
+
+- Test complete workflows from user perspective
+- Use real Kubernetes clusters when possible
+- Verify system behavior under realistic conditions
+- Include negative test cases
+
+## Test Utilities:
+
+- Create helper functions for common test setup
+- Use builders/factories for test objects
+- Provide utilities for resource creation and verification
+- Include timeout helpers for async operations
+
+## Best Practices:
+
+- Use descriptive test names that explain what is being tested
+- Keep tests independent and isolated
+- Use assert functions for clear failure messages
+- Add comments for complex test scenarios
