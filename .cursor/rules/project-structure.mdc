@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+---
+
+# Project Structure Guide
+
+This is a Kubernetes operator project for multicluster role assignment management built with operator-sdk.
+
+## Key Directories:
+
+- [cmd/main.go](mdc:cmd/main.go) - Main entry point for the operator
+- [api/v1alpha1/](mdc:api/v1alpha1/) - API types and CRD definitions
+- [internal/controller/](mdc:internal/controller/) - Controller logic
+- [config/](mdc:config/) - Kubernetes manifests and Kustomize configurations
+- [test/](mdc:test/) - Test files and test utilities
+
+## Important Files:
+
+- [go.mod](mdc:go.mod) - Go module dependencies
+- [Makefile](mdc:Makefile) - Build and deployment commands
+- [PROJECT](mdc:PROJECT) - Operator SDK project configuration
+- [Dockerfile](mdc:Dockerfile) - Container image definition
+- [Dockerfile.rhtap](mdc:Dockerfile.rhtap) - Enhanced RHTAP/Konflux container image with FIPS compliance
+
+## Configuration:
+
+- CRD definitions in [config/crd/bases/](mdc:config/crd/bases/)
+- RBAC in [config/rbac/](mdc:config/rbac/)
+- Sample resources in [config/samples/](mdc:config/samples/)
+
+## Konflux Integration:
+
+- Pipeline definitions in [.tekton/](mdc:.tekton/)
+- ReleasePlanAdmission in [multicluster-role-assignment-rpa.yaml](mdc:multicluster-role-assignment-rpa.yaml)
