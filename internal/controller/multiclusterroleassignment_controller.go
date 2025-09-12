@@ -229,11 +229,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 	}
 
-	specChanged := r.hasSpecChanged(&mra)
-	if specChanged {
-		log.Info("Spec change detected, clearing stale status", "generation", mra.Generation)
-		r.clearStaleStatus(&mra)
-	}
+	r.clearStaleStatus(&mra)
 
 	if err := r.validateSpec(&mra); err != nil {
 		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
@@ -371,7 +367,6 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 		}
 	}
 
-	log.Info("All clusters checked and aggregated successfully")
 	return allClusters, nil
 }
 
@@ -783,16 +778,6 @@ func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
 	return slices.Contains(roleAssignment.ClusterSelection.ClusterNames, cluster)
 }
 
-// hasSpecChanged checks if the spec has changed since the last reconciliation.
-func (r *MulticlusterRoleAssignmentReconciler) hasSpecChanged(mra *rbacv1alpha1.MulticlusterRoleAssignment) bool {
-	for _, condition := range mra.Status.Conditions {
-		if condition.Type == ConditionTypeReady {
-			return condition.ObservedGeneration != mra.Generation
-		}
-	}
-	return true
-}
-
 // clearStaleStatus clears status information that may be stale due to spec changes.
 func (r *MulticlusterRoleAssignmentReconciler) clearStaleStatus(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 	for i, condition := range mra.Status.Conditions {
@@ -1041,8 +1026,8 @@ func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionAnnotations
 func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rbacv1alpha1.MulticlusterRoleAssignment{}).
-		Named("multiclusterroleassignment").
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Named("multiclusterroleassignment").
 		Complete(r)
 }
 
