@@ -1,0 +1,23 @@
+apiVersion: rbac.open-cluster-management.io/v1alpha1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: test-multicluster-role-assignment-single-rolebinding
+  namespace: open-cluster-management-global-set
+spec:
+  subject:
+    kind: User
+    name: test-user-single-rolebinding
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+  - name: test-role-assignment-namespaced
+    clusterRole: edit
+    targetNamespaces:
+    - default
+    - kube-system
+    - monitoring
+    - observability
+    - logging
+    clusterSelection:
+      type: clusterNames
+      clusterNames:
+      - managedcluster02
