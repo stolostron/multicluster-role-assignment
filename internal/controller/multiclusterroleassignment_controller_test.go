@@ -29,6 +29,7 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
@@ -130,14 +131,27 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	})
 
 	AfterEach(func() {
+		By("Removing finalizer from MulticlusterRoleAssignment")
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		if err := k8sClient.Get(ctx, mraNamespacedName, mra); err == nil {
+			mra.ObjectMeta.Finalizers = []string{}
+			Expect(k8sClient.Update(ctx, mra)).To(Succeed())
+		}
+
 		By("Deleting the MulticlusterRoleAssignment")
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra = &rbacv1alpha1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      mraNamespacedName.Name,
 				Namespace: mraNamespacedName.Namespace,
 			},
 		}
 		Expect(k8sClient.Delete(ctx, mra)).To(Succeed())
+
+		By("Waiting for MulticlusterRoleAssignment deletion to complete")
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, mraNamespacedName, &rbacv1alpha1.MulticlusterRoleAssignment{})
+			return apierrors.IsNotFound(err)
+		}, "10s", "100ms").Should(BeTrue(), "MulticlusterRoleAssignment should be deleted")
 
 		By("Deleting all ClusterPermissions")
 		clusterNames := []string{cluster1Name, cluster2Name, cluster3Name}

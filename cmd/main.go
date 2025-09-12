@@ -39,6 +39,8 @@ import (
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	"github.com/stolostron/multicluster-role-assignment/internal/controller"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +53,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(rbacv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(clusterpermissionv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
