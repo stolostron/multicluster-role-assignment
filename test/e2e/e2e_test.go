@@ -397,10 +397,10 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "view", Namespace: ""},
+						// ClusterRoleBinding
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 					}
-					validateClusterPermissionBindings(
-						clusterPermission, "test-user-single-clusterrolebinding", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
 			})
 
@@ -466,14 +466,14 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(*clusterPermission.Spec.RoleBindings).To(HaveLen(5))
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "edit", Namespace: "default"},
-						{RoleName: "edit", Namespace: "kube-system"},
-						{RoleName: "edit", Namespace: "monitoring"},
-						{RoleName: "edit", Namespace: "observability"},
-						{RoleName: "edit", Namespace: "logging"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
-					validateClusterPermissionBindings(
-						clusterPermission, "test-user-single-rolebinding", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
 			})
 
@@ -548,13 +548,15 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(*clusterPermission01.Spec.RoleBindings).To(HaveLen(4))
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "admin", Namespace: ""},
-						{RoleName: "view", Namespace: "default"},
-						{RoleName: "view", Namespace: "kube-system"},
-						{RoleName: "system:monitoring", Namespace: "monitoring"},
-						{RoleName: "system:monitoring", Namespace: "observability"},
+						// ClusterRoleBinding
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
+						// RoleBindings
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermission01, "test-user-multiple-1", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission01, expectedBindings)
 				})
 
 				It("should have correct content for managedcluster02", func() {
@@ -564,12 +566,13 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(*clusterPermission02.Spec.RoleBindings).To(HaveLen(4))
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "view", Namespace: "default"},
-						{RoleName: "view", Namespace: "kube-system"},
-						{RoleName: "system:monitoring", Namespace: "monitoring"},
-						{RoleName: "system:monitoring", Namespace: "observability"},
+						// RoleBindings
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermission02, "test-user-multiple-1", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission02, expectedBindings)
 				})
 
 				It("should have correct content for managedcluster03", func() {
@@ -580,11 +583,13 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(*clusterPermission03.Spec.RoleBindings).To(HaveLen(2))
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "edit", Namespace: ""},
-						{RoleName: "system:monitoring", Namespace: "monitoring"},
-						{RoleName: "system:monitoring", Namespace: "observability"},
+						// ClusterRoleBinding
+						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
+						// RoleBindings
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermission03, "test-user-multiple-1", expectedBindings)
+					validateClusterPermissionBindings(clusterPermission03, expectedBindings)
 				})
 			})
 
@@ -608,34 +613,221 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 		})
+
+		Context("should create multiple MulticlusterRoleAssignments and ClusterPermissions - tests MRA create and "+
+			"modify", func() {
+
+			var clusterPermission01, clusterPermission02,
+				clusterPermission03 clusterpermissionv1alpha1.ClusterPermission
+			var mra1, mra2, mra3, mra4 rbacv1alpha1.MulticlusterRoleAssignment
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
+			Context("resource creation and fetching", func() {
+				var mraJSONs [4]string
+				var clusterPermissionJSONs [3]string
+
+				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
+					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
+					manifestFiles := []string{
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+					}
+					for _, manifestFile := range manifestFiles {
+						applyK8sManifest(manifestFile)
+					}
+
+					By("waiting for controller to process the MulticlusterRoleAssignment")
+					time.Sleep(4 * time.Second)
+
+					By("fetching all four MulticlusterRoleAssignments")
+					mraNames := []string{
+						testMulticlusterRoleAssignmentMultiple2Name,
+						testMulticlusterRoleAssignmentMultiple1Name,
+						testMulticlusterRoleAssignmentSingleRBName,
+						testMulticlusterRoleAssignmentSingleCRBName,
+					}
+					for i, mraName := range mraNames {
+						mraJSONs[i] = fetchK8sResourceJSON(
+							"multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+					}
+
+					By("unmarshaling all MulticlusterRoleAssignment JSONs")
+					mras := []*rbacv1alpha1.MulticlusterRoleAssignment{&mra1, &mra2, &mra3, &mra4}
+					for i, mra := range mras {
+						unmarshalJSON(mraJSONs[i], mra)
+					}
+				})
+
+				It("should fetch merged ClusterPermissions for all managed clusters", func() {
+					clusterPermissions := []*clusterpermissionv1alpha1.ClusterPermission{
+						&clusterPermission01, &clusterPermission02, &clusterPermission03}
+
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf(
+							"waiting for merged ClusterPermission to be ready and fetching it from %s", clusterName))
+						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
+							"mra-managed-permissions", clusterName)
+
+						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
+						unmarshalJSON(clusterPermissionJSONs[i-1], clusterPermissions[i-1])
+					}
+				})
+			})
+
+			Context("ClusterPermission merged content validation", func() {
+				It("should have correctly merged content for managedcluster01", func() {
+					By("verifying merged ClusterPermission content in managedcluster01 namespace")
+					Expect(clusterPermission01.Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission01.Spec.ClusterRoleBindings).To(HaveLen(4))
+					Expect(clusterPermission01.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission01.Spec.RoleBindings).To(HaveLen(7))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermission01, expectedBindings)
+				})
+
+				It("should have correctly merged content for managedcluster02", func() {
+					By("verifying merged ClusterPermission content in managedcluster02 namespace")
+					Expect(clusterPermission02.Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission02.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission02.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission02.Spec.RoleBindings).To(HaveLen(13))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
+					}
+					validateClusterPermissionBindings(clusterPermission02, expectedBindings)
+				})
+
+				It("should have correctly merged content for managedcluster03", func() {
+					By("verifying merged ClusterPermission content in managedcluster03 namespace")
+					Expect(clusterPermission03.Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission03.Spec.ClusterRoleBindings).To(HaveLen(2))
+					Expect(clusterPermission03.Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermission03.Spec.RoleBindings).To(HaveLen(6))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
+						// RoleBindings
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermission03, expectedBindings)
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation", func() {
+				It("should have correct conditions for all four MRAs", func() {
+					By("verifying MulticlusterRoleAssignment conditions for all MRAs")
+					mras := []*rbacv1alpha1.MulticlusterRoleAssignment{&mra1, &mra2, &mra3, &mra4}
+					for _, mra := range mras {
+						validateMRASuccessConditions(*mra)
+					}
+				})
+
+				It("should have correct role assignment statuses for all four MRAs", func() {
+					By("verifying role assignment status details for multiple_2")
+					Expect(mra1.Status.RoleAssignments).To(HaveLen(6))
+					roleAssignmentsByName1 := mapRoleAssignmentsByName(mra1)
+					assignmentNames1 := []string{
+						"admin-assignment-cluster-1",
+						"view-assignment-all-clusters",
+						"edit-assignment-single-namespace",
+						"monitoring-assignment-multi-namespace-single-cluster",
+						"dev-assignment-single-namespace-multi-cluster",
+						"logging-assignment-multi-namespace-multi-cluster",
+					}
+					for _, name := range assignmentNames1 {
+						validateRoleAssignmentSuccessStatus(roleAssignmentsByName1, name)
+					}
+
+					By("verifying role assignment status details for multiple_1")
+					Expect(mra2.Status.RoleAssignments).To(HaveLen(4))
+					roleAssignmentsByName2 := mapRoleAssignmentsByName(mra2)
+					assignmentNames2 := []string{
+						"view-assignment-namespaced-clusters-1-2",
+						"edit-assignment-cluster-3",
+						"admin-assignment-cluster-1",
+						"monitoring-assignment-namespaced-all-clusters",
+					}
+					for _, name := range assignmentNames2 {
+						validateRoleAssignmentSuccessStatus(roleAssignmentsByName2, name)
+					}
+
+					By("verifying role assignment status details for single_2")
+					Expect(mra3.Status.RoleAssignments).To(HaveLen(1))
+					roleAssignmentsByName3 := mapRoleAssignmentsByName(mra3)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName3, "test-role-assignment-namespaced")
+
+					By("verifying role assignment status details for single_1")
+					Expect(mra4.Status.RoleAssignments).To(HaveLen(1))
+					roleAssignmentsByName4 := mapRoleAssignmentsByName(mra4)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName4, "test-role-assignment")
+				})
+			})
+		})
 	})
 })
 
-// ExpectedBinding represents a role binding we expect to find in a ClusterPermission.
+// ExpectedBinding represents a role binding that we expect to find in a ClusterPermission.
 type ExpectedBinding struct {
 	// RoleName is the name of the role
 	RoleName string
 	// Namespace is the namespace for the binding. If binding is cluster scoped, leave this as an empty string
 	Namespace string
+	// SubjectName is the expected subject name for this binding
+	SubjectName string
 }
 
-// validateClusterPermissionBindings validates that a ClusterPermission contains expected bindings with correct subject.
+// validateClusterPermissionBindings validates that a ClusterPermission contains expected bindings.
 func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alpha1.ClusterPermission,
-	expectedSubjectName string, expectedBindings []ExpectedBinding) {
-
-	if clusterPermission.Spec.RoleBindings != nil {
-		for _, binding := range *clusterPermission.Spec.RoleBindings {
-			Expect(binding.Subjects).To(HaveLen(1))
-			Expect(binding.Subjects[0].Name).To(Equal(expectedSubjectName))
-		}
-	}
-
-	if clusterPermission.Spec.ClusterRoleBindings != nil {
-		for _, binding := range *clusterPermission.Spec.ClusterRoleBindings {
-			Expect(binding.Subjects).To(HaveLen(1))
-			Expect(binding.Subjects[0].Name).To(Equal(expectedSubjectName))
-		}
-	}
+	expectedBindings []ExpectedBinding) {
 
 	for _, expected := range expectedBindings {
 		found := false
@@ -643,7 +835,9 @@ func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alph
 		if expected.Namespace == "" {
 			if clusterPermission.Spec.ClusterRoleBindings != nil {
 				for _, binding := range *clusterPermission.Spec.ClusterRoleBindings {
-					if binding.RoleRef.Name == expected.RoleName {
+					if binding.RoleRef.Name == expected.RoleName &&
+						len(binding.Subjects) == 1 &&
+						binding.Subjects[0].Name == expected.SubjectName {
 						found = true
 						break
 					}
@@ -652,7 +846,10 @@ func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alph
 		} else {
 			if clusterPermission.Spec.RoleBindings != nil {
 				for _, binding := range *clusterPermission.Spec.RoleBindings {
-					if binding.RoleRef.Name == expected.RoleName && binding.Namespace == expected.Namespace {
+					if binding.RoleRef.Name == expected.RoleName &&
+						binding.Namespace == expected.Namespace &&
+						len(binding.Subjects) == 1 &&
+						binding.Subjects[0].Name == expected.SubjectName {
 						found = true
 						break
 					}
@@ -660,8 +857,8 @@ func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alph
 			}
 		}
 
-		Expect(found).To(BeTrue(), fmt.Sprintf("Expected binding with role %s and namespace %s not found",
-			expected.RoleName, expected.Namespace))
+		Expect(found).To(BeTrue(), fmt.Sprintf("Expected binding with role %s, namespace %s, and subject %s not found",
+			expected.RoleName, expected.Namespace, expected.SubjectName))
 	}
 }
 

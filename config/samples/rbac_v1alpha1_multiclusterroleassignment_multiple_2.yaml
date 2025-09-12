@@ -32,7 +32,7 @@ spec:
       clusterNames:
       - managedcluster02
   - name: monitoring-assignment-multi-namespace-single-cluster
-    clusterRole: system:monitoring
+    clusterRole: system:mon
     targetNamespaces:
     - monitoring
     - observability
