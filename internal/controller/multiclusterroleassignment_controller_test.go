@@ -2034,7 +2034,7 @@ func TestAggregateClusters(t *testing.T) {
 
 	t.Run("Test aggregateClusters", func(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(
-			testMra, testCluster1, testCluster2).Build()
+			testMra, testCluster1, testCluster2).WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
 			Client: fakeClient,
