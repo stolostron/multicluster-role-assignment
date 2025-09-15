@@ -137,7 +137,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		By("Removing finalizer from MulticlusterRoleAssignment")
 		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
 		if err := k8sClient.Get(ctx, mraNamespacedName, mra); err == nil {
-			mra.ObjectMeta.Finalizers = []string{}
+			mra.Finalizers = []string{}
 			Expect(k8sClient.Update(ctx, mra)).To(Succeed())
 		}
 
@@ -380,7 +380,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		Describe("setRoleAssignmentStatus", func() {
-			It("Should add new role assignment status when not present", func() {
+			It("Should add new role assignment status when not present", Label("allows-errors"), func() {
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReason",
 					"Successfully applied")
 
@@ -392,7 +392,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(status.Message).To(Equal("Successfully applied"))
 			})
 
-			It("Should update existing role assignment status", func() {
+			It("Should update existing role assignment status", Label("allows-errors"), func() {
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypePending, "TestReasonPending",
 					"Initializing")
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReasonActive",
@@ -1589,10 +1589,22 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	var testscheme = scheme.Scheme
-	rbacv1alpha1.AddToScheme(testscheme)
-	clusterv1.AddToScheme(testscheme)
-	clusterpermissionv1alpha1.AddToScheme(testscheme)
-	corev1.AddToScheme(testscheme)
+	err := rbacv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterv1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = corev1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
 
 	testMra1 := &rbacv1alpha1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1768,7 +1780,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		}
 
 		// Delete second MRA
-		reconciler.handleMulticlusterRoleAssignmentDeletion(ctx, testMra2)
+		err = reconciler.handleMulticlusterRoleAssignmentDeletion(ctx, testMra2)
 		if err != nil {
 			t.Fatalf("handleMulticlusterRoleAssignmentDeletion() error = %v", err)
 		}

@@ -189,7 +189,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 	}
 
-	if mra.ObjectMeta.DeletionTimestamp.IsZero() {
+	if mra.DeletionTimestamp.IsZero() {
 		// Add finalizer for create/update
 		if !controllerutil.ContainsFinalizer(&mra, FinalizerName) {
 			result := controllerutil.AddFinalizer(&mra, FinalizerName)
@@ -422,12 +422,17 @@ func (r *MulticlusterRoleAssignmentReconciler) updateStatus(
 	// Retry logic for optimistic concurrency conflicts
 	for retryCount := range 3 {
 		if retryCount > 0 {
+			var updatedMra rbacv1alpha1.MulticlusterRoleAssignment
 			log.Info("Retrying status update due to conflict", "retry", retryCount, "resource", mra.Name)
 			// Refresh the resource to get the latest version
-			if err := r.Get(ctx, client.ObjectKey{Name: mra.Name, Namespace: mra.Namespace}, mra); err != nil {
+			if err := r.Get(ctx, client.ObjectKey{Name: mra.Name, Namespace: mra.Namespace}, &updatedMra); err != nil {
 				log.Error(err, "Failed to refresh resource for status update retry")
 				return err
 			}
+
+			// Copy mra status to updatedMra
+			updatedMra.Status = mra.Status
+			mra = &updatedMra
 		}
 
 		r.initializeRoleAssignmentStatuses(mra)
@@ -1051,6 +1056,11 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 			return err
 		}
 
+		if cp == nil {
+			log.Info("ClusterPermission not found, skipping")
+			continue
+		}
+
 		// If the ClusterPermission is not managed by this controller, skip it
 		if !r.isClusterPermissionManaged(cp) {
 			log.Info("ClusterPermission is not managed by this controller, skipping")
@@ -1065,7 +1075,7 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 
 			bindingName := r.generateBindingName(mra, roleAssignment.Name)
 
-			if err := r.removeClusterRoleBindingOrRoleBinding(ctx, cp, roleAssignment, mra, bindingName); err != nil {
+			if err := r.removeClusterRoleBindingOrRoleBinding(ctx, cp, roleAssignment, bindingName); err != nil {
 				log.Error(err, "Failed to remove ClusterRoleBinding or RoleBinding")
 				return err
 			}
@@ -1104,7 +1114,6 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 				return err
 			}
 		}
-
 	}
 
 	return nil
@@ -1114,7 +1123,6 @@ func (r *MulticlusterRoleAssignmentReconciler) removeClusterRoleBindingOrRoleBin
 	ctx context.Context,
 	cp *clusterpermissionv1alpha1.ClusterPermission,
 	roleAssignment rbacv1alpha1.RoleAssignment,
-	mra *rbacv1alpha1.MulticlusterRoleAssignment,
 	bindingName string) error {
 	log := logf.FromContext(ctx)
 
