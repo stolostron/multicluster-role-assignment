@@ -2055,7 +2055,10 @@ func TestAggregateClusters(t *testing.T) {
 				Message: "ClusterPermission applied successfully",
 			},
 		}
-		fakeClient.Status().Update(ctx, mra)
+		err = fakeClient.Status().Update(ctx, mra)
+		if err != nil {
+			t.Fatalf("update Status error = %v", err)
+		}
 
 		clusters, err := reconciler.aggregateClusters(ctx, mra)
 		if err != nil {
@@ -2070,7 +2073,7 @@ func TestAggregateClusters(t *testing.T) {
 	})
 }
 
-func TestUpdateStatus(t *testing.T) {
+func TestUpdateStatusBasicFunctionality(t *testing.T) {
 	// Use the same scheme setup pattern as the working tests
 	testscheme := scheme.Scheme
 	err := rbacv1alpha1.AddToScheme(testscheme)
@@ -2357,6 +2360,65 @@ func TestUpdateStatus(t *testing.T) {
 			t.Fatalf("Expected error when resource not found during refresh, got nil")
 		}
 	})
+}
+
+func TestUpdateStatusRetryLogic(t *testing.T) {
+	// Use the same scheme setup pattern as the working tests
+	testscheme := scheme.Scheme
+	err := rbacv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterv1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+
+	testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-update-status-retry",
+			Namespace:       "open-cluster-management",
+			ResourceVersion: "1",
+		},
+		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Subject: rbacv1.Subject{
+				Kind: "User",
+				Name: "test-user",
+			},
+			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				{
+					Name:        "test-assignment-1",
+					ClusterRole: "test-role",
+					ClusterSelection: rbacv1alpha1.ClusterSelection{
+						Type:         "clusterNames",
+						ClusterNames: []string{"cluster1"},
+					},
+				},
+			},
+		},
+		Status: rbacv1alpha1.MulticlusterRoleAssignmentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:    ConditionTypeValidated,
+					Status:  metav1.ConditionTrue,
+					Reason:  ReasonSpecIsValid,
+					Message: MessageSpecValidationPassed,
+				},
+			},
+			RoleAssignments: []rbacv1alpha1.RoleAssignmentStatus{
+				{
+					Name:    "test-assignment-1",
+					Status:  StatusTypeActive,
+					Reason:  ReasonClusterPermissionApplied,
+					Message: MessageClusterPermissionApplied,
+				},
+			},
+		},
+	}
 
 	t.Run("Should handle retry logic with concurrent modifications", func(t *testing.T) {
 		testMraCopy := testMra.DeepCopy()
