@@ -1752,8 +1752,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Namespace: mra.Namespace,
 			}, testMra); err == nil {
 				testMra.Finalizers = []string{}
-				k8sClient.Update(ctx, testMra)
-				k8sClient.Delete(ctx, testMra)
+				err := k8sClient.Update(ctx, testMra)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = k8sClient.Delete(ctx, testMra)
+				Expect(err).NotTo(HaveOccurred())
 			}
 		})
 	})
