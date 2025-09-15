@@ -1036,7 +1036,8 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 		Complete(r)
 }
 
-func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentDeletion(ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentDeletion(
+	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
 	log := logf.FromContext(ctx)
 
 	log.Info("Handling MulticlusterRoleAssignment deletion")
@@ -1126,7 +1127,8 @@ func (r *MulticlusterRoleAssignmentReconciler) removeClusterRoleBindingOrRoleBin
 	bindingName string) error {
 	log := logf.FromContext(ctx)
 
-	log.Info("Removing ClusterRoleBinding or RoleBinding from ClusterPermission", "clusterPermission", cp.Name, "roleAssignment", roleAssignment.Name)
+	log.Info("Removing ClusterRoleBinding or RoleBinding from ClusterPermission",
+		"clusterPermission", cp.Name, "roleAssignment", roleAssignment.Name)
 
 	// Find the matching ClusterRoleBinding or RoleBinding and remove it
 	if len(roleAssignment.TargetNamespaces) == 0 {
