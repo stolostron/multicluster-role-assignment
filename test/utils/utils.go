@@ -34,6 +34,8 @@ const (
 
 	certmanagerVersion = "v1.16.3"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
+
+	podmanTarFile = "multicluster-role-assignment.tar"
 )
 
 func warnError(err error) {
@@ -185,6 +187,19 @@ func LoadImageToKindClusterWithName(name string) error {
 		cluster = v
 	}
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
+
+	// For podman users
+	if v, ok := os.LookupEnv("CONTAINER_TOOL"); ok {
+		if v == "podman" {
+			// podman save the image to a tar file
+			cmd := exec.Command("podman", "save", "-o", podmanTarFile, name)
+			_, err := Run(cmd)
+			if err != nil {
+				return err
+			}
+			kindOptions = []string{"load", "image-archive", podmanTarFile, "--name", cluster}
+		}
+	}
 	cmd := exec.Command("kind", kindOptions...)
 	_, err := Run(cmd)
 	return err
