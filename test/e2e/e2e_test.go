@@ -362,10 +362,6 @@ var _ = Describe("Manager", Ordered, func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
 
-			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
-			})
-
 			Context("resource creation and fetching", func() {
 				var clusterPermissionJSON, mraJSON string
 
@@ -403,6 +399,88 @@ var _ = Describe("Manager", Ordered, func() {
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBinding
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+					}
+					validateClusterPermissionBindings(clusterPermission, expectedBindings)
+				})
+
+				It("should have correct owner annotations", func() {
+					By("verifying ClusterPermission has correct owner annotations for this MRA")
+					validateMRAOwnerAnnotations(clusterPermission, mra)
+
+					By("verifying binding annotations have semantic consistency")
+					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation", func() {
+				It("should have correct conditions", func() {
+					By("verifying MulticlusterRoleAssignment conditions")
+					validateMRASuccessConditions(mra)
+				})
+
+				It("should have correct role assignment status", func() {
+					By("verifying role assignment status details")
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+
+					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
+				})
+			})
+		})
+
+		// !!!IMPORTANT!!!
+		// This context reuses Kubernetes resources created from the previous context. Keep this in mind when
+		// running/debugging these tests - they depend on the previous context having run successfully.
+		Context("should modify ClusterPermission when MulticlusterRoleAssignment role name is edited", func() {
+			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
+			Context("resource modification and fetching", func() {
+				var clusterPermissionJSON, mraJSON string
+
+				It("should modify and fetch MulticlusterRoleAssignment", func() {
+					By("modifying the MRA to change cluster role from 'view' to 'edit'")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
+					unmarshalJSON(mraJSON, &mra)
+
+					mra.Spec.RoleAssignments[0].ClusterRole = "edit"
+					patchK8sMRA(
+						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace, &mra)
+
+					By("waiting for controller to process the updated MulticlusterRoleAssignment")
+					time.Sleep(2 * time.Second)
+
+					By("waiting for updated MulticlusterRoleAssignment to be fetched")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
+
+					By("unmarshaling updated MulticlusterRoleAssignment json")
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch updated ClusterPermission", func() {
+					By("waiting for updated ClusterPermission to be fetched")
+					clusterPermissionJSON = fetchK8sResourceJSON(
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+
+					By("unmarshaling updated ClusterPermission json")
+					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
+				})
+			})
+
+			Context("ClusterPermission validation", func() {
+				It("should have correct ClusterRoleBinding", func() {
+					By("verifying ClusterPermission has correct ClusterRoleBinding")
+					Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "edit", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
@@ -643,7 +721,7 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		Context("should create multiple MulticlusterRoleAssignments and ClusterPermissions - tests MRA create and "+
-			"modify", func() {
+			"ClusterPermissions modify", func() {
 
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
 			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
@@ -959,6 +1037,20 @@ func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1
 func applyK8sManifest(manifestPath string) {
 	cmd := exec.Command("kubectl", "apply", "-f", manifestPath)
 	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// patchK8sMRA applies a patch to a MulticlusterRoleAssignment using kubectl patch.
+func patchK8sMRA(mraName, namespace string, mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+	patchSpec := map[string]any{
+		"spec": mra.Spec,
+	}
+	patchBytes, err := json.Marshal(patchSpec)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", mraName, "-n", namespace, "--type", "merge",
+		"-p", string(patchBytes))
+	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 }
 

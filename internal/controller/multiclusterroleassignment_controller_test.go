@@ -877,7 +877,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(1))
 
 				binding := (*cp.Spec.ClusterRoleBindings)[0]
-				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1")
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
 				Expect(binding.Name).To(Equal(expectedBindingName))
 				Expect(binding.RoleRef.Name).To(Equal("test-role"))
 			})
@@ -914,7 +914,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(2))
 
 				Expect(cp.Annotations[OwnerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
-				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1")
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
 				expectedKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
 				Expect(cp.Annotations[expectedKey]).To(Equal(fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)))
@@ -939,7 +939,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(cp.Spec.RoleBindings).NotTo(BeNil())
 				Expect(*cp.Spec.RoleBindings).To(HaveLen(2))
 
-				expectedBindingName := reconciler.generateBindingName(mra, "namespaced-role")
+				expectedBindingName := reconciler.generateBindingName(mra, "namespaced-role", "edit")
 				expectedKey1 := reconciler.generateOwnerAnnotationKey(fmt.Sprintf("%s-namespace1", expectedBindingName))
 				expectedKey2 := reconciler.generateOwnerAnnotationKey(fmt.Sprintf("%s-namespace2", expectedBindingName))
 				expectedValue := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
@@ -1072,18 +1072,18 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("generateBindingName", func() {
 			It("Should generate deterministic hash based binding names", func() {
-				bindingName1 := reconciler.generateBindingName(mra, "test-role")
-				bindingName2 := reconciler.generateBindingName(mra, "test-role")
+				bindingName1 := reconciler.generateBindingName(mra, "test-role", "test-role")
+				bindingName2 := reconciler.generateBindingName(mra, "test-role", "test-role")
 
 				Expect(bindingName1).To(Equal(bindingName2))
 				Expect(bindingName1).To(HavePrefix("mra-"))
-				// Should be exactly 16 characters: "mra-" (4) + 12-char hash (12) = 16
-				Expect(bindingName1).To(HaveLen(16))
+				// Should be exactly 20 characters: "mra-" (4) + 16-char hash = 20
+				Expect(bindingName1).To(HaveLen(20))
 			})
 
 			It("Should generate different names for different inputs", func() {
-				bindingName1 := reconciler.generateBindingName(mra, "admin-role")
-				bindingName2 := reconciler.generateBindingName(mra, "viewer-role")
+				bindingName1 := reconciler.generateBindingName(mra, "admin-role", "admin")
+				bindingName2 := reconciler.generateBindingName(mra, "viewer-role", "view")
 
 				Expect(bindingName1).NotTo(Equal(bindingName2))
 				Expect(bindingName1).To(HavePrefix("mra-"))
@@ -1098,8 +1098,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				}
 
-				bindingName1 := reconciler.generateBindingName(mra, "test-role")
-				bindingName2 := reconciler.generateBindingName(otherMRA, "test-role")
+				bindingName1 := reconciler.generateBindingName(mra, "test-role", "test-role")
+				bindingName2 := reconciler.generateBindingName(otherMRA, "test-role", "test-role")
 
 				Expect(bindingName1).NotTo(Equal(bindingName2))
 			})
@@ -1170,7 +1170,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(slice.OwnerAnnotations).To(HaveLen(1))
 
 				binding := slice.ClusterRoleBindings[0]
-				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role")
+				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role", "cluster-admin")
 				Expect(binding.Name).To(Equal(expectedBindingName))
 				Expect(binding.RoleRef.Name).To(Equal("cluster-admin"))
 				Expect(binding.Subjects).To(HaveLen(1))
@@ -1219,9 +1219,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(1))
 
-				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role")
+				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role", "cluster-admin")
 				expectedAnnotationKey := OwnerAnnotationPrefix + expectedBindingName
-				expectedMRAIdentifier := fmt.Sprintf("%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
+				expectedMRAIdentifier := fmt.Sprintf(
+					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedAnnotationKey, expectedMRAIdentifier))
 			})
@@ -1236,7 +1237,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(2))
 
-				baseBindingName := reconciler.generateBindingName(mra, "namespaced-role2")
+				baseBindingName := reconciler.generateBindingName(mra, "namespaced-role2", "edit")
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
@@ -1277,8 +1278,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
-				adminBindingName := reconciler.generateBindingName(mra, "admin-role")
-				editBindingName := reconciler.generateBindingName(mra, "edit-role")
+				adminBindingName := reconciler.generateBindingName(mra, "admin-role", "cluster-admin")
+				editBindingName := reconciler.generateBindingName(mra, "edit-role", "edit")
 
 				expectedAdminKey := OwnerAnnotationPrefix + adminBindingName
 				expectedEditKey := OwnerAnnotationPrefix + editBindingName + "-development"

@@ -800,17 +800,23 @@ func (r *MulticlusterRoleAssignmentReconciler) clearStaleStatus(mra *rbacv1alpha
 	}
 }
 
-// generateBindingName creates a deterministic and unique binding name using MulticlusterRoleAssignment namespace, name,
-// and role assignment name. Binding name must be unique or else ClusterPermission may fail to apply it.
+// generateBindingName creates a deterministic and unique binding name using all key binding properties. This ensures
+// different bindings get different names even when they share some properties. Binding name must be unique or else
+// ClusterPermission may fail to apply it.
 func (r *MulticlusterRoleAssignmentReconciler) generateBindingName(
-	mra *rbacv1alpha1.MulticlusterRoleAssignment, roleAssignmentName string) string {
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, roleAssignmentName, roleName string) string {
 
-	// TODO: improve name, without hasing if possible
-	// Annotation key name has limit of 63 characters
-	var buf []byte
-	buf = fmt.Appendf(buf, "%s/%s/%s", mra.Namespace, mra.Name, roleAssignmentName)
-	h := sha256.Sum256(buf)
-	hash := hex.EncodeToString(h[:])[:12]
+	var data []byte
+	data = fmt.Appendf(data, "%s/%s/%s/%s/%s/%s",
+		mra.Namespace,
+		mra.Name,
+		roleAssignmentName,
+		mra.Spec.Subject.Kind,
+		mra.Spec.Subject.Name,
+		roleName)
+
+	h := sha256.Sum256(data)
+	hash := hex.EncodeToString(h[:])[:16]
 
 	return fmt.Sprintf("mra-%s", hash)
 }
@@ -866,7 +872,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 			continue
 		}
 
-		bindingName := r.generateBindingName(mra, roleAssignment.Name)
+		bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole)
 
 		if len(roleAssignment.TargetNamespaces) == 0 {
 			ownerKey := r.generateOwnerAnnotationKey(bindingName)
