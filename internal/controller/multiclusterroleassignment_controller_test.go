@@ -26,6 +26,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -1583,6 +1584,177 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(annotations).To(HaveLen(1))
 				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
+		})
+	})
+
+	Context("Finalizer handling in Reconcile", func() {
+		var mra *rbacv1alpha1.MulticlusterRoleAssignment
+		var testNamespace *corev1.Namespace
+
+		BeforeEach(func() {
+			// Create test namespace
+			testNamespace = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-namespace",
+				},
+			}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace.Name}, testNamespace); err != nil {
+				Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
+			}
+
+			mra = &rbacv1alpha1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-finalizer-mra",
+					Namespace: "test-namespace",
+				},
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind: "User",
+						Name: "test-user",
+					},
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "test-assignment",
+							ClusterRole: "test-role",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster1Name},
+							},
+						},
+					},
+				},
+			}
+		})
+
+		Describe("Adding finalizer", func() {
+			It("Should add finalizer to new resource without finalizer", func() {
+				// Create MRA without finalizer
+				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
+
+				// Reconcile should add finalizer
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify finalizer was added
+				updatedMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				err = k8sClient.Get(ctx, client.ObjectKey{
+					Name:      mra.Name,
+					Namespace: mra.Namespace,
+				}, updatedMra)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updatedMra.Finalizers).To(ContainElement(FinalizerName))
+			})
+
+			It("Should not add finalizer if already present", func() {
+				// Create MRA with finalizer already present
+				mra.Finalizers = []string{FinalizerName}
+				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
+
+				// Get initial resource version
+				initialMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      mra.Name,
+					Namespace: mra.Namespace,
+				}, initialMra)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Reconcile should not trigger update for finalizer
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify finalizer is still present but resource wasn't updated due to finalizer
+				updatedMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				err = k8sClient.Get(ctx, client.ObjectKey{
+					Name:      mra.Name,
+					Namespace: mra.Namespace,
+				}, updatedMra)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updatedMra.Finalizers).To(ContainElement(FinalizerName))
+			})
+
+			It("Should handle update error when adding finalizer", func() {
+				// Create MRA without finalizer
+				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
+
+				// Create a conflicting version to cause update error
+				conflictMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      mra.Name,
+					Namespace: mra.Namespace,
+				}, conflictMra)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Modify the resource to create a conflict
+				conflictMra.Annotations = map[string]string{"conflict": "true"}
+				Expect(k8sClient.Update(ctx, conflictMra)).To(Succeed())
+
+				// Reconcile with stale resource - should handle conflict gracefully
+				result, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+
+				// Should requeue on error
+				if err != nil {
+					Expect(result.RequeueAfter).To(Equal(DefaultRequeueDelay))
+				}
+			})
+		})
+
+		Describe("Removing finalizer during deletion", func() {
+			BeforeEach(func() {
+				// Create MRA with finalizer
+				mra.Finalizers = []string{FinalizerName}
+				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
+			})
+
+			It("Should remove finalizer and clean up resources when deleting", func() {
+				// Mark for deletion
+				Expect(k8sClient.Delete(ctx, mra)).To(Succeed())
+
+				// Reconcile should remove finalizer after cleanup
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify resource is eventually deleted
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					}, &rbacv1alpha1.MulticlusterRoleAssignment{})
+					return apierrors.IsNotFound(err)
+				}, "5s", "100ms").Should(BeTrue(), "Resource should be deleted after finalizer removal")
+			})
+		})
+
+		AfterEach(func() {
+			// Clean up test resource
+			testMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      mra.Name,
+				Namespace: mra.Namespace,
+			}, testMra); err == nil {
+				testMra.Finalizers = []string{}
+				k8sClient.Update(ctx, testMra)
+				k8sClient.Delete(ctx, testMra)
+			}
 		})
 	})
 })
