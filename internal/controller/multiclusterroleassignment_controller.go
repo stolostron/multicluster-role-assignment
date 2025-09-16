@@ -793,11 +793,21 @@ func (r *MulticlusterRoleAssignmentReconciler) clearStaleStatus(mra *rbacv1alpha
 		}
 	}
 
-	for i := range mra.Status.RoleAssignments {
-		mra.Status.RoleAssignments[i].Status = StatusTypePending
-		mra.Status.RoleAssignments[i].Reason = ReasonInitializing
-		mra.Status.RoleAssignments[i].Message = MessageInitializing
+	currentRoleAssignmentNames := make(map[string]bool)
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		currentRoleAssignmentNames[roleAssignment.Name] = true
 	}
+
+	var currentRoleAssignmentStatuses []rbacv1alpha1.RoleAssignmentStatus
+	for _, status := range mra.Status.RoleAssignments {
+		if currentRoleAssignmentNames[status.Name] {
+			status.Status = StatusTypePending
+			status.Reason = ReasonInitializing
+			status.Message = MessageInitializing
+			currentRoleAssignmentStatuses = append(currentRoleAssignmentStatuses, status)
+		}
+	}
+	mra.Status.RoleAssignments = currentRoleAssignmentStatuses
 }
 
 // generateBindingName creates a deterministic and unique binding name using all key binding properties. This ensures

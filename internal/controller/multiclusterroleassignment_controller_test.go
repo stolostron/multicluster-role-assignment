@@ -577,6 +577,96 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(mra.Status.RoleAssignments).To(BeEmpty())
 			})
+
+			It("Should remove stale role assignment status entries when role assignment names change", func() {
+				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "new-role-assignment-1",
+						ClusterRole: "view",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+					{
+						Name:        roleAssignment2Name,
+						ClusterRole: "edit",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterNames: []string{"cluster2"},
+						},
+					},
+				}
+				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+					{
+						Name:    roleAssignment1Name,
+						Status:  StatusTypeActive,
+						Reason:  ReasonClusterPermissionApplied,
+						Message: MessageClusterPermissionApplied,
+					},
+					{
+						Name:    roleAssignment2Name,
+						Status:  StatusTypeActive,
+						Reason:  ReasonClusterPermissionApplied,
+						Message: MessageClusterPermissionApplied,
+					},
+					{
+						Name:    "stale-role-assignment",
+						Status:  StatusTypeError,
+						Reason:  ReasonClusterPermissionFailed,
+						Message: MessageClusterPermissionFailed,
+					},
+				}
+
+				reconciler.clearStaleStatus(mra)
+
+				Expect(mra.Status.RoleAssignments).To(HaveLen(1))
+				Expect(mra.Status.RoleAssignments[0].Name).To(Equal(roleAssignment2Name))
+				Expect(mra.Status.RoleAssignments[0].Status).To(Equal(StatusTypePending))
+				Expect(mra.Status.RoleAssignments[0].Reason).To(Equal(ReasonInitializing))
+				Expect(mra.Status.RoleAssignments[0].Message).To(Equal(MessageInitializing))
+			})
+
+			It("Should keep all role assignment status entries when names match spec", func() {
+				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        roleAssignment1Name,
+						ClusterRole: "view",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+					{
+						Name:        roleAssignment2Name,
+						ClusterRole: "edit",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterNames: []string{"cluster2"},
+						},
+					},
+				}
+				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+					{
+						Name:    roleAssignment1Name,
+						Status:  StatusTypeActive,
+						Reason:  ReasonClusterPermissionApplied,
+						Message: MessageClusterPermissionApplied,
+					},
+					{
+						Name:    roleAssignment2Name,
+						Status:  StatusTypeError,
+						Reason:  ReasonClusterPermissionFailed,
+						Message: MessageClusterPermissionFailed,
+					},
+				}
+
+				reconciler.clearStaleStatus(mra)
+
+				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+
+				for _, ra := range mra.Status.RoleAssignments {
+					Expect(ra.Status).To(Equal(StatusTypePending))
+					Expect(ra.Reason).To(Equal(ReasonInitializing))
+					Expect(ra.Message).To(Equal(MessageInitializing))
+				}
+			})
 		})
 
 		Describe("calculateReadyCondition", func() {
