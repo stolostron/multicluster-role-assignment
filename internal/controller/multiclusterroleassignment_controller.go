@@ -1086,7 +1086,7 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 				continue
 			}
 
-			bindingName := r.generateBindingName(mra, roleAssignment.Name)
+			bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole)
 
 			if err := r.removeClusterRoleBindingOrRoleBinding(ctx, cp, roleAssignment, bindingName); err != nil {
 				log.Error(err, "Failed to remove ClusterRoleBinding or RoleBinding")
