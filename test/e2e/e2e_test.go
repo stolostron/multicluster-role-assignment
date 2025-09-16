@@ -174,7 +174,7 @@ var _ = Describe("Manager", Ordered, func() {
 		specReport := CurrentSpecReport()
 
 		// Skip error checking for tests that expect controller errors. To skip error checking for a specific test, add
-		// the "allows-errors" label: It("should handle invalid input", Label("allows-errors"), func() { ... }). Since
+		// the "allows-errors" label: It("should handle invalid input",  func() { ... }). Since
 		// error logs will remain in the controller logs from all tests, we should put expected error tests at the end
 		// of all success tests, or we have to rethink how we check for errors.
 		if !slices.Contains(specReport.Labels(), "allows-errors") {
