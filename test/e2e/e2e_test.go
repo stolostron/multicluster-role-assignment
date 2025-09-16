@@ -174,7 +174,7 @@ var _ = Describe("Manager", Ordered, func() {
 		specReport := CurrentSpecReport()
 
 		// Skip error checking for tests that expect controller errors. To skip error checking for a specific test, add
-		// the "allows-errors" label: It("should handle invalid input", Label("allows-errors"), func() { ... }). Since
+		// the "allows-errors" label: It("should handle invalid input",  func() { ... }). Since
 		// error logs will remain in the controller logs from all tests, we should put expected error tests at the end
 		// of all success tests, or we have to rethink how we check for errors.
 		if !slices.Contains(specReport.Labels(), "allows-errors") {
@@ -369,7 +369,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("resource creation and fetching", func() {
 				var clusterPermissionJSON, mraJSON string
 
-				It("should create and fetch MulticlusterRoleAssignment", Label("allows-errors"), func() {
+				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
 
@@ -384,7 +384,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 				})
 
-				It("should fetch ClusterPermission", Label("allows-errors"), func() {
+				It("should fetch ClusterPermission", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
 						"mra-managed-permissions", "managedcluster01")
@@ -395,7 +395,7 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("ClusterPermission validation", func() {
-				It("should have correct ClusterRoleBinding", Label("allows-errors"), func() {
+				It("should have correct ClusterRoleBinding", func() {
 					By("verifying ClusterPermission has correct ClusterRoleBinding")
 					Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
 					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
@@ -407,7 +407,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
 
-				It("should have correct owner annotations", Label("allows-errors"), func() {
+				It("should have correct owner annotations", func() {
 					By("verifying ClusterPermission has correct owner annotations for this MRA")
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
@@ -417,12 +417,12 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("MulticlusterRoleAssignment status validation", func() {
-				It("should have correct conditions", Label("allows-errors"), func() {
+				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
 					validateMRASuccessConditions(mra)
 				})
 
-				It("should have correct role assignment status", Label("allows-errors"), func() {
+				It("should have correct role assignment status", func() {
 					By("verifying role assignment status details")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 
@@ -445,7 +445,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("resource creation and fetching", func() {
 				var clusterPermissionJSON, mraJSON string
 
-				It("should create and fetch MulticlusterRoleAssignment", Label("allows-errors"), func() {
+				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
 
@@ -460,7 +460,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 				})
 
-				It("should fetch ClusterPermission", Label("allows-errors"), func() {
+				It("should fetch ClusterPermission", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
 						"mra-managed-permissions", "managedcluster02")
@@ -471,7 +471,7 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("ClusterPermission validation", func() {
-				It("should have correct RoleBindings", Label("allows-errors"), func() {
+				It("should have correct RoleBindings", func() {
 					By("verifying ClusterPermission has correct RoleBindings")
 					Expect(clusterPermission.Spec.ClusterRoleBindings).To(BeNil())
 					Expect(clusterPermission.Spec.RoleBindings).NotTo(BeNil())
@@ -488,7 +488,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
 
-				It("should have correct owner annotations", Label("allows-errors"), func() {
+				It("should have correct owner annotations", func() {
 					By("verifying ClusterPermission has correct owner annotations for this MRA")
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
@@ -498,12 +498,12 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("MulticlusterRoleAssignment status validation", func() {
-				It("should have correct conditions", Label("allows-errors"), func() {
+				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
 					validateMRASuccessConditions(mra)
 				})
 
-				It("should have correct role assignment status", Label("allows-errors"), func() {
+				It("should have correct role assignment status", func() {
 					By("verifying role assignment status details")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 
@@ -526,7 +526,7 @@ var _ = Describe("Manager", Ordered, func() {
 				var mraJSON string
 				var clusterPermissionJSONs [3]string
 
-				It("should create and fetch MulticlusterRoleAssignment", Label("allows-errors"), func() {
+				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
 
@@ -541,7 +541,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 				})
 
-				It("should fetch ClusterPermissions from all managed clusters", Label("allows-errors"), func() {
+				It("should fetch ClusterPermissions from all managed clusters", func() {
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
@@ -556,7 +556,7 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("ClusterPermission validation", func() {
-				It("should have correct content for managedcluster01", Label("allows-errors"), func() {
+				It("should have correct content for managedcluster01", func() {
 					By("verifying ClusterPermission content in managedcluster01 namespace")
 					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(1))
@@ -575,7 +575,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
 
-				It("should have correct content for managedcluster02", Label("allows-errors"), func() {
+				It("should have correct content for managedcluster02", func() {
 					By("verifying ClusterPermission content in managedcluster02 namespace")
 					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).To(BeNil())
 					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
@@ -591,7 +591,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
 
-				It("should have correct content for managedcluster03", Label("allows-errors"), func() {
+				It("should have correct content for managedcluster03", func() {
 					By("verifying ClusterPermission content in managedcluster03 namespace")
 					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(1))
@@ -608,7 +608,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
 
-				It("should have correct owner annotations for all clusters", Label("allows-errors"), func() {
+				It("should have correct owner annotations for all clusters", func() {
 					By("verifying ClusterPermission owner annotations for all clusters")
 					for _, cp := range clusterPermissions {
 						validateMRAOwnerAnnotations(cp, mra)
@@ -622,12 +622,12 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("MulticlusterRoleAssignment status validation", func() {
-				It("should have correct conditions", Label("allows-errors"), func() {
+				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
 					validateMRASuccessConditions(mra)
 				})
 
-				It("should have correct role assignment statuses", Label("allows-errors"), func() {
+				It("should have correct role assignment statuses", func() {
 					By("verifying all role assignment status details")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(4))
 
@@ -661,7 +661,7 @@ var _ = Describe("Manager", Ordered, func() {
 				var mraJSONs [4]string
 				var clusterPermissionJSONs [3]string
 
-				It("should create and fetch all MulticlusterRoleAssignments in sequence", Label("allows-errors"), func() {
+				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
 					manifestFiles := []string{
 						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
@@ -694,7 +694,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch merged ClusterPermissions for all managed clusters", Label("allows-errors"), func() {
+				It("should fetch merged ClusterPermissions for all managed clusters", func() {
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
@@ -709,7 +709,7 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("ClusterPermission merged content validation", func() {
-				It("should have correctly merged content for managedcluster01", Label("allows-errors"), func() {
+				It("should have correctly merged content for managedcluster01", func() {
 					By("verifying merged ClusterPermission content in managedcluster01 namespace")
 					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(4))
@@ -734,7 +734,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
 
-				It("should have correctly merged content for managedcluster02", Label("allows-errors"), func() {
+				It("should have correctly merged content for managedcluster02", func() {
 					By("verifying merged ClusterPermission content in managedcluster02 namespace")
 					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
@@ -762,7 +762,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
 
-				It("should have correctly merged content for managedcluster03", Label("allows-errors"), func() {
+				It("should have correctly merged content for managedcluster03", func() {
 					By("verifying merged ClusterPermission content in managedcluster03 namespace")
 					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(2))
@@ -784,7 +784,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
 
-				It("should have correct owner annotations for all clusters", Label("allows-errors"), func() {
+				It("should have correct owner annotations for all clusters", func() {
 					By("verifying ClusterPermission owner annotations for all clusters")
 					for _, cp := range clusterPermissions {
 						for _, mra := range mras {
@@ -800,14 +800,14 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			Context("MulticlusterRoleAssignment status validation", func() {
-				It("should have correct conditions for all MRAs", Label("allows-errors"), func() {
+				It("should have correct conditions for all MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for all MRAs")
 					for _, mra := range mras {
 						validateMRASuccessConditions(mra)
 					}
 				})
 
-				It("should have correct role assignment statuses for all MRAs", Label("allows-errors"), func() {
+				It("should have correct role assignment statuses for all MRAs", func() {
 					By(fmt.Sprintf(
 						"verifying role assignment status details for %s", testMulticlusterRoleAssignmentMultiple2Name))
 					Expect(mras[0].Status.RoleAssignments).To(HaveLen(6))

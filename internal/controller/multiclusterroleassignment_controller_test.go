@@ -105,8 +105,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		By("Creating the MulticlusterRoleAssignment")
 		mra = &rbacv1alpha1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      multiclusterRoleAssignmentName,
-				Namespace: multiclusterRoleAssignmentNamespace,
+				Name:       multiclusterRoleAssignmentName,
+				Namespace:  multiclusterRoleAssignmentNamespace,
+				Finalizers: []string{FinalizerName},
 			},
 			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
@@ -383,7 +384,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		Describe("setRoleAssignmentStatus", func() {
-			It("Should add new role assignment status when not present", Label("allows-errors"), func() {
+			It("Should add new role assignment status when not present", func() {
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReason",
 					"Successfully applied")
 
@@ -395,7 +396,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(status.Message).To(Equal("Successfully applied"))
 			})
 
-			It("Should update existing role assignment status", Label("allows-errors"), func() {
+			It("Should update existing role assignment status", func() {
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypePending, "TestReasonPending",
 					"Initializing")
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReasonActive",

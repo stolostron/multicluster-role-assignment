@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -193,11 +192,12 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		// Add finalizer for create/update
 		if !controllerutil.ContainsFinalizer(&mra, FinalizerName) {
 			result := controllerutil.AddFinalizer(&mra, FinalizerName)
-			log.Info("Add finalizer ", "finalizer", FinalizerName, "result", result)
+			log.Info("Add finalizer and skip reconcile", "finalizer", FinalizerName, "result", result)
 			if err := r.Update(ctx, &mra); err != nil {
 				log.Error(err, "Failed to update MulticlusterRoleAssignment with finalizer")
 				return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 			}
+			return ctrl.Result{}, nil
 		}
 	} else {
 		// Remove finalizer for delete
@@ -219,14 +219,11 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		}
 	}
 
-	// Refresh the resource after potential finalizer updates to ensure we have the latest version
-	if err := r.Get(ctx, req.NamespacedName, &mra); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("MulticlusterRoleAssignment resource not found after finalizer handling, skipping reconciliation")
+	for _, condition := range mra.Status.Conditions {
+		if condition.Type == ConditionTypeReady && condition.ObservedGeneration == mra.Generation {
+			log.Info("Spec unchanged, Ready condition generation matches. Skipping reconcile.")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to refresh MulticlusterRoleAssignment after finalizer handling")
-		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 	}
 
 	r.clearStaleStatus(&mra)
@@ -1031,7 +1028,6 @@ func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionAnnotations
 func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rbacv1alpha1.MulticlusterRoleAssignment{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Named("multiclusterroleassignment").
 		Complete(r)
 }
