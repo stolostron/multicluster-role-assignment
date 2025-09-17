@@ -449,8 +449,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					mra.Spec.RoleAssignments[0].ClusterRole = "edit"
-					patchK8sMRA(
-						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace, &mra)
+					patchK8sMRA(&mra)
 
 					By("waiting for controller to process the updated MulticlusterRoleAssignment")
 					time.Sleep(2 * time.Second)
@@ -868,6 +867,7 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 
+			//nolint:dupl
 			Context("MulticlusterRoleAssignment status validation", func() {
 				It("should have correct conditions for all MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for all MRAs")
@@ -943,6 +943,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("resource modification and fetching", func() {
 				var mraJSONs [4]string
 				var clusterPermissionJSONs [3]string
+				const groupSubjectKind = "Group"
 
 				It("should modify and fetch all MulticlusterRoleAssignments with comprehensive changes", func() {
 					By("fetching existing MulticlusterRoleAssignments to modify them")
@@ -960,18 +961,17 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentMultiple2Name))
 					mras[0].Spec.Subject.Name = "modified-group-multiple-2"
-					mras[0].Spec.Subject.Kind = "Group"
+					mras[0].Spec.Subject.Kind = groupSubjectKind
 					mras[0].Spec.RoleAssignments[0].Name = "modified-admin-assignment-cluster-1"
 					mras[0].Spec.RoleAssignments[0].ClusterRole = "edit"
 					mras[0].Spec.RoleAssignments[1].ClusterSelection.ClusterNames = append(
 						mras[0].Spec.RoleAssignments[1].ClusterSelection.ClusterNames, "managedcluster01")
 					mras[0].Spec.RoleAssignments[2].TargetNamespaces = append(
 						mras[0].Spec.RoleAssignments[2].TargetNamespaces, "new-dev-ns")
-					patchK8sMRA(
-						testMulticlusterRoleAssignmentMultiple2Name, openClusterManagementGlobalSetNamespace, &mras[0])
+					patchK8sMRA(&mras[0])
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentMultiple1Name))
-					mras[1].Spec.Subject.Kind = "Group"
+					mras[1].Spec.Subject.Kind = groupSubjectKind
 					mras[1].Spec.RoleAssignments[0].Name = "modified-view-assignment-namespaced-clusters-1-2"
 					mras[1].Spec.RoleAssignments[0].ClusterRole = "admin"
 					mras[1].Spec.RoleAssignments[1].Name = "modified-edit-assignment-cluster-3"
@@ -979,8 +979,7 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[1].Spec.RoleAssignments[2].Name = "modified-admin-assignment-cluster-1"
 					mras[1].Spec.RoleAssignments[3].TargetNamespaces = append(
 						mras[1].Spec.RoleAssignments[3].TargetNamespaces, "metrics")
-					patchK8sMRA(
-						testMulticlusterRoleAssignmentMultiple1Name, openClusterManagementGlobalSetNamespace, &mras[1])
+					patchK8sMRA(&mras[1])
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleRBName))
 					mras[2].Spec.Subject.Name = "modified-user-single-rolebinding"
@@ -990,12 +989,11 @@ var _ = Describe("Manager", Ordered, func() {
 						"managedcluster03")
 					mras[2].Spec.RoleAssignments[0].TargetNamespaces = append(
 						mras[2].Spec.RoleAssignments[0].TargetNamespaces, "staging", "prod")
-					patchK8sMRA(
-						testMulticlusterRoleAssignmentSingleRBName, openClusterManagementGlobalSetNamespace, &mras[2])
+					patchK8sMRA(&mras[2])
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleCRBName))
 					mras[3].Spec.Subject.Name = "modified-group-single-clusterrolebinding"
-					mras[3].Spec.Subject.Kind = "Group"
+					mras[3].Spec.Subject.Kind = groupSubjectKind
 					mras[3].Spec.RoleAssignments[0].Name = "modified-test-role-assignment"
 					mras[3].Spec.RoleAssignments[0].ClusterRole = "admin"
 					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system",
@@ -1003,8 +1001,7 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
 						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02",
 						"managedcluster03")
-					patchK8sMRA(
-						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace, &mras[3])
+					patchK8sMRA(&mras[3])
 
 					By("waiting for controller to process all comprehensively updated MulticlusterRoleAssignments")
 					time.Sleep(4 * time.Second)
@@ -1032,6 +1029,7 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 
+			//nolint:dupl
 			Context("ClusterPermission merged content validation after comprehensive modifications", func() {
 				It("should have correctly updated content for managedcluster01 with comprehensive changes", func() {
 					By("verifying comprehensively updated ClusterPermission content in managedcluster01 namespace")
@@ -1160,6 +1158,7 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 
+			//nolint:dupl
 			Context("MulticlusterRoleAssignment status validation after comprehensive modifications", func() {
 				It("should have correct conditions for all comprehensively modified MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for all comprehensively modified MRAs")
@@ -1329,15 +1328,15 @@ func applyK8sManifest(manifestPath string) {
 }
 
 // patchK8sMRA applies a patch to a MulticlusterRoleAssignment using kubectl patch.
-func patchK8sMRA(mraName, namespace string, mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+func patchK8sMRA(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 	patchSpec := map[string]any{
 		"spec": mra.Spec,
 	}
 	patchBytes, err := json.Marshal(patchSpec)
 	Expect(err).NotTo(HaveOccurred())
 
-	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", mraName, "-n", namespace, "--type", "merge",
-		"-p", string(patchBytes))
+	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", openClusterManagementGlobalSetNamespace, "-n",
+		namespace, "--type", "merge", "-p", string(patchBytes))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 }
