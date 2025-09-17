@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,6 +139,8 @@ const (
 	ClusterPermissionFailureRequeueDelay = 2 * time.Minute
 	// FinalizerName is the name of the finalizer for the MulticlusterRoleAssignment
 	FinalizerName = "finalizer.rbac.open-cluster-management.io/multiclusterroleassignment"
+	// AllClustersAnnotation is the annotation key for the all clusters separated by semicolon
+	AllClustersAnnotation = "clusters.rbac.open-cluster-management.io"
 )
 
 // TODO: Make error constants for validateSpec functions
@@ -266,6 +269,20 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 	}
 
+	if err := r.Get(ctx, req.NamespacedName, &mra); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("MulticlusterRoleAssignment resource not found, skipping reconciliation")
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get MulticlusterRoleAssignment")
+		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
+	}
+
+	if err := r.updateAllClustersAnnotation(ctx, &mra, allClusters); err != nil {
+		log.Error(err, "Failed to update all clusters annotation")
+		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
+	}
+
 	if len(clusterPermissionErrors) > 0 {
 		log.Error(fmt.Errorf("ClusterPermission processing failed for %d clusters", len(clusterPermissionErrors)),
 			"ClusterPermission processing completed with errors", "failedClusters", len(clusterPermissionErrors),
@@ -274,6 +291,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: ClusterPermissionFailureRequeueDelay}, nil
 	}
 
+	// Compute all clusters annotation and update the MulticlusterRoleAssignment here?
 	log.Info("Successfully processed ClusterPermissions", "multiclusterroleassignment", req.NamespacedName)
 
 	log.Info("Successfully completed reconciliation", "multiclusterroleassignment", req.NamespacedName)
@@ -621,6 +639,27 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 		r.setCondition(mra, ConditionTypeApplied, metav1.ConditionFalse, ReasonClusterPermissionFailed,
 			fmt.Sprintf("%s to %d out of %d clusters", MessageClusterPermissionFailed, totalClusters-successCount,
 				totalClusters))
+	}
+
+	// Cleanup stale ClusterPermissions
+	previousClusters := []string{}
+	if mra.Annotations != nil {
+		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
+	}
+	// Clusters in previousClusters but not in current clusters
+	staleClusters := utils.FindDifference(previousClusters, clusters)
+	for _, cluster := range staleClusters {
+		err := r.Delete(ctx, &clusterpermissionv1alpha1.ClusterPermission{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ClusterPermissionManagedName,
+				Namespace: cluster,
+			},
+		})
+		if err != nil {
+			log.Error(err, "Failed to delete stale ClusterPermission", "cluster", cluster)
+		} else {
+			log.Info("Successfully deleted stale ClusterPermission", "cluster", cluster)
+		}
 	}
 
 	return state.FailedClusters
@@ -1142,4 +1181,43 @@ func (r *MulticlusterRoleAssignmentReconciler) removeClusterRoleBindingOrRoleBin
 	}
 
 	return nil
+}
+
+func (r *MulticlusterRoleAssignmentReconciler) updateAllClustersAnnotation(
+	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, allClusters []string) error {
+	log := logf.FromContext(ctx)
+
+	log.Info("Updating all clusters annotation", "multiclusterroleassignment", mra.Name)
+
+	if mra.Annotations == nil {
+		mra.Annotations = make(map[string]string)
+	}
+	mra.Annotations[AllClustersAnnotation] = strings.Join(allClusters, ";")
+
+	for retryCount := range 3 {
+		if retryCount > 0 {
+			var updatedMra rbacv1alpha1.MulticlusterRoleAssignment
+			log.Info("Retrying update of all clusters annotation", "retry", retryCount, "multiclusterroleassignment", mra.Name)
+			if err := r.Get(ctx, client.ObjectKey{Name: mra.Name, Namespace: mra.Namespace}, &updatedMra); err != nil {
+				log.Error(err, "Failed to refresh resource for all clusters annotation update retry")
+				return err
+			}
+			updatedMra.Annotations = mra.Annotations
+			mra = &updatedMra
+		}
+
+		err := r.Update(ctx, mra)
+		if err == nil {
+			return nil
+		}
+
+		if apierrors.IsConflict(err) {
+			log.Info("All clusters annotation update conflict, retrying", "error", err, "multiclusterroleassignment", mra.Name)
+			continue
+		}
+
+		return err
+	}
+
+	return fmt.Errorf("failed to update all clusters annotation after 3 retries due to conflicts")
 }

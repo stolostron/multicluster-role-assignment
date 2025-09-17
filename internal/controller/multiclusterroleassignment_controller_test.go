@@ -2623,3 +2623,369 @@ func findConditionByType(conditions []metav1.Condition, conditionType string) *m
 	}
 	return nil
 }
+
+func TestUpdateAllClustersAnnotation(t *testing.T) {
+	// Use the same scheme setup pattern as the working tests
+	testscheme := scheme.Scheme
+	err := rbacv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterv1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+
+	t.Run("Should set annotation when annotations is nil", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-mra",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+				},
+			},
+		}
+
+		// mra.Annotations is nil initially
+		allClusters := []string{"cluster1", "cluster2", "cluster3"}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testscheme,
+		}
+
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err != nil {
+			t.Fatalf("updateAllClustersAnnotation error = %v", err)
+		}
+
+		// Verify annotation was set
+		if mra.Annotations == nil {
+			t.Fatalf("Annotations should not be nil after update")
+		}
+
+		expectedAnnotation := "cluster1;cluster2;cluster3"
+		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		}
+	})
+
+	t.Run("Should update existing annotation", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-mra-2",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+				Annotations: map[string]string{
+					"existing-annotation": "existing-value",
+					AllClustersAnnotation: "old-cluster1;old-cluster2",
+				},
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+				},
+			},
+		}
+
+		allClusters := []string{"new-cluster1", "new-cluster2"}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testscheme,
+		}
+
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err != nil {
+			t.Fatalf("updateAllClustersAnnotation error = %v", err)
+		}
+
+		// Verify annotation was updated
+		expectedAnnotation := "new-cluster1;new-cluster2"
+		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		}
+
+		// Verify other annotations are preserved
+		if mra.Annotations["existing-annotation"] != "existing-value" {
+			t.Fatalf("Existing annotation should be preserved")
+		}
+	})
+
+	t.Run("Should handle empty clusters list", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-mra-3",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+				},
+			},
+		}
+
+		allClusters := []string{} // Empty clusters list
+
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testscheme,
+		}
+
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err != nil {
+			t.Fatalf("updateAllClustersAnnotation error = %v", err)
+		}
+
+		// Verify annotation is set to empty string
+		expectedAnnotation := ""
+		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected empty annotation, got '%s'", mra.Annotations[AllClustersAnnotation])
+		}
+	})
+
+	t.Run("Should handle single cluster", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-mra-4",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+				},
+			},
+		}
+
+		allClusters := []string{"single-cluster"} // Single cluster
+
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testscheme,
+		}
+
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err != nil {
+			t.Fatalf("updateAllClustersAnnotation error = %v", err)
+		}
+
+		// Verify annotation is set correctly for single cluster
+		expectedAnnotation := "single-cluster"
+		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		}
+	})
+
+	t.Run("Should fail when resource not found during refresh", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "non-existent",
+				Namespace: "open-cluster-management",
+			},
+		}
+
+		allClusters := []string{"cluster1"}
+
+		// Create client without the MRA object, so Get will fail
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).Build()
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testscheme,
+		}
+
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err == nil {
+			t.Fatalf("Expected error when resource not found during refresh, got nil")
+		}
+	})
+}
+
+// Mock client that simulates conflict errors for testing retry logic
+type mockConflictClient struct {
+	client.Client
+	updateAttempts int
+	conflictCount  int
+	maxConflicts   int
+}
+
+func (m *mockConflictClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	m.updateAttempts++
+
+	if m.updateAttempts <= m.maxConflicts {
+		return apierrors.NewConflict(schema.GroupResource{Group: "rbac.open-cluster-management.io", Resource: "multiclusterroleassignments"}, obj.GetName(), fmt.Errorf("conflict error"))
+	}
+
+	return nil // Success after conflicts
+}
+
+func (m *mockConflictClient) Get(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+	if mra, ok := obj.(*rbacv1alpha1.MulticlusterRoleAssignment); ok {
+		// Simulate a fresh object with updated ResourceVersion
+		mra.Name = key.Name
+		mra.Namespace = key.Namespace
+		mra.ResourceVersion = fmt.Sprintf("%d", m.updateAttempts+1)
+		mra.Spec = rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Subject: rbacv1.Subject{
+				Kind: "User",
+				Name: "test-user",
+			},
+			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				{
+					Name:        "test-assignment",
+					ClusterRole: "test-role",
+					ClusterSelection: rbacv1alpha1.ClusterSelection{
+						Type:         "clusterNames",
+						ClusterNames: []string{"cluster1"},
+					},
+				},
+			},
+		}
+	}
+	return nil
+}
+
+func TestUpdateAllClustersAnnotationRetryLogic(t *testing.T) {
+	// Use the same scheme setup pattern as the working tests
+	testscheme := scheme.Scheme
+	err := rbacv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterv1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+
+	t.Run("Should retry on conflict and succeed", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-retry",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+			},
+		}
+
+		allClusters := []string{"cluster1", "cluster2"}
+
+		// Mock client that will conflict twice, then succeed
+		mockClient := &mockConflictClient{
+			maxConflicts: 2,
+		}
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: mockClient,
+			Scheme: testscheme,
+		}
+
+		// This should trigger retry logic
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err != nil {
+			t.Fatalf("updateAllClustersAnnotation should succeed after retries, got error = %v", err)
+		}
+
+		// Verify that retries occurred
+		if mockClient.updateAttempts != 3 {
+			t.Fatalf("Expected 3 update attempts (2 conflicts + 1 success), got %d", mockClient.updateAttempts)
+		}
+	})
+
+	t.Run("Should fail after exhausting retries", func(t *testing.T) {
+		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "test-retry-exhausted",
+				Namespace:       "open-cluster-management",
+				ResourceVersion: "1",
+			},
+		}
+
+		allClusters := []string{"cluster1"}
+
+		// Mock client that will always conflict
+		mockClient := &mockConflictClient{
+			maxConflicts: 10, // More than the 3 retry limit
+		}
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: mockClient,
+			Scheme: testscheme,
+		}
+
+		// This should fail after exhausting retries
+		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
+		if err == nil {
+			t.Fatalf("Expected updateAllClustersAnnotation to fail after exhausting retries")
+		}
+
+		expectedErrMsg := "failed to update all clusters annotation after 3 retries due to conflicts"
+		if err.Error() != expectedErrMsg {
+			t.Fatalf("Expected error message '%s', got '%s'", expectedErrMsg, err.Error())
+		}
+
+		// Verify that 3 attempts were made
+		if mockClient.updateAttempts != 3 {
+			t.Fatalf("Expected exactly 3 update attempts, got %d", mockClient.updateAttempts)
+		}
+	})
+}
