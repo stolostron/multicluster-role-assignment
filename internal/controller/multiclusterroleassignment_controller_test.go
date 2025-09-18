@@ -3255,7 +3255,7 @@ func TestProcessClusterPermissionsStaleCleanup(t *testing.T) {
 		}
 
 		// Override Delete method to simulate an error on the first call
-		originalDelete := mock.Client.Delete
+		originalDelete := mock.Delete
 		mock.Client = &clientWrapper{
 			Client: baseClient,
 			deleteFn: func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
