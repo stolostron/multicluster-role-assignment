@@ -362,15 +362,16 @@ var _ = Describe("Manager", Ordered, func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
 
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
 			Context("resource creation and fetching", func() {
 				var clusterPermissionJSON, mraJSON string
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
-
-					By("waiting for controller to process the MulticlusterRoleAssignment")
-					time.Sleep(2 * time.Second)
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -428,9 +429,6 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
-		// !!!IMPORTANT!!!
-		// This context reuses Kubernetes resources created from the previous context. Keep this in mind when
-		// running/debugging these tests - they depend on the previous context having run successfully.
 		Context("should modify ClusterPermission when MulticlusterRoleAssignment role name is edited", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
@@ -439,22 +437,23 @@ var _ = Describe("Manager", Ordered, func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
-			Context("resource modification and fetching", func() {
+			Context("resource creation and modification", func() {
 				var clusterPermissionJSON, mraJSON string
 
-				It("should modify and fetch MulticlusterRoleAssignment", func() {
-					By("modifying the MRA to change cluster role from 'view' to 'edit'")
+				It("should create and modify MulticlusterRoleAssignment", func() {
+					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+
+					By("fetching the initial MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
 						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
 					unmarshalJSON(mraJSON, &mra)
 
+					By("modifying the MRA to change cluster role from 'view' to 'edit'")
 					mra.Spec.RoleAssignments[0].ClusterRole = "edit"
 					patchK8sMRA(&mra)
 
-					By("waiting for controller to process the updated MulticlusterRoleAssignment")
-					time.Sleep(2 * time.Second)
-
-					By("waiting for updated MulticlusterRoleAssignment to be fetched")
+					By("fetching the updated MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
 						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
 
@@ -526,9 +525,6 @@ var _ = Describe("Manager", Ordered, func() {
 					By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
 
-					By("waiting for controller to process the MulticlusterRoleAssignment")
-					time.Sleep(2 * time.Second)
-
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
 						testMulticlusterRoleAssignmentSingleRBName, openClusterManagementGlobalSetNamespace)
@@ -590,6 +586,31 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
+		Context("should delete ClusterPermission when MulticlusterRoleAssignment is deleted", func() {
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+			})
+
+			It("should create and delete MulticlusterRoleAssignment", func() {
+				By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
+				applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
+
+				By("deleting the MulticlusterRoleAssignment")
+				deleteK8sMRA(testMulticlusterRoleAssignmentSingleRBName)
+			})
+
+			It("should verify ClusterPermission is deleted", func() {
+				By("verifying ClusterPermission is deleted")
+				verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+			})
+
+			It("should verify MulticlusterRoleAssignment no longer exists", func() {
+				By("verifying MulticlusterRoleAssignment is deleted")
+				verifyK8sResourceDeleted("multiclusterroleassignment", testMulticlusterRoleAssignmentSingleRBName,
+					openClusterManagementGlobalSetNamespace)
+			})
+		})
+
 		Context("should create multiple ClusterPermissions across different clusters", func() {
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
@@ -606,9 +627,6 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
 					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
-
-					By("waiting for controller to process the MulticlusterRoleAssignment")
-					time.Sleep(2 * time.Second)
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -725,6 +743,15 @@ var _ = Describe("Manager", Ordered, func() {
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
 			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
 
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
 			Context("resource creation and fetching", func() {
 				var mraJSONs [4]string
 				var clusterPermissionJSONs [3]string
@@ -740,9 +767,6 @@ var _ = Describe("Manager", Ordered, func() {
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
 					}
-
-					By("waiting for controller to process the MulticlusterRoleAssignment")
-					time.Sleep(4 * time.Second)
 
 					By("fetching all four MulticlusterRoleAssignments")
 					mraNames := []string{
@@ -922,9 +946,6 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
-		// !!!IMPORTANT!!!
-		// This context reuses Kubernetes resources created from the previous context. Keep this in mind when
-		// running/debugging these tests - they depend on the previous context having run successfully.
 		Context("should modify multiple MulticlusterRoleAssignments with comprehensive changes and update "+
 			"ClusterPermissions accordingly", func() {
 
@@ -940,13 +961,24 @@ var _ = Describe("Manager", Ordered, func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
-			Context("resource modification and fetching", func() {
+			Context("resource creation and comprehensive modification", func() {
 				var mraJSONs [4]string
 				var clusterPermissionJSONs [3]string
 				const groupSubjectKind = "Group"
 
-				It("should modify and fetch all MulticlusterRoleAssignments with comprehensive changes", func() {
-					By("fetching existing MulticlusterRoleAssignments to modify them")
+				It("should create and comprehensively modify all MulticlusterRoleAssignments", func() {
+					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
+					manifestFiles := []string{
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+					}
+					for _, manifestFile := range manifestFiles {
+						applyK8sManifest(manifestFile)
+					}
+
+					By("fetching all four MulticlusterRoleAssignments to modify them")
 					mraNames := []string{
 						testMulticlusterRoleAssignmentMultiple2Name,
 						testMulticlusterRoleAssignmentMultiple1Name,
@@ -1002,9 +1034,6 @@ var _ = Describe("Manager", Ordered, func() {
 						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02",
 						"managedcluster03")
 					patchK8sMRA(&mras[3])
-
-					By("waiting for controller to process all comprehensively updated MulticlusterRoleAssignments")
-					time.Sleep(4 * time.Second)
 
 					By("fetching all comprehensively updated MulticlusterRoleAssignments")
 					for i, mraName := range mraNames {
@@ -1217,6 +1246,220 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 		})
+
+		Context("should delete MulticlusterRoleAssignments and update ClusterPermissions - tests MRA deletion "+
+			"with shared ClusterPermissions", func() {
+
+			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
+			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+
+			Context("resource creation and deletion", func() {
+				var mraJSONs [4]string
+				var clusterPermissionJSONs [3]string
+
+				It("should create all MulticlusterRoleAssignments in sequence", func() {
+					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and DELETE operations")
+					manifestFiles := []string{
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+					}
+					for _, manifestFile := range manifestFiles {
+						applyK8sManifest(manifestFile)
+					}
+				})
+
+				It("should delete one MulticlusterRoleAssignment", func() {
+					By(fmt.Sprintf("deleting %s", testMulticlusterRoleAssignmentMultiple2Name))
+					deleteK8sMRA(testMulticlusterRoleAssignmentMultiple2Name)
+				})
+
+				It("should fetch remaining MulticlusterRoleAssignments", func() {
+					By("fetching remaining three MulticlusterRoleAssignments")
+					mraNames := []string{
+						testMulticlusterRoleAssignmentMultiple1Name,
+						testMulticlusterRoleAssignmentSingleRBName,
+						testMulticlusterRoleAssignmentSingleCRBName,
+					}
+					for i, mraName := range mraNames {
+						mraJSONs[i+1] = fetchK8sResourceJSON(
+							"multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+					}
+
+					By("unmarshaling remaining MulticlusterRoleAssignment JSONs")
+					for i := 1; i < len(mras); i++ {
+						unmarshalJSON(mraJSONs[i], &mras[i])
+					}
+				})
+
+				It("should fetch updated ClusterPermissions for all managed clusters", func() {
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf(
+							"waiting for updated ClusterPermission to be ready and fetching it from %s", clusterName))
+						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
+							"mra-managed-permissions", clusterName)
+
+						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
+						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+					}
+				})
+			})
+
+			Context("ClusterPermission updated content validation after deletion", func() {
+				It("should have correctly updated content for managedcluster01 after deletion", func() {
+					By("verifying updated ClusterPermission content in managedcluster01 namespace")
+					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(2))
+					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(4))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+						// RoleBindings
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+				})
+
+				It("should have correctly updated content for managedcluster02 after deletion", func() {
+					By("verifying updated ClusterPermission content in managedcluster02 namespace")
+					// Not nil because it is an empty slice after role binding removal
+					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(BeEmpty())
+					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(9))
+
+					expectedBindings := []ExpectedBinding{
+						// RoleBindings
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+				})
+
+				It("should have correctly updated content for managedcluster03 after deletion", func() {
+					By("verifying updated ClusterPermission content in managedcluster03 namespace")
+					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(2))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
+						// RoleBindings
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
+				})
+
+				It("should have correct owner annotations for all clusters after deletion", func() {
+					By("verifying ClusterPermission owner annotations for remaining MRAs")
+					for _, cp := range clusterPermissions {
+						for i := 1; i < len(mras); i++ {
+							validateMRAOwnerAnnotations(cp, mras[i])
+						}
+					}
+
+					By("verifying binding annotations have semantic consistency after deletion")
+					for _, cp := range clusterPermissions {
+						validateBindingConsistency(cp, mras[1:])
+					}
+				})
+			})
+
+			Context("MulticlusterRoleAssignment status validation after deletion", func() {
+				It("should verify deleted MRA no longer exists", func() {
+					By(fmt.Sprintf("verifying %s is deleted", testMulticlusterRoleAssignmentMultiple2Name))
+					verifyK8sResourceDeleted("multiclusterroleassignment", testMulticlusterRoleAssignmentMultiple2Name,
+						openClusterManagementGlobalSetNamespace)
+				})
+
+				It("should have correct conditions for remaining MRAs", func() {
+					By("verifying MulticlusterRoleAssignment conditions for remaining MRAs")
+					for i := 1; i < len(mras); i++ {
+						validateMRASuccessConditions(mras[i])
+					}
+				})
+
+				It("should have correct role assignment statuses for remaining MRAs", func() {
+					By(fmt.Sprintf(
+						"verifying role assignment status details for %s", testMulticlusterRoleAssignmentMultiple1Name))
+					Expect(mras[1].Status.RoleAssignments).To(HaveLen(4))
+					roleAssignmentsByName1 := mapRoleAssignmentsByName(mras[1])
+					assignmentNames1 := []string{
+						"view-assignment-namespaced-clusters-1-2",
+						"edit-assignment-cluster-3",
+						"admin-assignment-cluster-1",
+						"monitoring-assignment-namespaced-all-clusters",
+					}
+					for _, name := range assignmentNames1 {
+						validateRoleAssignmentSuccessStatus(roleAssignmentsByName1, name)
+					}
+
+					By(fmt.Sprintf(
+						"verifying role assignment status details for %s", testMulticlusterRoleAssignmentSingleRBName))
+					Expect(mras[2].Status.RoleAssignments).To(HaveLen(1))
+					roleAssignmentsByName2 := mapRoleAssignmentsByName(mras[2])
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName2, "test-role-assignment-namespaced")
+
+					By(fmt.Sprintf(
+						"verifying role assignment status details for %s", testMulticlusterRoleAssignmentSingleCRBName))
+					Expect(mras[3].Status.RoleAssignments).To(HaveLen(1))
+					roleAssignmentsByName3 := mapRoleAssignmentsByName(mras[3])
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName3, "test-role-assignment")
+				})
+			})
+
+			Context("final deletion of all remaining MRAs", func() {
+				mraNames := []string{
+					testMulticlusterRoleAssignmentMultiple1Name,
+					testMulticlusterRoleAssignmentSingleRBName,
+					testMulticlusterRoleAssignmentSingleCRBName,
+				}
+
+				It("should delete all remaining MulticlusterRoleAssignments", func() {
+					By("deleting remaining MulticlusterRoleAssignments one by one")
+					for _, mraName := range mraNames {
+						By(fmt.Sprintf("deleting %s", mraName))
+						deleteK8sMRA(mraName)
+					}
+				})
+
+				It("should verify all MulticlusterRoleAssignments are deleted", func() {
+					By("verifying all MRAs no longer exist")
+					for _, mraName := range mraNames {
+						By(fmt.Sprintf("verifying %s is deleted", mraName))
+						verifyK8sResourceDeleted("multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+					}
+				})
+
+				It("should verify all ClusterPermissions are deleted", func() {
+					By("verifying all managed ClusterPermissions are deleted")
+					clusterNames := []string{"managedcluster01", "managedcluster02", "managedcluster03"}
+
+					for _, clusterName := range clusterNames {
+						By(fmt.Sprintf("verifying ClusterPermission is deleted in %s", clusterName))
+						verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", clusterName)
+					}
+				})
+			})
+		})
 	})
 })
 
@@ -1325,6 +1568,7 @@ func applyK8sManifest(manifestPath string) {
 	cmd := exec.Command("kubectl", "apply", "-f", manifestPath)
 	_, err := utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
+	waitForController()
 }
 
 // patchK8sMRA applies a patch to a MulticlusterRoleAssignment using kubectl patch.
@@ -1339,6 +1583,7 @@ func patchK8sMRA(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 		openClusterManagementGlobalSetNamespace, "--type", "merge", "-p", string(patchBytes))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
+	waitForController()
 }
 
 // fetchK8sResourceJSON waits for a Kubernetes resource to be available and returns its JSON representation
@@ -1358,6 +1603,30 @@ func fetchK8sResourceJSON(resourceType, resourceName, namespace string) string {
 func unmarshalJSON(jsonData string, target any) {
 	err := json.Unmarshal([]byte(jsonData), target)
 	Expect(err).NotTo(HaveOccurred())
+}
+
+// deleteK8sMRA deletes a MulticlusterRoleAssignment using kubectl delete.
+func deleteK8sMRA(mraName string) {
+	cmd := exec.Command("kubectl", "delete", "multiclusterroleassignment",
+		mraName, "-n", openClusterManagementGlobalSetNamespace)
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+	waitForController()
+}
+
+// verifyK8sResourceDeleted verifies that a Kubernetes resource has been deleted by checking it returns "not found".
+func verifyK8sResourceDeleted(resourceType, resourceName, namespace string) {
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", resourceType, resourceName, "-n", namespace)
+		_, err := utils.Run(cmd)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("not found"))
+	}, 20*time.Second).Should(Succeed())
+}
+
+// waitForController sleeps for 1 seccond.
+func waitForController() {
+	time.Sleep(1 * time.Second)
 }
 
 // cleanupTestResources cleans up MulticlusterRoleAssignment and ClusterPermissions for a test.
