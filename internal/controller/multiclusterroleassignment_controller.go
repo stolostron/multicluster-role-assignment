@@ -291,7 +291,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: ClusterPermissionFailureRequeueDelay}, nil
 	}
 
-	// Compute all clusters annotation and update the MulticlusterRoleAssignment here?
 	log.Info("Successfully processed ClusterPermissions", "multiclusterroleassignment", req.NamespacedName)
 
 	log.Info("Successfully completed reconciliation", "multiclusterroleassignment", req.NamespacedName)
