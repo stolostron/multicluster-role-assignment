@@ -258,10 +258,21 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, err
 	}
 
+	// Add missing clusters to allClusters
+	previousClusters := []string{}
+	if mra.Annotations != nil && mra.Annotations[AllClustersAnnotation] != "" {
+		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
+	}
+
+	oldAllClusters := allClusters
+	// Clusters in previousClusters but not in allClusters
+	missingClusters := utils.FindDifference(previousClusters, allClusters)
+	oldAllClusters = append(oldAllClusters, missingClusters...)
+
 	log.Info("Successfully aggregated target clusters", "multiclusterroleassignment", req.NamespacedName,
 		"clusters", allClusters)
 
-	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, allClusters)
+	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, oldAllClusters)
 
 	// Single status update at the end of successful reconciliation
 	if err := r.updateStatus(ctx, &mra); err != nil {
@@ -640,27 +651,6 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 				totalClusters))
 	}
 
-	// Cleanup stale ClusterPermissions
-	previousClusters := []string{}
-	if mra.Annotations != nil && mra.Annotations[AllClustersAnnotation] != "" {
-		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
-	}
-	// Clusters in previousClusters but not in current clusters
-	staleClusters := utils.FindDifference(previousClusters, clusters)
-	for _, cluster := range staleClusters {
-		err := r.Delete(ctx, &clusterpermissionv1alpha1.ClusterPermission{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
-				Namespace: cluster,
-			},
-		})
-		if err != nil {
-			log.Error(err, "Failed to delete stale ClusterPermission", "cluster", cluster)
-		} else {
-			log.Info("Successfully deleted stale ClusterPermission", "cluster", cluster)
-		}
-	}
-
 	return state.FailedClusters
 }
 
@@ -802,9 +792,19 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	updatedCP.Spec = newSpec
 	updatedCP.Annotations = newAnnotations
 
-	if err := r.Update(ctx, updatedCP); err != nil {
-		log.Error(err, "Failed to update ClusterPermission")
-		return err
+	// Check if we update or delete the ClusterPermission
+	if (newSpec.ClusterRoleBindings == nil || len(*newSpec.ClusterRoleBindings) == 0) &&
+		(newSpec.RoleBindings == nil || len(*newSpec.RoleBindings) == 0) {
+		log.Info("Deleting ClusterPermission", "clusterPermission", updatedCP.Name)
+		if err := r.Delete(ctx, updatedCP); err != nil {
+			log.Error(err, "Failed to delete ClusterPermission")
+			return err
+		}
+	} else {
+		if err := r.Update(ctx, updatedCP); err != nil {
+			log.Error(err, "Failed to update ClusterPermission")
+			return err
+		}
 	}
 
 	log.Info("Successfully updated ClusterPermission")
