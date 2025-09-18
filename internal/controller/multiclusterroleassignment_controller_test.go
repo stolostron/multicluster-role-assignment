@@ -1893,45 +1893,31 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		t.Fatalf("AddToScheme error = %v", err)
 	}
 
-	const (
-		testRoleAssignment1Name = "test-assignment-1"
-		testRoleAssignment2Name = "test-assignment-2"
-		testRoleName            = "test-role"
-		testUser1Name           = "test-user1"
-		testUser2Name           = "test-user2"
-		testMra1Name            = "multiclusterroleassignment-sample1"
-		testMra2Name            = "multiclusterroleassignment-sample2"
-		testNamespace           = "open-cluster-management"
-		testCluster1Name        = "cluster1"
-		testCluster2Name        = "cluster2"
-		testCpName              = "mra-managed-permissions"
-	)
-
 	testMra1 := &rbacv1alpha1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testMra1Name,
-			Namespace: testNamespace,
+			Name:      "multiclusterroleassignment-sample1",
+			Namespace: "open-cluster-management",
 		},
 		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
-				Name: testUser1Name,
+				Name: "test-user1",
 			},
 			RoleAssignments: []rbacv1alpha1.RoleAssignment{
 				{
-					Name:        testRoleAssignment1Name,
-					ClusterRole: testRoleName,
+					Name:        "test-assignment-1",
+					ClusterRole: "test-role",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type:         "clusterNames",
-						ClusterNames: []string{testCluster1Name},
+						ClusterNames: []string{"cluster1"},
 					},
 				},
 				{
-					Name:        testRoleAssignment2Name,
-					ClusterRole: testRoleName,
+					Name:        "test-assignment-2",
+					ClusterRole: "test-role",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type:         "clusterNames",
-						ClusterNames: []string{testCluster2Name},
+						ClusterNames: []string{"cluster2"},
 					},
 				},
 			},
@@ -1940,29 +1926,29 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 
 	testMra2 := &rbacv1alpha1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testMra2Name,
-			Namespace: testNamespace,
+			Name:      "multiclusterroleassignment-sample2",
+			Namespace: "open-cluster-management",
 		},
 		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
-				Name: testUser2Name,
+				Name: "test-user2",
 			},
 			RoleAssignments: []rbacv1alpha1.RoleAssignment{
 				{
-					Name:        testRoleAssignment1Name,
-					ClusterRole: testRoleName,
+					Name:        "test-assignment-1",
+					ClusterRole: "test-role",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type:         "clusterNames",
-						ClusterNames: []string{testCluster1Name},
+						ClusterNames: []string{"cluster1"},
 					},
 				},
 				{
-					Name:        testRoleAssignment2Name,
-					ClusterRole: testRoleName,
+					Name:        "test-assignment-2",
+					ClusterRole: "test-role",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type:         "clusterNames",
-						ClusterNames: []string{testCluster2Name},
+						ClusterNames: []string{"cluster2"},
 					},
 				},
 			},
@@ -1978,11 +1964,13 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 
 	testCp1 := &clusterpermissionv1alpha1.ClusterPermission{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testCpName,
-			Namespace: testCluster1Name,
+			Name:      "mra-managed-permissions",
+			Namespace: "cluster1",
 			Annotations: map[string]string{
-				OwnerAnnotationPrefix + "mra-35e36445c130": "open-cluster-management/multiclusterroleassignment-sample2",
-				OwnerAnnotationPrefix + "mra-9f00838bc8aa": "open-cluster-management/multiclusterroleassignment-sample1",
+				OwnerAnnotationPrefix +
+					bindingNameMra2Assignment1: "open-cluster-management/multiclusterroleassignment-sample2",
+				OwnerAnnotationPrefix +
+					bindingNameMra1Assignment1: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
 				ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
@@ -1994,19 +1982,19 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 					Name: bindingNameMra1Assignment1,
 					RoleRef: &rbacv1.RoleRef{
 						Kind:     ClusterRoleKind,
-						Name:     testRoleName,
+						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
-					Subjects: []rbacv1.Subject{{Kind: "User", Name: testUser1Name}},
+					Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user1"}},
 				},
 				{
 					Name: bindingNameMra2Assignment1,
 					RoleRef: &rbacv1.RoleRef{
 						Kind:     ClusterRoleKind,
-						Name:     testRoleName,
+						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
-					Subjects: []rbacv1.Subject{{Kind: "User", Name: testUser2Name}},
+					Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user2"}},
 				},
 			},
 		},
@@ -2014,11 +2002,13 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 
 	testCp2 := &clusterpermissionv1alpha1.ClusterPermission{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testCpName,
-			Namespace: testCluster2Name,
+			Name:      "mra-managed-permissions",
+			Namespace: "cluster2",
 			Annotations: map[string]string{
-				OwnerAnnotationPrefix + "mra-d10a91efc36c": "open-cluster-management/multiclusterroleassignment-sample2",
-				OwnerAnnotationPrefix + "mra-d881ad60fb3a": "open-cluster-management/multiclusterroleassignment-sample1",
+				OwnerAnnotationPrefix +
+					bindingNameMra2Assignment2: "open-cluster-management/multiclusterroleassignment-sample2",
+				OwnerAnnotationPrefix +
+					bindingNameMra1Assignment2: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
 				ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
@@ -2030,19 +2020,19 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 					Name: bindingNameMra1Assignment2,
 					RoleRef: &rbacv1.RoleRef{
 						Kind:     ClusterRoleKind,
-						Name:     testRoleName,
+						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
-					Subjects: []rbacv1.Subject{{Kind: "User", Name: testUser1Name}},
+					Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user1"}},
 				},
 				{
 					Name: bindingNameMra2Assignment2,
 					RoleRef: &rbacv1.RoleRef{
 						Kind:     ClusterRoleKind,
-						Name:     testRoleName,
+						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
-					Subjects: []rbacv1.Subject{{Kind: "User", Name: testUser2Name}},
+					Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user2"}},
 				},
 			},
 		},
@@ -2050,13 +2040,13 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 
 	testCluster1 := &clusterv1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testCluster1Name,
+			Name: "cluster1",
 		},
 	}
 
 	testCluster2 := &clusterv1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testCluster2Name,
+			Name: "cluster2",
 		},
 	}
 
@@ -2074,7 +2064,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		}
 
 		// Validate ClusterPermission
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: testCpName, Namespace: testCluster1Name}, testCp1)
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: "mra-managed-permissions", Namespace: "cluster1"}, testCp1)
 		if err != nil {
 			t.Fatalf("get ClusterPermission error = %v", err)
 		}
@@ -2091,12 +2081,12 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 			t.Fatalf("handleMulticlusterRoleAssignmentDeletion() error = %v", err)
 		}
 
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: testCpName, Namespace: testCluster1Name}, testCp1)
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: "mra-managed-permissions", Namespace: "cluster1"}, testCp1)
 		if err == nil {
 			t.Fatalf("ClusterPermission should be deleted")
 		}
 
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: testCpName, Namespace: testCluster2Name}, testCp2)
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: "mra-managed-permissions", Namespace: "cluster2"}, testCp2)
 		if err == nil {
 			t.Fatalf("ClusterPermission should be deleted")
 		}
