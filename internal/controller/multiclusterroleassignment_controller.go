@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -793,26 +794,57 @@ func (r *MulticlusterRoleAssignmentReconciler) clearStaleStatus(mra *rbacv1alpha
 		}
 	}
 
-	for i := range mra.Status.RoleAssignments {
-		mra.Status.RoleAssignments[i].Status = StatusTypePending
-		mra.Status.RoleAssignments[i].Reason = ReasonInitializing
-		mra.Status.RoleAssignments[i].Message = MessageInitializing
+	currentRoleAssignmentNames := make(map[string]bool)
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		currentRoleAssignmentNames[roleAssignment.Name] = true
 	}
+
+	var currentRoleAssignmentStatuses []rbacv1alpha1.RoleAssignmentStatus
+	for _, status := range mra.Status.RoleAssignments {
+		if currentRoleAssignmentNames[status.Name] {
+			status.Status = StatusTypePending
+			status.Reason = ReasonInitializing
+			status.Message = MessageInitializing
+			currentRoleAssignmentStatuses = append(currentRoleAssignmentStatuses, status)
+		}
+	}
+	mra.Status.RoleAssignments = currentRoleAssignmentStatuses
 }
 
-// generateBindingName creates a deterministic and unique binding name using MulticlusterRoleAssignment namespace, name,
-// and role assignment name. Binding name must be unique or else ClusterPermission may fail to apply it.
-func (r *MulticlusterRoleAssignmentReconciler) generateBindingName(
-	mra *rbacv1alpha1.MulticlusterRoleAssignment, roleAssignmentName string) string {
+// generateBindingName creates a deterministic and unique binding name using all key binding properties. This ensures
+// different bindings get different names even when they share some properties. Binding name must be unique or else
+// ClusterPermission may fail to apply it.
+func (r *MulticlusterRoleAssignmentReconciler) generateBindingName(mra *rbacv1alpha1.MulticlusterRoleAssignment,
+	roleAssignmentName, roleName string, bindingNamespace ...string) string {
 
-	// TODO: improve name, without hasing if possible
-	// Annotation key name has limit of 63 characters
-	var buf []byte
-	buf = fmt.Appendf(buf, "%s/%s/%s", mra.Namespace, mra.Name, roleAssignmentName)
-	h := sha256.Sum256(buf)
-	hash := hex.EncodeToString(h[:])[:12]
+	var data []byte
+	data = fmt.Appendf(data, "%s/%s/%s/%s/%s/%s",
+		mra.Namespace,
+		mra.Name,
+		mra.Spec.Subject.Kind,
+		mra.Spec.Subject.Name,
+		roleAssignmentName,
+		roleName)
 
-	return fmt.Sprintf("mra-%s", hash)
+	if len(bindingNamespace) > 0 && bindingNamespace[0] != "" {
+		data = fmt.Appendf(data, "/%s", bindingNamespace[0])
+	}
+
+	h := sha256.Sum256(data)
+	hash := hex.EncodeToString(h[:])[:16]
+
+	invalidCharsRegex := regexp.MustCompile(`[^a-z0-9-.]`)
+	sanitizedRoleName := strings.ToLower(roleName)
+	sanitizedRoleName = invalidCharsRegex.ReplaceAllString(sanitizedRoleName, "-")
+	sanitizedRoleName = strings.Trim(sanitizedRoleName, "-")
+
+	// Ensure we do not go over the 63 character kubernetes annotation key name limit
+	maxRoleNameLength := 46
+	if len(sanitizedRoleName) > maxRoleNameLength {
+		sanitizedRoleName = sanitizedRoleName[:maxRoleNameLength]
+	}
+
+	return sanitizedRoleName + "-" + hash
 }
 
 // generateOwnerAnnotationKey creates the ClusterPermission annotation key for tracking binding ownership in
@@ -866,9 +898,8 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 			continue
 		}
 
-		bindingName := r.generateBindingName(mra, roleAssignment.Name)
-
 		if len(roleAssignment.TargetNamespaces) == 0 {
+			bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole)
 			ownerKey := r.generateOwnerAnnotationKey(bindingName)
 			desiredSlice.OwnerAnnotations[ownerKey] = mraIdentifier
 
@@ -884,12 +915,12 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 			desiredSlice.ClusterRoleBindings = append(desiredSlice.ClusterRoleBindings, clusterRoleBinding)
 		} else {
 			for _, namespace := range roleAssignment.TargetNamespaces {
-				namespacedBindingName := fmt.Sprintf("%s-%s", bindingName, namespace)
-				namespacedOwnerKey := r.generateOwnerAnnotationKey(namespacedBindingName)
+				bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole, namespace)
+				namespacedOwnerKey := r.generateOwnerAnnotationKey(bindingName)
 				desiredSlice.OwnerAnnotations[namespacedOwnerKey] = mraIdentifier
 
 				roleBinding := clusterpermissionv1alpha1.RoleBinding{
-					Name:      namespacedBindingName,
+					Name:      bindingName,
 					Namespace: namespace,
 					RoleRef: clusterpermissionv1alpha1.RoleRef{
 						Kind:     ClusterRoleKind,
@@ -1070,21 +1101,24 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 				continue
 			}
 
-			bindingName := r.generateBindingName(mra, roleAssignment.Name)
-
-			if err := r.removeClusterRoleBindingOrRoleBinding(ctx, cp, roleAssignment, bindingName); err != nil {
-				log.Error(err, "Failed to remove ClusterRoleBinding or RoleBinding")
-				return err
+			namespacesToProcess := roleAssignment.TargetNamespaces
+			if len(namespacesToProcess) == 0 {
+				namespacesToProcess = []string{""}
 			}
 
-			// Remove ClusterPermission owner binding annotations
-			annotations := cp.Annotations
-			for key := range annotations {
-				if strings.HasPrefix(key, r.generateOwnerAnnotationKey(bindingName)) {
-					delete(annotations, key)
+			for _, namespace := range namespacesToProcess {
+				bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole, namespace)
+
+				if err := r.removeClusterRoleBindingOrRoleBinding(ctx, cp, roleAssignment, bindingName); err != nil {
+					log.Error(err, "Failed to remove ClusterRoleBinding or RoleBinding")
+					return err
+				}
+
+				ownerKey := r.generateOwnerAnnotationKey(bindingName)
+				if cp.Annotations != nil {
+					delete(cp.Annotations, ownerKey)
 				}
 			}
-			cp.Annotations = annotations
 		}
 
 		// Delete the ClusterPermission if it has no bindings
