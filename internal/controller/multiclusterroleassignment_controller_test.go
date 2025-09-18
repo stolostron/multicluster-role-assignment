@@ -1385,8 +1385,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
 				adminBindingName := reconciler.generateBindingName(mra, "admin-role", "cluster-admin")
-				editBindingName := reconciler.generateBindingName(
-					mra, "edit-role", "edit", "development", "development")
+				editBindingName := reconciler.generateBindingName(mra, "edit-role", "edit", "development")
 
 				expectedAdminKey := OwnerAnnotationPrefix + adminBindingName
 				expectedEditKey := OwnerAnnotationPrefix + editBindingName
