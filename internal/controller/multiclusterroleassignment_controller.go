@@ -643,7 +643,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 
 	// Cleanup stale ClusterPermissions
 	previousClusters := []string{}
-	if mra.Annotations != nil {
+	if mra.Annotations != nil && mra.Annotations[AllClustersAnnotation] != "" {
 		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
 	}
 	// Clusters in previousClusters but not in current clusters
@@ -1212,7 +1212,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateAllClustersAnnotation(
 		}
 
 		if apierrors.IsConflict(err) {
-			log.Info("All clusters annotation update conflict, retrying", "error", err, "multiclusterroleassignment", mra.Name)
+			log.Info("All clusters annotation update conflict, retrying", "multiclusterroleassignment", mra.Name)
 			continue
 		}
 

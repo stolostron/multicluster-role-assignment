@@ -2862,7 +2862,6 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 type mockConflictClient struct {
 	client.Client
 	updateAttempts int
-	conflictCount  int
 	maxConflicts   int
 }
 
