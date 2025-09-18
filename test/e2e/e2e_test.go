@@ -1335,8 +1335,8 @@ func patchK8sMRA(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 	patchBytes, err := json.Marshal(patchSpec)
 	Expect(err).NotTo(HaveOccurred())
 
-	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", openClusterManagementGlobalSetNamespace, "-n",
-		namespace, "--type", "merge", "-p", string(patchBytes))
+	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", mra.Name, "-n",
+		openClusterManagementGlobalSetNamespace, "--type", "merge", "-p", string(patchBytes))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 }
