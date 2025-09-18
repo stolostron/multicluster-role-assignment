@@ -515,10 +515,6 @@ var _ = Describe("Manager", Ordered, func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
 			var mra rbacv1alpha1.MulticlusterRoleAssignment
 
-			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
-			})
-
 			Context("resource creation and fetching", func() {
 				var clusterPermissionJSON, mraJSON string
 
@@ -587,6 +583,48 @@ var _ = Describe("Manager", Ordered, func() {
 					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment-namespaced")
 				})
+			})
+		})
+
+		// !!!IMPORTANT!!!
+		// This context reuses Kubernetes resources created from the previous context. Keep this in mind when
+		// running/debugging these tests - they depend on the previous context having run successfully.
+		Context("should delete ClusterPermission when MulticlusterRoleAssignment is deleted", func() {
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+			})
+
+			It("should delete MulticlusterRoleAssignment", func() {
+				By("deleting the MulticlusterRoleAssignment")
+				cmd := exec.Command("kubectl", "delete", "multiclusterroleassignment",
+					testMulticlusterRoleAssignmentSingleRBName, "-n", openClusterManagementGlobalSetNamespace)
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("waiting for controller to process the MulticlusterRoleAssignment deletion")
+				time.Sleep(2 * time.Second)
+			})
+
+			It("should verify ClusterPermission is deleted", func() {
+				By("verifying ClusterPermission is deleted")
+				Eventually(func(g Gomega) {
+					cmd := exec.Command(
+						"kubectl", "get", "clusterpermissions", "mra-managed-permissions", "-n", "managedcluster02")
+					_, err := utils.Run(cmd)
+					g.Expect(err).To(HaveOccurred())
+					g.Expect(err.Error()).To(ContainSubstring("not found"))
+				}, 20*time.Second).Should(Succeed())
+			})
+
+			It("should verify MulticlusterRoleAssignment no longer exists", func() {
+				By("verifying MulticlusterRoleAssignment is deleted")
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleRBName, "-n", openClusterManagementGlobalSetNamespace)
+					_, err := utils.Run(cmd)
+					g.Expect(err).To(HaveOccurred())
+					g.Expect(err.Error()).To(ContainSubstring("not found"))
+				}, 20*time.Second).Should(Succeed())
 			})
 		})
 
