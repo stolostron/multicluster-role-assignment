@@ -2988,3 +2988,319 @@ func TestUpdateAllClustersAnnotationRetryLogic(t *testing.T) {
 		}
 	})
 }
+
+func TestProcessClusterPermissionsStaleCleanup(t *testing.T) {
+	var testScheme = scheme.Scheme
+	err := rbacv1alpha1.AddToScheme(testScheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterv1.AddToScheme(testScheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+	err = clusterpermissionv1alpha1.AddToScheme(testScheme)
+	if err != nil {
+		t.Fatalf("AddToScheme error = %v", err)
+	}
+
+	t.Run("should delete stale ClusterPermissions when previous clusters exist but current clusters are different", func(t *testing.T) {
+		// Create test objects
+		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-mra",
+				Namespace: "test-namespace",
+				Annotations: map[string]string{
+					AllClustersAnnotation: "cluster1;cluster2;cluster3", // Previous clusters
+				},
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1", "cluster2"}, // Current clusters (cluster3 is stale)
+						},
+					},
+				},
+			},
+		}
+
+		// Create a stale ClusterPermission that should be deleted
+		staleClusterPermission := &clusterpermissionv1alpha1.ClusterPermission{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ClusterPermissionManagedName,
+				Namespace: "cluster3", // This is the stale cluster
+				Labels: map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				},
+			},
+		}
+
+		// Create managed clusters for current clusters
+		cluster1 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster1"}}
+		cluster2 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster2"}}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(testMra, staleClusterPermission, cluster1, cluster2).
+			Build()
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testScheme,
+		}
+
+		ctx := context.Background()
+		currentClusters := []string{"cluster1", "cluster2"}
+
+		// Call processClusterPermissions
+		errors := reconciler.processClusterPermissions(ctx, testMra, currentClusters)
+
+		// Verify no errors occurred
+		if len(errors) != 0 {
+			t.Fatalf("Expected no errors, got: %v", errors)
+		}
+
+		// Verify the stale ClusterPermission was deleted
+		var remainingCP clusterpermissionv1alpha1.ClusterPermission
+		err := fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "cluster3"}, &remainingCP)
+		if !apierrors.IsNotFound(err) {
+			t.Fatalf("Expected stale ClusterPermission to be deleted, but it still exists")
+		}
+	})
+
+	t.Run("should handle case when no previous clusters annotation exists", func(t *testing.T) {
+		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-mra",
+				Namespace: "test-namespace",
+				// No annotations - first time running
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"},
+						},
+					},
+				},
+			},
+		}
+
+		cluster1 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster1"}}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(testMra, cluster1).
+			Build()
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testScheme,
+		}
+
+		ctx := context.Background()
+		currentClusters := []string{"cluster1"}
+
+		// Call processClusterPermissions - should not fail when no previous annotation exists
+		errors := reconciler.processClusterPermissions(ctx, testMra, currentClusters)
+
+		// Verify no errors occurred
+		if len(errors) != 0 {
+			t.Fatalf("Expected no errors, got: %v", errors)
+		}
+	})
+
+	t.Run("should not delete any ClusterPermissions when previous and current clusters are the same", func(t *testing.T) {
+		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-mra",
+				Namespace: "test-namespace",
+				Annotations: map[string]string{
+					AllClustersAnnotation: "cluster1;cluster2", // Previous clusters
+				},
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1", "cluster2"}, // Same as previous
+						},
+					},
+				},
+			},
+		}
+
+		// Create ClusterPermissions for current clusters
+		cp1 := &clusterpermissionv1alpha1.ClusterPermission{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ClusterPermissionManagedName,
+				Namespace: "cluster1",
+				Labels: map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				},
+			},
+		}
+		cp2 := &clusterpermissionv1alpha1.ClusterPermission{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ClusterPermissionManagedName,
+				Namespace: "cluster2",
+				Labels: map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				},
+			},
+		}
+
+		cluster1 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster1"}}
+		cluster2 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster2"}}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(testMra, cp1, cp2, cluster1, cluster2).
+			Build()
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fakeClient,
+			Scheme: testScheme,
+		}
+
+		ctx := context.Background()
+		currentClusters := []string{"cluster1", "cluster2"}
+
+		// Call processClusterPermissions
+		errors := reconciler.processClusterPermissions(ctx, testMra, currentClusters)
+
+		// Verify no errors occurred
+		if len(errors) != 0 {
+			t.Fatalf("Expected no errors, got: %v", errors)
+		}
+
+		// Verify both ClusterPermissions still exist
+		var cp1Check clusterpermissionv1alpha1.ClusterPermission
+		err := fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "cluster1"}, &cp1Check)
+		if err != nil {
+			t.Fatalf("Expected ClusterPermission for cluster1 to still exist, got error: %v", err)
+		}
+
+		var cp2Check clusterpermissionv1alpha1.ClusterPermission
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "cluster2"}, &cp2Check)
+		if err != nil {
+			t.Fatalf("Expected ClusterPermission for cluster2 to still exist, got error: %v", err)
+		}
+	})
+
+	t.Run("should handle deletion errors gracefully and continue processing", func(t *testing.T) {
+		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-mra",
+				Namespace: "test-namespace",
+				Annotations: map[string]string{
+					AllClustersAnnotation: "cluster1;cluster2;cluster3", // Previous clusters
+				},
+			},
+			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Subject: rbacv1.Subject{
+					Kind: "User",
+					Name: "test-user",
+				},
+				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "test-assignment",
+						ClusterRole: "test-role",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{"cluster1"}, // Only cluster1 is current, cluster2 and cluster3 are stale
+						},
+					},
+				},
+			},
+		}
+
+		cluster1 := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster1"}}
+
+		// Create a mock client that simulates a deletion error for one of the stale clusters
+		type mockClient struct {
+			client.Client
+			deleteCallCount int
+		}
+
+		baseClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(testMra, cluster1).
+			Build()
+
+		mock := &mockClient{
+			Client: baseClient,
+		}
+
+		// Override Delete method to simulate an error on the first call
+		originalDelete := mock.Client.Delete
+		mock.Client = &clientWrapper{
+			Client: baseClient,
+			deleteFn: func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+				mock.deleteCallCount++
+				if mock.deleteCallCount == 1 {
+					// Simulate error for first stale cluster deletion
+					return fmt.Errorf("simulated deletion error")
+				}
+				return originalDelete(ctx, obj, opts...)
+			},
+		}
+
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: mock,
+			Scheme: testScheme,
+		}
+
+		ctx := context.Background()
+		currentClusters := []string{"cluster1"}
+
+		// Call processClusterPermissions - should handle deletion errors gracefully
+		errors := reconciler.processClusterPermissions(ctx, testMra, currentClusters)
+
+		// The function should complete without returning errors for stale cleanup failures
+		// (stale cleanup errors are logged but don't cause the function to fail)
+		if len(errors) != 0 {
+			t.Fatalf("Expected no errors to be returned, got: %v", errors)
+		}
+
+		// Verify that deletion was attempted (deleteCallCount should be 2 for both stale clusters)
+		if mock.deleteCallCount != 2 {
+			t.Fatalf("Expected 2 deletion attempts for stale clusters, got: %d", mock.deleteCallCount)
+		}
+	})
+}
+
+// clientWrapper is a helper struct to override specific client methods for testing
+type clientWrapper struct {
+	client.Client
+	deleteFn func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error
+}
+
+func (c *clientWrapper) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if c.deleteFn != nil {
+		return c.deleteFn(ctx, obj, opts...)
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
