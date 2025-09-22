@@ -51,18 +51,18 @@ Debug the code in an editor ie. VSCode, Cursor
 ```bash
 {
     "version": "0.2.0",
-  "configurations": [
+    "configurations": [
 
-    {
-      "name": "Launch Package",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceRoot}/cmd/main.go",
-      "args": [],
-      "showLog": true
-    }
-  ]
+      {
+        "name": "Launch Package",
+        "type": "go",
+        "request": "launch",
+        "mode": "debug",
+        "program": "${workspaceRoot}/cmd/main.go",
+        "args": [],
+        "showLog": true
+      }
+    ]
 }
 ```
 
