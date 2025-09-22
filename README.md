@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Report Card](https://goreportcard.com/badge/github.com/stolostron/multicluster-role-assignment)](https://goreportcard.com/report/github.com/stolostron/multicluster-role-assignment)
 
-The Multicluster Role Assignment Operator is a Kubernetes operator that manages role-based access control (RBAC) across multiple clusters in a multicluster environment. It provides a declarative way to assign cluster roles to users, groups, or service accounts across multiple managed clusters.
+The Multicluster Role Assignment Operator is a Kubernetes operator that manages role-based access control (RBAC) across multiple clusters in a multicluster environment. It provides a declarative way to assign cluster roles to users and groups across multiple managed clusters.
 
 ## Overview
 
@@ -85,7 +85,7 @@ The `MulticlusterRoleAssignment` custom resource defines role assignments across
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
-| `subject` | `rbacv1.Subject` | The user, group, or service account for the role assignment | Yes |
+| `subject` | `rbacv1.Subject` | The user or group for the role assignment | Yes |
 | `roleAssignments` | `[]RoleAssignment` | List of role assignments for different clusters | Yes |
 
 #### RoleAssignment Fields
@@ -143,29 +143,6 @@ spec:
       type: clusterNames
       clusterNames:
       - dev-cluster-1
-```
-
-### Service Account Assignment
-
-```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
-kind: MulticlusterRoleAssignment
-metadata:
-  name: monitoring-sa
-spec:
-  subject:
-    kind: ServiceAccount
-    name: monitoring-agent
-    namespace: monitoring
-  roleAssignments:
-  - name: metrics-reader
-    clusterRole: system:monitoring
-    clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - cluster-1
-      - cluster-2
-      - cluster-3
 ```
 
 ## Development
