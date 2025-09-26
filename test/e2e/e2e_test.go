@@ -137,6 +137,13 @@ var _ = Describe("Manager", Ordered, func() {
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
 	// and deleting the namespace.
 	AfterAll(func() {
+		specReport := CurrentSpecReport()
+		if specReport.Failed() {
+			By("Skipping suite cleanup due to test failure - preserving cluster state for debugging")
+			By("Controller logs, CRDs, and namespaces preserved for investigation")
+			return
+		}
+
 		By("cleaning up the curl pod for metrics")
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
@@ -1542,9 +1549,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correctly updated content for managedcluster02 after deletion", func() {
 					By("verifying updated ClusterPermission content in managedcluster02 namespace")
-					// Not nil because it is an empty slice after role binding removal
-					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(BeEmpty())
+					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).To(BeNil())
 					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
 					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(9))
 
@@ -1848,8 +1853,15 @@ func waitForController() {
 	time.Sleep(1 * time.Second)
 }
 
-// cleanupTestResources cleans up MulticlusterRoleAssignment and ClusterPermissions for a test.
+// cleanupTestResources cleans up MulticlusterRoleAssignment and ClusterPermissions for a test. Skips cleanup if the
+// current test context has failures to preserve state for debugging.
 func cleanupTestResources(mraName string, clusterNames []string) {
+	specReport := CurrentSpecReport()
+	if specReport.Failed() {
+		By("Skipping cleanup due to test failure - preserving state for debugging")
+		return
+	}
+
 	By(fmt.Sprintf("cleaning up MulticlusterRoleAssignment %s", mraName))
 	cmd := exec.Command(
 		"kubectl", "delete", "multiclusterroleassignment", mraName, "-n", openClusterManagementGlobalSetNamespace)

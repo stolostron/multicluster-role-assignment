@@ -1810,17 +1810,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(k8sClient.Update(ctx, conflictMra)).To(Succeed())
 
 				// Reconcile with stale resource - should handle conflict gracefully
-				result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: client.ObjectKey{
 						Name:      mra.Name,
 						Namespace: mra.Namespace,
 					},
 				})
-
-				// Should requeue on error
-				if err != nil {
-					Expect(result.RequeueAfter).To(Equal(DefaultRequeueDelay))
-				}
+				Expect(err).NotTo(HaveOccurred())
 			})
 		})
 
@@ -2191,8 +2187,13 @@ func TestAggregateClusters(t *testing.T) {
 	})
 }
 
-func TestUpdateStatusBasicFunctionality(t *testing.T) {
-	// Use the same scheme setup pattern as the working tests
+func TestUpdateStatus(t *testing.T) {
+	// Comprehensive test for updateStatus() covering:
+	// - Basic functionality (status updates, condition management)
+	// - Role assignment initialization
+	// - Ready condition calculation
+	// - Conflict handling (single attempt, no retries)
+
 	testscheme := scheme.Scheme
 	err := rbacv1alpha1.AddToScheme(testscheme)
 	if err != nil {
@@ -2269,7 +2270,7 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 		},
 	}
 
-	t.Run("Should successfully update status on first attempt", func(t *testing.T) {
+	t.Run("Should successfully update status and add Ready condition", func(t *testing.T) {
 		// Create a fresh MRA object for this test
 		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2294,7 +2295,6 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 			},
 		}
 
-		// Enable status subresource to prevent retry conflicts
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
 			WithObjects(mra).
@@ -2321,7 +2321,7 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 				Type:    ConditionTypeValidated,
 				Status:  metav1.ConditionFalse,
 				Reason:  ReasonInvalidSpec,
-				Message: MessageSpecValidationFailed,
+				Message: "Custom validation error",
 			},
 		}
 
@@ -2330,7 +2330,7 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 			t.Fatalf("updateStatus error = %v", err)
 		}
 
-		// Should have Ready condition added by updateStatus (verify on the object passed to updateStatus)
+		// Verify Ready condition was added by updateStatus
 		foundReady := false
 		for _, condition := range fetchedMra.Status.Conditions {
 			if condition.Type == ConditionTypeReady {
@@ -2341,9 +2341,21 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 		if !foundReady {
 			t.Fatalf("Ready condition was not added by updateStatus")
 		}
+
+		// Verify custom condition was preserved
+		validatedCondition := findConditionByType(fetchedMra.Status.Conditions, ConditionTypeValidated)
+		if validatedCondition == nil {
+			t.Fatalf("Validated condition not found")
+		}
+		if validatedCondition.Status != metav1.ConditionFalse {
+			t.Fatalf("Expected Validated condition status to be False, got %s", validatedCondition.Status)
+		}
+		if validatedCondition.Message != "Custom validation error" {
+			t.Fatalf("Expected custom message to be preserved, got %s", validatedCondition.Message)
+		}
 	})
 
-	t.Run("Should initialize role assignment statuses during update", func(t *testing.T) {
+	t.Run("Should initialize role assignment statuses", func(t *testing.T) {
 		testMraCopy := testMra.DeepCopy()
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
@@ -2386,7 +2398,7 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 		}
 	})
 
-	t.Run("Should calculate and set Ready condition", func(t *testing.T) {
+	t.Run("Should calculate Ready condition as True when all assignments are Active", func(t *testing.T) {
 		testMraCopy := testMra.DeepCopy()
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
@@ -2456,148 +2468,17 @@ func TestUpdateStatusBasicFunctionality(t *testing.T) {
 		}
 	})
 
-	t.Run("Should handle resource not found during refresh", func(t *testing.T) {
-		// Create fake client without the resource to test Get error during refresh
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(testscheme).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
-			Build()
-
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "non-existent",
-				Namespace: "open-cluster-management",
-			},
-		}
-
-		err = reconciler.updateStatus(context.TODO(), mra)
-		if err == nil {
-			t.Fatalf("Expected error when resource not found during refresh, got nil")
-		}
-	})
-}
-
-func TestUpdateStatusRetryLogic(t *testing.T) {
-	// Use the same scheme setup pattern as the working tests
-	testscheme := scheme.Scheme
-	err := rbacv1alpha1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-	err = clusterv1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-
-	testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "test-update-status-retry",
-			Namespace:       "open-cluster-management",
-			ResourceVersion: "1",
-		},
-		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-			Subject: rbacv1.Subject{
-				Kind: "User",
-				Name: "test-user",
-			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
-				{
-					Name:        "test-assignment-1",
-					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
-						Type:         "clusterNames",
-						ClusterNames: []string{"cluster1"},
-					},
-				},
-			},
-		},
-		Status: rbacv1alpha1.MulticlusterRoleAssignmentStatus{
-			Conditions: []metav1.Condition{
-				{
-					Type:    ConditionTypeValidated,
-					Status:  metav1.ConditionTrue,
-					Reason:  ReasonSpecIsValid,
-					Message: MessageSpecValidationPassed,
-				},
-			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignmentStatus{
-				{
-					Name:    "test-assignment-1",
-					Status:  StatusTypeActive,
-					Reason:  ReasonClusterPermissionApplied,
-					Message: MessageClusterPermissionApplied,
-				},
-			},
-		},
-	}
-
-	t.Run("Should handle retry logic with concurrent modifications", func(t *testing.T) {
-		testMraCopy := testMra.DeepCopy()
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(testscheme).
-			WithObjects(testMraCopy).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
-			Build()
-
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
-		err := fakeClient.Get(context.TODO(), client.ObjectKey{
-			Name: testMraCopy.Name, Namespace: testMraCopy.Namespace}, mra)
-		if err != nil {
-			t.Fatalf("get MulticlusterRoleAssignment error = %v", err)
-		}
-
-		// Set custom status that should be preserved during retry
-		customCondition := metav1.Condition{
-			Type:    ConditionTypeValidated,
-			Status:  metav1.ConditionFalse,
-			Reason:  ReasonInvalidSpec,
-			Message: "Custom validation error",
-		}
-		mra.Status.Conditions = []metav1.Condition{customCondition}
-
-		err = reconciler.updateStatus(context.TODO(), mra)
-		if err != nil {
-			t.Fatalf("updateStatus error = %v", err)
-		}
-
-		// Verify custom condition was preserved
-		validatedCondition := findConditionByType(mra.Status.Conditions, ConditionTypeValidated)
-		if validatedCondition == nil {
-			t.Fatalf("Validated condition not found")
-		}
-		if validatedCondition.Status != metav1.ConditionFalse {
-			t.Fatalf("Expected Validated condition status to be False, got %s", validatedCondition.Status)
-		}
-		if validatedCondition.Message != "Custom validation error" {
-			t.Fatalf("Expected custom message to be preserved, got %s", validatedCondition.Message)
-		}
-	})
-
-	t.Run("Should test retry logic with mock client that simulates conflicts", func(t *testing.T) {
-		// Create a mock client that tracks update attempts and simulates conflicts
+	t.Run("Should return conflict errors immediately without retries", func(t *testing.T) {
 		testMraCopy := testMra.DeepCopy()
 
+		// Mock client that always returns conflicts to verify no retry behavior
 		mockClient := &MockConflictClient{
 			Client: fake.NewClientBuilder().
 				WithScheme(testscheme).
 				WithObjects(testMraCopy).
 				WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
 				Build(),
-			conflictsToSimulate: 2, // Will fail first 2 attempts, succeed on 3rd
+			conflictsToSimulate: 5, // Always conflicts
 			updateAttempts:      0,
 		}
 
@@ -2613,82 +2494,20 @@ func TestUpdateStatusRetryLogic(t *testing.T) {
 			t.Fatalf("get MulticlusterRoleAssignment error = %v", err)
 		}
 
-		// Set custom status that should be preserved through retries
-		customCondition := metav1.Condition{
-			Type:    ConditionTypeValidated,
-			Status:  metav1.ConditionFalse,
-			Reason:  ReasonInvalidSpec,
-			Message: "Retry test condition",
-		}
-		mra.Status.Conditions = []metav1.Condition{customCondition}
-
-		// This should trigger retry logic
-		err = reconciler.updateStatus(context.TODO(), mra)
-		if err != nil {
-			t.Fatalf("updateStatus should succeed after retries, got error = %v", err)
-		}
-
-		// Verify that retries occurred
-		if mockClient.updateAttempts != 3 {
-			t.Fatalf("Expected 3 update attempts (2 conflicts + 1 success), got %d", mockClient.updateAttempts)
-		}
-
-		// Verify that the status was preserved through retries
-		validatedCondition := findConditionByType(mra.Status.Conditions, ConditionTypeValidated)
-		if validatedCondition == nil {
-			t.Fatalf("Validated condition not found after retries")
-		}
-		if validatedCondition.Message != "Retry test condition" {
-			t.Fatalf("Expected custom message to be preserved through retries, got %s", validatedCondition.Message)
-		}
-
-		// Verify Ready condition was also set
-		readyCondition := findConditionByType(mra.Status.Conditions, ConditionTypeReady)
-		if readyCondition == nil {
-			t.Fatalf("Ready condition not found after retries")
-		}
-	})
-
-	t.Run("Should fail after maximum retry attempts", func(t *testing.T) {
-		testMraCopy := testMra.DeepCopy()
-
-		// Mock client that always returns conflicts
-		mockClient := &MockConflictClient{
-			Client: fake.NewClientBuilder().
-				WithScheme(testscheme).
-				WithObjects(testMraCopy).
-				WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
-				Build(),
-			conflictsToSimulate: 5, // More than the 3 retry limit
-			updateAttempts:      0,
-		}
-
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: mockClient,
-			Scheme: testscheme,
-		}
-
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
-		err := mockClient.Get(context.TODO(), client.ObjectKey{
-			Name: testMraCopy.Name, Namespace: testMraCopy.Namespace}, mra)
-		if err != nil {
-			t.Fatalf("get MulticlusterRoleAssignment error = %v", err)
-		}
-
-		// This should fail after exhausting retries
+		// This should fail immediately with conflict error (no retries)
 		err = reconciler.updateStatus(context.TODO(), mra)
 		if err == nil {
-			t.Fatalf("Expected updateStatus to fail after exhausting retries")
+			t.Fatalf("Expected updateStatus to fail with conflict error")
 		}
 
-		expectedErrMsg := "failed to update status after 3 retries due to conflicts"
-		if err.Error() != expectedErrMsg {
-			t.Fatalf("Expected error message '%s', got '%s'", expectedErrMsg, err.Error())
+		// Verify it's a conflict error
+		if !apierrors.IsConflict(err) {
+			t.Fatalf("Expected conflict error, got: %v", err)
 		}
 
-		// Verify that exactly 3 attempts were made
-		if mockClient.updateAttempts != 3 {
-			t.Fatalf("Expected exactly 3 update attempts, got %d", mockClient.updateAttempts)
+		// Verify that exactly 1 attempt was made (confirms no retry logic)
+		if mockClient.updateAttempts != 1 {
+			t.Fatalf("Expected exactly 1 update attempt (no retries), got %d", mockClient.updateAttempts)
 		}
 	})
 }
@@ -2807,14 +2626,19 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		// Verify annotation was set
-		if mra.Annotations == nil {
+		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
+		if err != nil {
+			t.Fatalf("Failed to get updated MRA: %v", err)
+		}
+
+		if updatedMRA.Annotations == nil {
 			t.Fatalf("Annotations should not be nil after update")
 		}
 
 		expectedAnnotation := "cluster1;cluster2;cluster3"
-		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
 		}
 	})
 
@@ -2860,14 +2684,19 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		// Verify annotation was updated
+		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
+		if err != nil {
+			t.Fatalf("Failed to get updated MRA: %v", err)
+		}
+
 		expectedAnnotation := "new-cluster1;new-cluster2"
-		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
 		}
 
 		// Verify other annotations are preserved
-		if mra.Annotations["existing-annotation"] != "existing-value" {
+		if updatedMRA.Annotations["existing-annotation"] != "existing-value" {
 			t.Fatalf("Existing annotation should be preserved")
 		}
 	})
@@ -2910,10 +2739,15 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		// Verify annotation is set to empty string
+		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
+		if err != nil {
+			t.Fatalf("Failed to get updated MRA: %v", err)
+		}
+
 		expectedAnnotation := ""
-		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected empty annotation, got '%s'", mra.Annotations[AllClustersAnnotation])
+		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected empty annotation, got '%s'", updatedMRA.Annotations[AllClustersAnnotation])
 		}
 	})
 
@@ -2955,10 +2789,15 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		// Verify annotation is set correctly for single cluster
+		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
+		if err != nil {
+			t.Fatalf("Failed to get updated MRA: %v", err)
+		}
+
 		expectedAnnotation := "single-cluster"
-		if mra.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, mra.Annotations[AllClustersAnnotation])
+		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
+			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
 		}
 	})
 
@@ -2982,137 +2821,6 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
 		if err == nil {
 			t.Fatalf("Expected error when resource not found during refresh, got nil")
-		}
-	})
-}
-
-// Mock client that simulates conflict errors for testing retry logic
-type mockConflictClient struct {
-	client.Client
-	updateAttempts int
-	maxConflicts   int
-}
-
-func (m *mockConflictClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	m.updateAttempts++
-
-	if m.updateAttempts <= m.maxConflicts {
-		return apierrors.NewConflict(schema.GroupResource{Group: "rbac.open-cluster-management.io", Resource: "multiclusterroleassignments"}, obj.GetName(), fmt.Errorf("conflict error"))
-	}
-
-	return nil // Success after conflicts
-}
-
-func (m *mockConflictClient) Get(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-	if mra, ok := obj.(*rbacv1alpha1.MulticlusterRoleAssignment); ok {
-		// Simulate a fresh object with updated ResourceVersion
-		mra.Name = key.Name
-		mra.Namespace = key.Namespace
-		mra.ResourceVersion = fmt.Sprintf("%d", m.updateAttempts+1)
-		mra.Spec = rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-			Subject: rbacv1.Subject{
-				Kind: "User",
-				Name: "test-user",
-			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
-				{
-					Name:        "test-assignment",
-					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
-						Type:         "clusterNames",
-						ClusterNames: []string{"cluster1"},
-					},
-				},
-			},
-		}
-	}
-	return nil
-}
-
-func TestUpdateAllClustersAnnotationRetryLogic(t *testing.T) {
-	// Use the same scheme setup pattern as the working tests
-	testscheme := scheme.Scheme
-	err := rbacv1alpha1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-	err = clusterv1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-	err = clusterpermissionv1alpha1.AddToScheme(testscheme)
-	if err != nil {
-		t.Fatalf("AddToScheme error = %v", err)
-	}
-
-	t.Run("Should retry on conflict and succeed", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-retry",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-			},
-		}
-
-		allClusters := []string{"cluster1", "cluster2"}
-
-		// Mock client that will conflict twice, then succeed
-		mockClient := &mockConflictClient{
-			maxConflicts: 2,
-		}
-
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: mockClient,
-			Scheme: testscheme,
-		}
-
-		// This should trigger retry logic
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err != nil {
-			t.Fatalf("updateAllClustersAnnotation should succeed after retries, got error = %v", err)
-		}
-
-		// Verify that retries occurred
-		if mockClient.updateAttempts != 3 {
-			t.Fatalf("Expected 3 update attempts (2 conflicts + 1 success), got %d", mockClient.updateAttempts)
-		}
-	})
-
-	t.Run("Should fail after exhausting retries", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-retry-exhausted",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-			},
-		}
-
-		allClusters := []string{"cluster1"}
-
-		// Mock client that will always conflict
-		mockClient := &mockConflictClient{
-			maxConflicts: 10, // More than the 3 retry limit
-		}
-
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: mockClient,
-			Scheme: testscheme,
-		}
-
-		// This should fail after exhausting retries
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err == nil {
-			t.Fatalf("Expected updateAllClustersAnnotation to fail after exhausting retries")
-		}
-
-		expectedErrMsg := "failed to update all clusters annotation after 3 retries due to conflicts"
-		if err.Error() != expectedErrMsg {
-			t.Fatalf("Expected error message '%s', got '%s'", expectedErrMsg, err.Error())
-		}
-
-		// Verify that 3 attempts were made
-		if mockClient.updateAttempts != 3 {
-			t.Fatalf("Expected exactly 3 update attempts, got %d", mockClient.updateAttempts)
 		}
 	})
 }
