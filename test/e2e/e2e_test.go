@@ -1005,6 +1005,7 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 
+			//nolint:dupl
 			Context("ClusterPermission merged content validation", func() {
 				It("should have correctly merged content for managedcluster01", func() {
 					By("verifying merged ClusterPermission content in managedcluster01 namespace")
@@ -1462,6 +1463,505 @@ var _ = Describe("Manager", Ordered, func() {
 					for _, mra := range mras {
 						validateMRAAllClustersAnnotation(mra)
 					}
+				})
+			})
+		})
+
+		Context("should handle rapid overlapping PATCH operations and maintain consistency", func() {
+			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+			})
+
+			Context("resource creation and rapid patching", func() {
+				var mraJSON string
+				var clusterPermissionJSONs [3]string
+
+				It("should create MRA and apply many overlapping PATCH operations", func() {
+					By("creating MulticlusterRoleAssignment using multiple_2.yaml")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml")
+
+					By("fetching initial MulticlusterRoleAssignment")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentMultiple2Name, openClusterManagementGlobalSetNamespace)
+					unmarshalJSON(mraJSON, &mra)
+
+					By("applying many overlapping PATCH operations in parallel")
+
+					patches := []map[string]any{
+						// Patch 1
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "admin-assignment-cluster-1", "clusterRole": "edit",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+						}}},
+						// Patch 2
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{},
+							{"name": "view-assignment-all-clusters", "clusterRole": "view",
+								"clusterSelection": map[string]any{"type": "clusterNames",
+									"clusterNames": []string{"managedcluster01", "managedcluster02"}}},
+						}}},
+						// Patch 3
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{}, {},
+							{"name": "edit-assignment-single-namespace", "clusterRole": "edit",
+								"targetNamespaces": []string{"default", "rapid-dev-1"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02"}}},
+						}}},
+						// Patch 4
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{}, {}, {},
+							{"name": "monitoring-assignment-multi-namespace-single-cluster", "clusterRole": "admin",
+								"targetNamespaces": []string{"monitoring", "observability"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster03"}}},
+						}}},
+						// Patch 5
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{}, {}, {}, {},
+							{"name": "dev-assignment-single-namespace-multi-cluster", "clusterRole": "admin",
+								"targetNamespaces": []string{"rapid-admin-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames",
+									"clusterNames": []string{"managedcluster01"}}},
+						}}},
+						// Patch 6
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{}, {}, {}, {}, {},
+							{"name": "logging-assignment-multi-namespace-multi-cluster", "clusterRole": "view",
+								"targetNamespaces": []string{"development", "rapid-staging"},
+								"clusterSelection": map[string]any{"type": "clusterNames",
+									"clusterNames": []string{"managedcluster01", "managedcluster02"}}},
+						}}},
+						// Patch 7
+						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-1"}}},
+						// Patch 8
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "new-admin-assignment", "clusterRole": "cluster-admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+							{"name": "new-edit-assignment", "clusterRole": "edit",
+								"targetNamespaces": []string{"default", "rapid-dev-1", "rapid-dev-2"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02"}}},
+						}}},
+						// Patch 9
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "temp-admin", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster03"}}},
+							{"name": "temp-view", "clusterRole": "view",
+								"targetNamespaces": []string{"temp-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+							{"name": "temp-edit", "clusterRole": "edit",
+								"targetNamespaces": []string{"temp-edit-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 10
+						{"spec": map[string]any{"subject": map[string]any{"kind": "Group"}}},
+						// Patch 11
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "dynamic-admin", "clusterRole": "admin",
+								"targetNamespaces": []string{"dynamic-ns-1", "dynamic-ns-2"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster02"}}},
+						}}},
+						// Patch 12
+						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-2"}}},
+						// Patch 13
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "complex-assignment-1", "clusterRole": "view",
+								"targetNamespaces": []string{"complex-ns-1"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+							{"name": "complex-assignment-2", "clusterRole": "edit",
+								"targetNamespaces": []string{"complex-ns-2", "complex-ns-3"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02", "managedcluster03"}}},
+							{"name": "complex-assignment-3", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster03"}}},
+						}}},
+						// Patch 14
+						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-3", "kind": "User"}}},
+						// Patch 15
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "override-assignment", "clusterRole": "cluster-admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 16
+						{"spec": map[string]any{
+							"subject": map[string]any{"name": "rapid-user-4", "kind": "Group"},
+							"roleAssignments": []map[string]any{
+								{"name": "combo-assignment", "clusterRole": "edit",
+									"targetNamespaces": []string{"combo-ns"},
+									"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+										"managedcluster02"}}},
+							},
+						}},
+						// Patch 17
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "penultimate-assignment", "clusterRole": "view",
+								"targetNamespaces": []string{"penultimate-ns-1", "penultimate-ns-2"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster03"}}},
+						}}},
+						// Patch 18
+						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-group-temp"}}},
+						// Patch 19
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "pre-final-assignment", "clusterRole": "admin",
+								"targetNamespaces": []string{"pre-final-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 20
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-assignment-20", "clusterRole": "view",
+								"targetNamespaces": []string{"chaos-ns-20"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+						}}},
+						// Patch 21
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-21"}}},
+						// Patch 22
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-22-admin", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster02"}}},
+							{"name": "chaos-22-edit", "clusterRole": "edit",
+								"targetNamespaces": []string{"chaos-22-ns1", "chaos-22-ns2"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster03"}}},
+						}}},
+						// Patch 23
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "admin-assignment-cluster-1", "clusterRole": "cluster-admin",
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+						}}},
+						// Patch 24
+						{"spec": map[string]any{
+							"subject": map[string]any{"name": "chaos-group-24", "kind": "Group"},
+							"roleAssignments": []map[string]any{
+								{"name": "chaos-24-view", "clusterRole": "view",
+									"targetNamespaces": []string{"chaos-24-ns"},
+									"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+										"managedcluster02", "managedcluster03"}}},
+							},
+						}},
+						// Patch 25
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-25-1", "clusterRole": "view", "clusterSelection": map[string]any{
+								"type": "clusterNames", "clusterNames": []string{"managedcluster01"}}},
+							{"name": "chaos-25-2", "clusterRole": "edit", "clusterSelection": map[string]any{
+								"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+							{"name": "chaos-25-3", "clusterRole": "admin", "clusterSelection": map[string]any{
+								"type": "clusterNames", "clusterNames": []string{"managedcluster03"}}},
+							{"name": "chaos-25-4", "clusterRole": "view", "targetNamespaces": []string{"chaos-25-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 26
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-26", "kind": "User"}}},
+						// Patch 27
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-27-assignment", "clusterRole": "edit",
+								"targetNamespaces": []string{"chaos-27-ns1", "chaos-27-ns2", "chaos-27-ns3"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster03"}}},
+						}}},
+						// Patch 28
+						{"spec": map[string]any{"subject": map[string]any{"kind": "Group"}}},
+						// Patch 29
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-29-multi-ns", "clusterRole": "view",
+								"targetNamespaces": []string{"chaos-29-ns1", "chaos-29-ns2", "chaos-29-ns3",
+									"chaos-29-ns4", "chaos-29-ns5"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02"}}},
+						}}},
+						// Patch 30
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-30-cluster", "clusterRole": "cluster-admin",
+								"clusterSelection": map[string]any{"type": "clusterNames",
+									"clusterNames": []string{"managedcluster01"}}},
+							{"name": "chaos-30-namespaced", "clusterRole": "admin",
+								"targetNamespaces": []string{"chaos-30-ns"}, "clusterSelection": map[string]any{
+									"type": "clusterNames", "clusterNames": []string{
+										"managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 31
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-31"}}},
+						// Patch 32
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-32-single", "clusterRole": "edit",
+								"targetNamespaces": []string{"chaos-32-single-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+						}}},
+						// Patch 33
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-33-admin", "clusterRole": "admin", "clusterSelection": map[string]any{
+								"type": "clusterNames", "clusterNames": []string{"managedcluster01"}}},
+							{"name": "chaos-33-edit-ns", "clusterRole": "edit", "targetNamespaces": []string{
+								"chaos-33-ns1", "chaos-33-ns2"}, "clusterSelection": map[string]any{
+								"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+							{"name": "chaos-33-view-multi", "clusterRole": "view",
+								"targetNamespaces": []string{"chaos-33-ns3"}, "clusterSelection": map[string]any{
+									"type": "clusterNames", "clusterNames": []string{
+										"managedcluster01", "managedcluster03"}}},
+						}}},
+						// Patch 34
+						{"spec": map[string]any{
+							"subject": map[string]any{"name": "chaos-group-34", "kind": "Group"},
+							"roleAssignments": []map[string]any{
+								{"name": "chaos-34-simple", "clusterRole": "view", "clusterSelection": map[string]any{
+									"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+							},
+						}},
+						// Patch 35
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-35-1", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-1"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01"}}},
+							{"name": "chaos-35-2", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-2"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster02"}}},
+							{"name": "chaos-35-3", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-3"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster03"}}},
+						}}},
+						// Patch 36
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-36", "kind": "User"}}},
+						// Patch 37
+						{"spec": map[string]any{"roleAssignments": []map[string]any{
+							{"name": "chaos-37-duplicate", "clusterRole": "admin",
+								"targetNamespaces": []string{"chaos-37-ns"},
+								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
+									"managedcluster01", "managedcluster01", "managedcluster02"}}},
+						}}},
+						// Patch 38
+						{"spec": map[string]any{"roleAssignments": []map[string]any{}}},
+						// Patch 39
+						{"spec": map[string]any{"subject": map[string]any{
+							"name": "chaos-pre-final-39", "kind": "Group"}}},
+					}
+
+					var parallelPatchCommands []string
+
+					for i, patch := range patches {
+						patchBytes, err := json.Marshal(patch)
+						Expect(err).NotTo(HaveOccurred())
+
+						// Escape single quotes in JSON for bash
+						patchStr := strings.ReplaceAll(string(patchBytes), "'", "'\"'\"'")
+
+						// Create kubectl patch command with background execution (&)
+						cmd := fmt.Sprintf("kubectl patch multiclusterroleassignment %s -n %s --type merge -p '%s' &",
+							mra.Name, openClusterManagementGlobalSetNamespace, patchStr)
+						parallelPatchCommands = append(parallelPatchCommands, cmd)
+
+						By(fmt.Sprintf("Queuing parallel patch %d", i+1))
+					}
+
+					// Execute patches in parallel and wait for completion
+					parallelCommands := strings.Join(parallelPatchCommands, " ") + " wait"
+
+					By("Executing patches in parallel to create resource version conflicts")
+					bashCmd := exec.Command("bash", "-c", parallelCommands)
+					_, err := utils.Run(bashCmd)
+					Expect(err).NotTo(HaveOccurred())
+
+					By("Applying final deterministic patch sequentially")
+					finalMRA := mra.DeepCopy()
+					finalMRA.Spec.Subject.Name = "rapid-final-group"
+					finalMRA.Spec.Subject.Kind = "Group"
+					finalMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "admin-assignment-cluster-1",
+							ClusterRole: "view",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{"managedcluster01", "managedcluster02", "managedcluster03"},
+							},
+						},
+						{
+							Name:             "edit-assignment-single-namespace",
+							ClusterRole:      "edit",
+							TargetNamespaces: []string{"default", "rapid-dev-1", "rapid-dev-2", "rapid-final-ns"},
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{"managedcluster02", "managedcluster03"},
+							},
+						},
+						{
+							Name:             "monitoring-assignment-multi-namespace-single-cluster",
+							ClusterRole:      "admin",
+							TargetNamespaces: []string{"monitoring", "observability"},
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{"managedcluster03"},
+							},
+						},
+						{
+							Name:             "dev-assignment-single-namespace-multi-cluster",
+							ClusterRole:      "admin",
+							TargetNamespaces: []string{"rapid-admin-ns"},
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{"managedcluster01"},
+							},
+						},
+						{
+							Name:        "logging-assignment-multi-namespace-multi-cluster",
+							ClusterRole: "view",
+							TargetNamespaces: []string{
+								"development", "rapid-staging", "logging", "kube-system", "rapid-prod", "rapid-test"},
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{"managedcluster01", "managedcluster02", "managedcluster03"},
+							},
+						},
+					}
+
+					patchK8sMRA(finalMRA)
+
+					By("fetching final MulticlusterRoleAssignment state")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentMultiple2Name, openClusterManagementGlobalSetNamespace)
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch final ClusterPermissions from all managed clusters", func() {
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf("fetching final ClusterPermission from %s after rapid patching", clusterName))
+						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
+							"mra-managed-permissions", clusterName)
+
+						By(fmt.Sprintf("unmarshaling final ClusterPermission json for %s", clusterName))
+						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+					}
+				})
+			})
+
+			//nolint:dupl
+			Context("ClusterPermission validation after rapid patching", func() {
+				It("should have correct content for managedcluster01 after rapid patching", func() {
+					By("verifying ClusterPermission content in managedcluster01 namespace after rapid patching")
+					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(7))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
+						// RoleBindings
+						{RoleName: "admin", Namespace: "rapid-admin-ns", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+				})
+
+				It("should have correct content for managedcluster02 after rapid patching", func() {
+					By("verifying ClusterPermission content in managedcluster02 namespace after rapid patching")
+					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(10))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "default", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-dev-1", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-dev-2", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-final-ns", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+				})
+
+				It("should have correct content for managedcluster03 after rapid patching", func() {
+					By("verifying ClusterPermission content in managedcluster03 namespace after rapid patching")
+					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(12))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "default", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-dev-1", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-dev-2", SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "rapid-final-ns", SubjectName: "rapid-final-group"},
+						{RoleName: "admin", Namespace: "monitoring", SubjectName: "rapid-final-group"},
+						{RoleName: "admin", Namespace: "observability", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
+				})
+
+				It("should have correct owner annotations for all clusters after rapid patching", func() {
+					By("verifying ClusterPermission owner annotations for all clusters after rapid patching")
+					for _, cp := range clusterPermissions {
+						validateMRAOwnerAnnotations(cp, mra)
+					}
+
+					By("verifying binding annotations have semantic consistency after rapid patching")
+					for _, cp := range clusterPermissions {
+						validateBindingConsistency(cp, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					}
+				})
+			})
+
+			Context("MulticlusterRoleAssignment validation after rapid patching", func() {
+				It("should have correct conditions after rapid patching", func() {
+					By("verifying MulticlusterRoleAssignment conditions after rapid patching")
+					validateMRASuccessConditions(mra)
+				})
+
+				It("should have correct role assignment statuses after rapid patching", func() {
+					By("verifying all role assignment status details after rapid patching")
+					Expect(mra.Status.RoleAssignments).To(HaveLen(5))
+
+					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
+
+					for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
+						validateRoleAssignmentSuccessStatus(roleAssignmentsByName, roleAssignmentStatus.Name)
+					}
+				})
+
+				It("should have correct all clusters annotation after rapid patching", func() {
+					By("verifying all clusters annotation matches targeted clusters after rapid patching")
+					validateMRAAllClustersAnnotation(mra)
 				})
 			})
 		})
