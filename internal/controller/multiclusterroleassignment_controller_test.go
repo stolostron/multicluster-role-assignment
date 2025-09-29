@@ -1698,6 +1698,384 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 	})
 
+	Context("Reconcile Error Handling", func() {
+		const errorTestMRAName = "error-test-mra"
+		const errorTestNamespaceName = "error-test-namespace"
+
+		var errorTestMRA *rbacv1alpha1.MulticlusterRoleAssignment
+		var errorTestNamespace *corev1.Namespace
+
+		BeforeEach(func() {
+			errorTestNamespace = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: errorTestNamespaceName}}
+			if err := k8sClient.Get(
+				ctx, client.ObjectKey{Name: errorTestNamespace.Name}, errorTestNamespace); err != nil {
+
+				Expect(k8sClient.Create(ctx, errorTestNamespace)).To(Succeed())
+			}
+
+			errorTestMRA = &rbacv1alpha1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       errorTestMRAName,
+					Namespace:  errorTestNamespaceName,
+					Finalizers: []string{FinalizerName},
+				},
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{Kind: "User", Name: "test-user"},
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "error-test-assignment",
+							ClusterRole: "error-test-role",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster1Name},
+							},
+						},
+					},
+				},
+			}
+		})
+
+		AfterEach(func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      errorTestMRAName,
+				Namespace: errorTestNamespaceName,
+			}, mra); err == nil {
+				mra.Finalizers = []string{}
+				_ = k8sClient.Update(ctx, mra)
+				_ = k8sClient.Delete(ctx, mra)
+			}
+		})
+
+		Context("Get Operation Errors", func() {
+			It("Should handle resource not found gracefully", func() {
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      "non-existent-mra",
+						Namespace: errorTestNamespaceName,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should return error when Get fails with non-NotFound error", func() {
+				mockClient := &MockErrorClient{
+					Client:     k8sClient,
+					GetError:   fmt.Errorf("get operation failed"),
+					ShouldFail: true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      "any-name",
+						Namespace: errorTestNamespaceName,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("get operation failed"))
+			})
+		})
+
+		Context("Finalizer Conflicts", func() {
+			It("Should handle finalizer add conflict and requeue", func() {
+				errorTestMRA.Finalizers = nil
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockConflictClient{
+					Client:              k8sClient,
+					conflictsToSimulate: 1,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+			})
+
+			It("Should handle finalizer remove conflict and requeue", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockConflictClient{
+					Client:              k8sClient,
+					conflictsToSimulate: 1,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+			})
+
+			It("Should return error when finalizer update fails with non-conflict error", func() {
+				errorTestMRA.Finalizers = nil
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:      k8sClient,
+					UpdateError: fmt.Errorf("finalizer update failed"),
+					ShouldFail:  true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("finalizer update failed"))
+			})
+		})
+
+		Context("Early Return Logic", func() {
+			It("Should skip reconcile when all conditions are current for generation", func() {
+				errorTestMRA.Generation = 1
+				errorTestMRA.Status.Conditions = []metav1.Condition{
+					{Type: ConditionTypeValidated, Status: metav1.ConditionTrue, ObservedGeneration: 1},
+					{Type: ConditionTypeApplied, Status: metav1.ConditionTrue, ObservedGeneration: 1},
+					{Type: ConditionTypeReady, Status: metav1.ConditionTrue, ObservedGeneration: 1},
+				}
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				result, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal(reconcile.Result{}))
+			})
+		})
+
+		Context("Status Update Failures", func() {
+			It("Should return error when status update fails after validation failure", func() {
+				errorTestMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+					{
+						Name:        "duplicate-name",
+						ClusterRole: "role1",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{cluster1Name},
+						},
+					},
+					{
+						Name:        "duplicate-name",
+						ClusterRole: "role2",
+						ClusterSelection: rbacv1alpha1.ClusterSelection{
+							Type:         "clusterNames",
+							ClusterNames: []string{cluster2Name},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:            k8sClient,
+					StatusUpdateError: fmt.Errorf("status update failed"),
+					ShouldFailStatus:  true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("status update failed"))
+			})
+
+			It("Should handle status update conflict and requeue", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockConflictClient{
+					Client:              k8sClient,
+					conflictsToSimulate: 1,
+					statusConflict:      true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+			})
+		})
+
+		Context("Cluster Operations Errors", func() {
+			It("Should handle aggregateClusters failure with status update attempt", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:         k8sClient,
+					GetError:       fmt.Errorf("cluster aggregation failed"),
+					ShouldFailGet:  true,
+					TargetResource: "managedclusters",
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("cluster aggregation failed"))
+			})
+
+			It("Should handle annotation parsing for previous clusters", func() {
+				errorTestMRA.Annotations = map[string]string{
+					AllClustersAnnotation: "cluster-a;cluster-b;cluster-c",
+				}
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should handle annotation update conflict and requeue", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					UpdateError:      apierrors.NewConflict(schema.GroupResource{}, "test", fmt.Errorf("conflict")),
+					ShouldFailUpdate: true,
+					TargetResource:   "multiclusterroleassignments",
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+			})
+
+			It("Should return error when annotation update fails with non-conflict error", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					UpdateError:      fmt.Errorf("annotation update failed"),
+					ShouldFailUpdate: true,
+					TargetResource:   "multiclusterroleassignments",
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("annotation update failed"))
+			})
+
+			It("Should requeue after cluster permission failures", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					CreateError:      fmt.Errorf("cluster permission creation failed"),
+					ShouldFailCreate: true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(ClusterPermissionFailureRequeueDelay))
+			})
+
+			It("Should handle deletion cleanup failure", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					CreateError:      fmt.Errorf("deletion cleanup failed"),
+					ShouldFailCreate: true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("deletion cleanup failed"))
+			})
+		})
+	})
+
 	Context("Finalizer handling in Reconcile", func() {
 		var mra *rbacv1alpha1.MulticlusterRoleAssignment
 		var testNamespace *corev1.Namespace
@@ -1791,32 +2169,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}, updatedMra)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updatedMra.Finalizers).To(ContainElement(FinalizerName))
-			})
-
-			It("Should handle update error when adding finalizer", func() {
-				// Create MRA without finalizer
-				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
-
-				// Create a conflicting version to cause update error
-				conflictMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      mra.Name,
-					Namespace: mra.Namespace,
-				}, conflictMra)
-				Expect(err).NotTo(HaveOccurred())
-
-				// Modify the resource to create a conflict
-				conflictMra.Annotations = map[string]string{"conflict": "true"}
-				Expect(k8sClient.Update(ctx, conflictMra)).To(Succeed())
-
-				// Reconcile with stale resource - should handle conflict gracefully
-				_, err = reconciler.Reconcile(ctx, reconcile.Request{
-					NamespacedName: client.ObjectKey{
-						Name:      mra.Name,
-						Namespace: mra.Namespace,
-					},
-				})
-				Expect(err).NotTo(HaveOccurred())
 			})
 		})
 
@@ -2479,7 +2831,6 @@ func TestUpdateStatus(t *testing.T) {
 				WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
 				Build(),
 			conflictsToSimulate: 5, // Always conflicts
-			updateAttempts:      0,
 		}
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
@@ -2517,6 +2868,22 @@ type MockConflictClient struct {
 	client.Client
 	conflictsToSimulate int
 	updateAttempts      int
+	statusConflict      bool
+}
+
+// Update simulates conflicts for regular updates
+func (m *MockConflictClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if !m.statusConflict {
+		m.updateAttempts++
+		if m.updateAttempts <= m.conflictsToSimulate {
+			return apierrors.NewConflict(
+				schema.GroupResource{Group: "rbac.open-cluster-management.io", Resource: "multiclusterroleassignments"},
+				obj.GetName(),
+				fmt.Errorf("conflict during update"),
+			)
+		}
+	}
+	return m.Client.Update(ctx, obj, opts...)
 }
 
 // Status returns a mock status writer that simulates conflicts
@@ -2525,6 +2892,88 @@ func (m *MockConflictClient) Status() client.StatusWriter {
 		StatusWriter: m.Client.Status(),
 		parent:       m,
 	}
+}
+
+// MockErrorClient wraps a client to simulate various operation failures
+type MockErrorClient struct {
+	client.Client
+	GetError          error
+	UpdateError       error
+	CreateError       error
+	StatusUpdateError error
+	ShouldFail        bool
+	ShouldFailGet     bool
+	ShouldFailUpdate  bool
+	ShouldFailCreate  bool
+	ShouldFailStatus  bool
+	TargetResource    string
+}
+
+func (m *MockErrorClient) Get(
+	ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+
+	if m.ShouldFailGet || (m.ShouldFail && m.TargetResource == "") {
+		if m.TargetResource != "" {
+			switch obj.(type) {
+			case *clusterv1.ManagedCluster:
+				if m.TargetResource == "managedclusters" {
+					return m.GetError
+				}
+			}
+		} else {
+			return m.GetError
+		}
+	}
+	return m.Client.Get(ctx, key, obj, opts...)
+}
+
+func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if m.ShouldFailUpdate || m.ShouldFail {
+		if m.TargetResource != "" {
+			switch obj.(type) {
+			case *rbacv1alpha1.MulticlusterRoleAssignment:
+				if m.TargetResource == "multiclusterroleassignments" {
+					return m.UpdateError
+				}
+			}
+		} else {
+			return m.UpdateError
+		}
+	}
+	return m.Client.Update(ctx, obj, opts...)
+}
+
+func (m *MockErrorClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if m.ShouldFailCreate || m.ShouldFail {
+		return m.CreateError
+	}
+	return m.Client.Create(ctx, obj, opts...)
+}
+
+func (m *MockErrorClient) Status() client.StatusWriter {
+	return &MockErrorStatusWriter{
+		StatusWriter: m.Client.Status(),
+		parent:       m,
+	}
+}
+
+type MockErrorStatusWriter struct {
+	client.StatusWriter
+	parent *MockErrorClient
+}
+
+func (m *MockErrorStatusWriter) Update(
+	ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+
+	if m.parent.ShouldFailStatus {
+		return m.parent.StatusUpdateError
+	}
+	return m.StatusWriter.Update(ctx, obj, opts...)
+}
+
+func (m *MockErrorStatusWriter) Patch(
+	ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	return m.StatusWriter.Patch(ctx, obj, patch, opts...)
 }
 
 // MockStatusWriter simulates optimistic concurrency conflicts for status updates
@@ -2538,15 +2987,15 @@ func (m *MockStatusWriter) Update(ctx context.Context, obj client.Object,
 	opts ...client.SubResourceUpdateOption) error {
 
 	m.parent.updateAttempts++
-
 	if m.parent.updateAttempts <= m.parent.conflictsToSimulate {
-		// Simulate optimistic concurrency conflict
+		errorMsg := "optimistic concurrency conflict"
+		if m.parent.statusConflict {
+			errorMsg = "status conflict during update"
+		}
 		return apierrors.NewConflict(
 			schema.GroupResource{Group: "rbac.open-cluster-management.io", Resource: "multiclusterroleassignments"},
 			obj.GetName(),
-			fmt.Errorf("Operation cannot be fulfilled on multiclusterroleassignments.rbac.open-cluster-management.io"+
-				" \"%s\": the object has been modified; please apply your changes to the latest version and try again",
-				obj.GetName()),
+			fmt.Errorf("%s", errorMsg),
 		)
 	}
 
