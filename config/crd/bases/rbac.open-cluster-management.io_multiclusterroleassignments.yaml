@@ -188,6 +188,10 @@ spec:
                   description: RoleAssignmentStatus defines the status of a specific
                     role assignment.
                   properties:
+                    createdAt:
+                      description: CreatedAt defines the creation time of the roleAssignment.
+                      format: date-time
+                      type: string
                     message:
                       description: Message provides additional human readable details
                         about the role assignment status.
@@ -207,6 +211,7 @@ spec:
                       - Error
                       type: string
                   required:
+                  - createdAt
                   - name
                   - status
                   type: object
