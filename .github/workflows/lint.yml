@@ -21,3 +21,11 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1.6
+
+      - name: Check manifest and Generate
+        run: |
+          go mod verify
+          make manifests
+          git diff --exit-code
+          make generate
+          git diff --exit-code
