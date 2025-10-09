@@ -27,14 +27,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
-	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -629,7 +631,6 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 		log.Info("Processing ClusterPermission for cluster", "cluster", cluster)
 
 		if err := r.ensureClusterPermission(ctx, mra, cluster); err != nil {
-			log.Error(err, "Failed to ensure ClusterPermission", "cluster", cluster)
 			state.FailedClusters[cluster] = err
 		} else {
 			state.SuccessClusters = append(state.SuccessClusters, cluster)
@@ -710,28 +711,40 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(
 
 	log := logf.FromContext(ctx)
 
-	// Retry logic for optimistic concurrency conflicts
-	for retryCount := range 3 {
-		if retryCount > 0 {
-			log.Info("Retrying ClusterPermission update due to conflict", "cluster", cluster, "retry", retryCount)
+	backoffConfig := wait.Backoff{
+		Steps:    3,
+		Duration: 10 * time.Millisecond,
+		Factor:   2.0,
+		Jitter:   0.1,
+	}
+
+	attemptCount := 0
+	err := retry.RetryOnConflict(backoffConfig, func() error {
+		attemptCount++
+		if attemptCount > 1 {
+			log.Info("Retrying ClusterPermission operation", "cluster", cluster, "attempt", attemptCount)
 		}
 
 		err := r.ensureClusterPermissionAttempt(ctx, mra, cluster)
-		if err == nil {
-			return nil
-		}
 
-		// Check if it's a conflict error (resourceVersion mismatch), meaning ClusterPermission has been updated and
-		// current version is out of date
-		if apierrors.IsConflict(err) {
-			log.Info("ClusterPermission update conflict, retrying", "cluster", cluster, "error", err)
-			continue
+		if err != nil && apierrors.IsConflict(err) && attemptCount < backoffConfig.Steps {
+			log.Info("ClusterPermission conflict detected, will retry", "cluster", cluster)
 		}
 
 		return err
+	})
+
+	if err != nil {
+		if apierrors.IsConflict(err) {
+			log.Error(err, "ClusterPermission update failed after all retry attempts due to conflicts", "cluster",
+				cluster, "attempts", attemptCount)
+		} else {
+			log.Error(err, "ClusterPermission operation failed", "cluster", cluster, "attempt", attemptCount)
+		}
+		return err
 	}
 
-	return fmt.Errorf("failed to update ClusterPermission after 5 retries due to conflicts")
+	return nil
 }
 
 // ensureClusterPermissionAttempt performs a single attempt to create or update a ClusterPermission.
@@ -769,7 +782,6 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 		}
 
 		if err := r.Create(ctx, cp); err != nil {
-			log.Error(err, "Failed to create ClusterPermission")
 			return err
 		}
 
@@ -796,12 +808,10 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 		(newSpec.RoleBindings == nil || len(*newSpec.RoleBindings) == 0) {
 		log.Info("Deleting ClusterPermission", "clusterPermission", updatedCP.Name)
 		if err := r.Delete(ctx, updatedCP); err != nil {
-			log.Error(err, "Failed to delete ClusterPermission")
 			return err
 		}
 	} else {
 		if err := r.Update(ctx, updatedCP); err != nil {
-			log.Error(err, "Failed to update ClusterPermission")
 			return err
 		}
 	}
