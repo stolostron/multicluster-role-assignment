@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -394,20 +395,29 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(status.Status).To(Equal(StatusTypeActive))
 				Expect(status.Reason).To(Equal("TestReason"))
 				Expect(status.Message).To(Equal("Successfully applied"))
+				Expect(status.CreatedAt.Time).NotTo(BeZero())
 			})
 
 			It("Should update existing role assignment status", func() {
+				var createdTime string
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypePending, "TestReasonPending",
 					"Initializing")
+
+				status := mra.Status.RoleAssignments[0]
+
+				time.Sleep(100 * time.Microsecond)
+				createdTime = status.CreatedAt.String()
+
 				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReasonActive",
 					"Successfully applied")
 
 				Expect(mra.Status.RoleAssignments).To(HaveLen(1))
-				status := mra.Status.RoleAssignments[0]
+				status = mra.Status.RoleAssignments[0]
 				Expect(status.Name).To(Equal("assignment1"))
 				Expect(status.Status).To(Equal(StatusTypeActive))
 				Expect(status.Reason).To(Equal("TestReasonActive"))
 				Expect(status.Message).To(Equal("Successfully applied"))
+				Expect(status.CreatedAt.String()).To(Equal(createdTime), "CreatedAt should not be updated")
 			})
 		})
 

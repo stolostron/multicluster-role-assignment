@@ -2285,6 +2285,8 @@ func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1
 	Expect(assignment.Status).To(Equal("Active"))
 	Expect(assignment.Reason).To(Equal("ClusterPermissionApplied"))
 	Expect(assignment.Message).To(Equal("ClusterPermission applied successfully"))
+	// Ensure CreatedAt is set (non-zero time)
+	Expect(assignment.CreatedAt.IsZero()).To(BeFalse())
 }
 
 // applyK8sManifest applies a Kubernetes manifest file using kubectl.

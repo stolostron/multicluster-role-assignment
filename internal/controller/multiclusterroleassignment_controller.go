@@ -498,10 +498,11 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(
 	}
 	if !found {
 		mra.Status.RoleAssignments = append(mra.Status.RoleAssignments, rbacv1alpha1.RoleAssignmentStatus{
-			Name:    name,
-			Status:  status,
-			Reason:  reason,
-			Message: message,
+			Name:      name,
+			Status:    status,
+			Reason:    reason,
+			Message:   message,
+			CreatedAt: metav1.Now(),
 		})
 	}
 }

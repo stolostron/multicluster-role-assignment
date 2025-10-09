@@ -99,6 +99,10 @@ type RoleAssignmentStatus struct {
 	// Message provides additional human readable details about the role assignment status.
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// CreatedAt defines the creation time of the roleAssignment.
+	// +kubebuilder:validation:Required
+	CreatedAt metav1.Time `json:"createdAt"`
 }
 
 // +kubebuilder:object:root=true
