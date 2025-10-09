@@ -27,14 +27,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
-	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -709,32 +711,40 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(
 
 	log := logf.FromContext(ctx)
 
-	// Retry logic for optimistic concurrency conflicts
-	for retryCount := range 3 {
-		if retryCount > 0 {
-			log.Info("Retrying ClusterPermission operation", "cluster", cluster, "attempt", retryCount+1)
+	backoffConfig := wait.Backoff{
+		Steps:    3,
+		Duration: 10 * time.Millisecond,
+		Factor:   2.0,
+		Jitter:   0.1,
+	}
+
+	attemptCount := 0
+	err := retry.RetryOnConflict(backoffConfig, func() error {
+		attemptCount++
+		if attemptCount > 1 {
+			log.Info("Retrying ClusterPermission operation", "cluster", cluster, "attempt", attemptCount)
 		}
 
 		err := r.ensureClusterPermissionAttempt(ctx, mra, cluster)
-		if err == nil {
-			return nil
+
+		if err != nil && apierrors.IsConflict(err) && attemptCount < backoffConfig.Steps {
+			log.Info("ClusterPermission conflict detected, will retry", "cluster", cluster)
 		}
 
+		return err
+	})
+
+	if err != nil {
 		if apierrors.IsConflict(err) {
-			if retryCount < 2 {
-				log.Info("ClusterPermission conflict detected, will retry", "cluster", cluster)
-				continue
-			}
-
-			log.Error(err, "ClusterPermission update failed after all retry attempts", "cluster", cluster, "attempts", 3)
-			return fmt.Errorf("failed after 3 attempts due to conflicts: %w", err)
+			log.Error(err, "ClusterPermission update failed after all retry attempts due to conflicts", "cluster",
+				cluster, "attempts", attemptCount)
+		} else {
+			log.Error(err, "ClusterPermission operation failed", "cluster", cluster, "attempt", attemptCount)
 		}
-
-		log.Error(err, "ClusterPermission operation failed", "cluster", cluster, "attempt", retryCount+1)
 		return err
 	}
 
-	return fmt.Errorf("unexpected retry loop exit")
+	return nil
 }
 
 // ensureClusterPermissionAttempt performs a single attempt to create or update a ClusterPermission.
