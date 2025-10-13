@@ -239,11 +239,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		}
 	}
 
-	if r.isFullyProcessed(&mra) {
-		log.Info("All conditions current for generation, skipping reconcile", "generation", mra.Generation)
-		return ctrl.Result{}, nil
-	}
-
 	r.clearStaleStatus(&mra)
 
 	if err := r.validateSpec(&mra); err != nil {
@@ -509,25 +504,6 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(
 			CreatedAt: metav1.Now(),
 		})
 	}
-}
-
-// isFullyProcessed checks if all conditions are current for the current generation.
-func (r *MulticlusterRoleAssignmentReconciler) isFullyProcessed(mra *rbacv1alpha1.MulticlusterRoleAssignment) bool {
-	expectedConditions := []string{ConditionTypeValidated, ConditionTypeApplied, ConditionTypeReady}
-
-	for _, expectedType := range expectedConditions {
-		found := false
-		for _, condition := range mra.Status.Conditions {
-			if condition.Type == expectedType && condition.ObservedGeneration == mra.Generation {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
 }
 
 // calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
