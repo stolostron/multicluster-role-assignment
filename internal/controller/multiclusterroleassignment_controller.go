@@ -29,12 +29,15 @@ import (
 
 	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -438,13 +441,12 @@ func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
 }
 
 // isClusterPermissionManaged checks if a ClusterPermission has the correct management label
-func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionManaged(
-	cp *clusterpermissionv1alpha1.ClusterPermission) bool {
-
-	if cp.Labels == nil {
+func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionManaged(obj client.Object) bool {
+	labels := obj.GetLabels()
+	if labels == nil {
 		return false
 	}
-	return cp.Labels[ClusterPermissionManagedByLabel] == ClusterPermissionManagedByValue
+	return labels[ClusterPermissionManagedByLabel] == ClusterPermissionManagedByValue
 }
 
 // updateStatus calculates and saves the current status state.
@@ -1177,11 +1179,70 @@ func (r *MulticlusterRoleAssignmentReconciler) updateAllClustersAnnotation(
 	return nil
 }
 
+// findMRAsForClusterPermission maps a ClusterPermission to the MRAs that own it
+func (r *MulticlusterRoleAssignmentReconciler) findMRAsForClusterPermission(
+	ctx context.Context, obj client.Object) []reconcile.Request {
+
+	log := logf.FromContext(ctx)
+
+	cp, ok := obj.(*clusterpermissionv1alpha1.ClusterPermission)
+	if !ok {
+		log.Error(fmt.Errorf("unexpected object type"), "Expected ClusterPermission", "got", obj)
+		return nil
+	}
+
+	ownerMRAs := make(map[string]bool)
+	if cp.Annotations != nil {
+		for key, value := range cp.Annotations {
+			if strings.HasPrefix(key, OwnerAnnotationPrefix) {
+				ownerMRAs[value] = true
+			}
+		}
+	}
+
+	requests := make([]reconcile.Request, 0, len(ownerMRAs))
+	for mra := range ownerMRAs {
+		namespaceName := strings.Split(mra, "/")
+		if len(namespaceName) != 2 || namespaceName[0] == "" || namespaceName[1] == "" {
+			log.Error(fmt.Errorf("invalid MRA identifier format"),
+				"Invalid MRA identifier in ClusterPermission annotation", "identifier", mra, "expected", "namespace/name")
+			continue
+		}
+
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Namespace: namespaceName[0],
+				Name:      namespaceName[1],
+			},
+		})
+	}
+
+	mraList := make([]string, 0, len(requests))
+	for _, req := range requests {
+		mraList = append(mraList, fmt.Sprintf("%s/%s", req.Namespace, req.Name))
+	}
+
+	log.Info("Mapped ClusterPermission to MRAs", "clusterPermission", fmt.Sprintf("%s/%s", cp.Namespace, cp.Name),
+		"mraCount", len(requests), "mras", mraList)
+
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rbacv1alpha1.MulticlusterRoleAssignment{},
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(
+			&clusterpermissionv1alpha1.ClusterPermission{},
+			handler.EnqueueRequestsFromMapFunc(r.findMRAsForClusterPermission),
+			builder.WithPredicates(
+				predicate.And(
+					predicate.NewPredicateFuncs(r.isClusterPermissionManaged),
+					predicate.GenerationChangedPredicate{},
+				),
+			),
+		).
 		Named("multiclusterroleassignment").
 		Complete(r)
 }
