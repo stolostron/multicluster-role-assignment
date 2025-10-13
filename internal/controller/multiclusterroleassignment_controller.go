@@ -239,6 +239,11 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		}
 	}
 
+	if !mra.DeletionTimestamp.IsZero() && !controllerutil.ContainsFinalizer(&mra, FinalizerName) {
+		log.Info("MulticlusterRoleAssignment is being deleted without finalizer, skipping reconciliation")
+		return ctrl.Result{}, nil
+	}
+
 	r.clearStaleStatus(&mra)
 
 	if err := r.validateSpec(&mra); err != nil {
@@ -747,6 +752,12 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 		newSpec := r.mergeClusterPermissionSpecs(ClusterPermissionBindingSlice{}, desiredSliceCP)
 		newAnnotations := r.mergeClusterPermissionAnnotations(ClusterPermissionBindingSlice{}, desiredSliceCP)
 
+		if r.isClusterPermissionSpecEmpty(newSpec) {
+			log.Info("Skipping ClusterPermission creation - spec is empty", "name", ClusterPermissionManagedName,
+				"namespace", cluster)
+			return nil
+		}
+
 		cp := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      ClusterPermissionManagedName,
@@ -781,9 +792,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	updatedCP.Spec = newSpec
 	updatedCP.Annotations = newAnnotations
 
-	// Check if we update or delete the ClusterPermission
-	if (newSpec.ClusterRoleBindings == nil || len(*newSpec.ClusterRoleBindings) == 0) &&
-		(newSpec.RoleBindings == nil || len(*newSpec.RoleBindings) == 0) {
+	if r.isClusterPermissionSpecEmpty(newSpec) {
 		log.Info("Deleting ClusterPermission", "clusterPermission", updatedCP.Name)
 		if err := r.Delete(ctx, updatedCP); err != nil {
 			return err
@@ -1077,6 +1086,13 @@ func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionAnnotations
 	maps.Copy(cpAnnotations, desired.OwnerAnnotations)
 
 	return cpAnnotations
+}
+
+// isClusterPermissionSpecEmpty returns true if the ClusterPermissionSpec has no bindings.
+func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionSpecEmpty(
+	spec clusterpermissionv1alpha1.ClusterPermissionSpec) bool {
+	return (spec.ClusterRoleBindings == nil || len(*spec.ClusterRoleBindings) == 0) &&
+		(spec.RoleBindings == nil || len(*spec.RoleBindings) == 0)
 }
 
 func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentDeletion(
