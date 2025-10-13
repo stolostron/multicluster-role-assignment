@@ -1785,6 +1785,58 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
 		})
+
+		Describe("isClusterPermissionSpecEmpty", func() {
+			It("Should return true when both are nil", func() {
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: nil,
+					RoleBindings:        nil,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
+			})
+
+			It("Should return true when both are empty slices", func() {
+				emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
+				emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &emptyClusterRoleBindings,
+					RoleBindings:        &emptyRoleBindings,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
+			})
+
+			It("Should return false when ClusterRoleBindings has items", func() {
+				clusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{
+					{
+						Name: "test-binding",
+						RoleRef: &rbacv1.RoleRef{
+							Kind:     ClusterRoleKind,
+							Name:     "test-role",
+							APIGroup: rbacv1.GroupName,
+						},
+					},
+				}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &clusterRoleBindings,
+					RoleBindings:        nil,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
+			})
+
+			It("Should return false when RoleBindings has items", func() {
+				roleBindings := []clusterpermissionv1alpha1.RoleBinding{
+					{
+						Name:      "test-role-binding",
+						Namespace: "test-namespace",
+					},
+				}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: nil,
+					RoleBindings:        &roleBindings,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
+			})
+		})
 	})
 
 	Context("Reconcile Error Handling", func() {
@@ -2140,13 +2192,42 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle deletion cleanup failure", func() {
+				// Need to create existing ClusterPermission here so that ClusterPermission is updated instead of skipped
+				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ClusterPermissionManagedName,
+						Namespace: cluster1Name,
+						Labels: map[string]string{
+							ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+						},
+						Annotations: map[string]string{
+							OwnerAnnotationPrefix + "other-binding": "some-namespace/some-other-mra",
+						},
+					},
+					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
+						ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+							{
+								Name: "other-binding",
+								RoleRef: &rbacv1.RoleRef{
+									Kind:     ClusterRoleKind,
+									Name:     "other-role",
+									APIGroup: rbacv1.GroupName,
+								},
+								Subjects: []rbacv1.Subject{{Kind: "User", Name: "other-user"}},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, existingCP)).To(Succeed())
+
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
 					Client:           k8sClient,
-					CreateError:      fmt.Errorf("deletion cleanup failed"),
-					ShouldFailCreate: true,
+					UpdateError:      fmt.Errorf("failed to update ClusterPermission during deletion cleanup"),
+					ShouldFailUpdate: true,
+					TargetResource:   "clusterpermissions",
 				}
 				errorReconciler := &MulticlusterRoleAssignmentReconciler{
 					Client: mockClient,
@@ -2160,7 +2241,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("deletion cleanup failed"))
+				Expect(err.Error()).To(ContainSubstring("failed to update ClusterPermission during deletion cleanup"))
 			})
 		})
 	})
@@ -3022,6 +3103,10 @@ func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ..
 			switch obj.(type) {
 			case *rbacv1alpha1.MulticlusterRoleAssignment:
 				if m.TargetResource == "multiclusterroleassignments" {
+					return m.UpdateError
+				}
+			case *clusterpermissionv1alpha1.ClusterPermission:
+				if m.TargetResource == "clusterpermissions" {
 					return m.UpdateError
 				}
 			}
