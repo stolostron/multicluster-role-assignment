@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 
@@ -1222,7 +1223,7 @@ var _ = Describe("Manager", Ordered, func() {
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentMultiple1Name))
 					mras[1].Spec.Subject.Kind = groupSubjectKind
 					mras[1].Spec.RoleAssignments[0].Name = "modified-view-assignment-namespaced-clusters-1-2"
-					mras[1].Spec.RoleAssignments[0].ClusterRole = "admin"
+					mras[1].Spec.RoleAssignments[0].ClusterRole = "admin2"
 					mras[1].Spec.RoleAssignments[1].Name = "modified-edit-assignment-cluster-3"
 					mras[1].Spec.RoleAssignments[1].ClusterRole = "cluster-admin"
 					mras[1].Spec.RoleAssignments[2].Name = "modified-admin-assignment-cluster-1"
@@ -1235,8 +1236,7 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[2].Spec.Subject.Name = "modified-user-single-rolebinding"
 					mras[2].Spec.RoleAssignments[0].Name = "modified-test-role-assignment-namespaced"
 					mras[2].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
-						mras[2].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster01",
-						"managedcluster03")
+						mras[2].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster01", "managedcluster03")
 					mras[2].Spec.RoleAssignments[0].TargetNamespaces = append(
 						mras[2].Spec.RoleAssignments[0].TargetNamespaces, "staging", "prod")
 					patchK8sResource(
@@ -1247,11 +1247,9 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.Subject.Kind = groupSubjectKind
 					mras[3].Spec.RoleAssignments[0].Name = "modified-test-role-assignment"
 					mras[3].Spec.RoleAssignments[0].ClusterRole = "admin"
-					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system",
-						"applications"}
+					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system", "applications"}
 					mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
-						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02",
-						"managedcluster03")
+						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02", "managedcluster03")
 					patchK8sResource("multiclusterroleassignment", mras[3].Name,
 						openClusterManagementGlobalSetNamespace, mras[3].Spec)
 
@@ -1296,8 +1294,8 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "development", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "view", Namespace: "logging", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "modified-group-multiple-2"},
-						{RoleName: "admin", Namespace: "default", SubjectName: "test-user-multiple-1"},
-						{RoleName: "admin", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "metrics", SubjectName: "test-user-multiple-1"},
@@ -1308,12 +1306,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "admin", Namespace: "default",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "kube-system",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "applications",
-							SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -1334,8 +1329,8 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "development", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "view", Namespace: "logging", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "modified-group-multiple-2"},
-						{RoleName: "admin", Namespace: "default", SubjectName: "test-user-multiple-1"},
-						{RoleName: "admin", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "metrics", SubjectName: "test-user-multiple-1"},
@@ -1346,12 +1341,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "admin", Namespace: "default",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "kube-system",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "applications",
-							SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -1382,12 +1374,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "admin", Namespace: "default",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "kube-system",
-							SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: "admin", Namespace: "applications",
-							SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -2265,6 +2254,234 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("verifying binding annotations have semantic consistency")
 					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+				})
+			})
+		})
+
+		Context("should reconcile ClusterPermission when manually modified with multiple MRAs - tests complex drift "+
+			"correction", func() {
+
+			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
+			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+			var initialCPGenerations [3]int64
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
+			Context("MRA creation and resource fetching", func() {
+				var mraJSONs [4]string
+				var clusterPermissionJSONs [3]string
+
+				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
+					By("creating all MulticlusterRoleAssignments sequentially")
+					manifestFiles := []string{
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+					}
+					for _, manifestFile := range manifestFiles {
+						applyK8sManifest(manifestFile)
+					}
+
+					By("fetching all four MulticlusterRoleAssignments")
+					mraNames := []string{
+						testMulticlusterRoleAssignmentMultiple2Name,
+						testMulticlusterRoleAssignmentMultiple1Name,
+						testMulticlusterRoleAssignmentSingleRBName,
+						testMulticlusterRoleAssignmentSingleCRBName,
+					}
+					for i, mraName := range mraNames {
+						mraJSONs[i] = fetchK8sResourceJSON(
+							"multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+					}
+
+					By("unmarshaling all MulticlusterRoleAssignment JSONs")
+					for i := range mras {
+						unmarshalJSON(mraJSONs[i], &mras[i])
+					}
+				})
+
+				It("should fetch initial ClusterPermissions for all managed clusters", func() {
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf(
+							"waiting for merged ClusterPermission to be ready and fetching it from %s", clusterName))
+						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON(
+							"clusterpermissions", "mra-managed-permissions", clusterName)
+
+						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
+						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+
+						By(fmt.Sprintf("storing initial generation for %s", clusterName))
+						initialCPGenerations[i-1] = clusterPermissions[i-1].Generation
+					}
+				})
+			})
+
+			//nolint:dupl
+			Context("drift correction after radical manual modifications", func() {
+				It("should manually modify ClusterPermissions with various drift scenarios", func() {
+					By("modifying managedcluster01 ClusterPermission")
+					(*clusterPermissions[0].Spec.ClusterRoleBindings)[0].RoleRef.Name = "cluster-admin"
+					(*clusterPermissions[0].Spec.RoleBindings)[0].RoleRef.Name = "admin"
+					*clusterPermissions[0].Spec.ClusterRoleBindings = slices.Delete(
+						*clusterPermissions[0].Spec.ClusterRoleBindings, 1, 2)
+
+					orphanedBinding := clusterpermissionv1alpha1.ClusterRoleBinding{
+						Name: "orphaned-binding",
+						RoleRef: &rbacv1.RoleRef{
+							Kind:     "ClusterRole",
+							Name:     "cluster-admin",
+							APIGroup: "rbac.authorization.k8s.io",
+						},
+						Subjects: []rbacv1.Subject{{Kind: "User", Name: "orphaned-user"}},
+					}
+
+					*clusterPermissions[0].Spec.ClusterRoleBindings = append(
+						*clusterPermissions[0].Spec.ClusterRoleBindings, orphanedBinding)
+
+					patchK8sResource("clusterpermissions", clusterPermissions[0].Name, clusterPermissions[0].Namespace,
+						clusterPermissions[0].Spec)
+
+					By("modifying managedcluster02 ClusterPermission")
+					*clusterPermissions[1].Spec.RoleBindings = slices.Delete(
+						*clusterPermissions[1].Spec.RoleBindings, 0, 3)
+					(*clusterPermissions[1].Spec.RoleBindings)[0].Subjects[0].Name = "blah-blah-user"
+
+					orphanedRoleBinding := clusterpermissionv1alpha1.RoleBinding{
+						Name:      "orphaned-rolebinding",
+						Namespace: "default",
+						RoleRef: clusterpermissionv1alpha1.RoleRef{
+							Kind:     "ClusterRole",
+							Name:     "cluster-admin",
+							APIGroup: "rbac.authorization.k8s.io",
+						},
+						Subjects: []rbacv1.Subject{{Kind: "User", Name: "orphaned-user"}},
+					}
+
+					*clusterPermissions[1].Spec.RoleBindings = append(
+						*clusterPermissions[1].Spec.RoleBindings, orphanedRoleBinding)
+
+					patchK8sResource("clusterpermissions", clusterPermissions[1].Name,
+						clusterPermissions[1].Namespace, clusterPermissions[1].Spec)
+
+					By("modifying managedcluster03 ClusterPermission")
+					emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
+					clusterPermissions[2].Spec.ClusterRoleBindings = &emptyClusterRoleBindings
+
+					emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
+					clusterPermissions[2].Spec.RoleBindings = &emptyRoleBindings
+
+					patchK8sResource("clusterpermissions", clusterPermissions[2].Name, clusterPermissions[2].Namespace,
+						clusterPermissions[2].Spec)
+				})
+
+				It("should fetch ClusterPermissions and validate generation changes", func() {
+					for i := 1; i <= 3; i++ {
+						clusterName := fmt.Sprintf("managedcluster%02d", i)
+						By(fmt.Sprintf("fetching reconciled ClusterPermission from %s", clusterName))
+						reconciledJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", clusterName)
+						unmarshalJSON(reconciledJSON, &clusterPermissions[i-1])
+
+						By(fmt.Sprintf("verifying generation incremented for %s", clusterName))
+						Expect(clusterPermissions[i-1].Generation).To(BeNumerically(">", initialCPGenerations[i-1]))
+					}
+				})
+
+				It("should have correctly merged content for managedcluster01 after drift correction", func() {
+					By("verifying ClusterPermission was fully restored in managedcluster01")
+					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(4))
+					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(7))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+				})
+
+				It("should have correctly merged content for managedcluster02 after drift correction", func() {
+					By("verifying ClusterPermission was fully restored in managedcluster02")
+					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(13))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						// RoleBindings
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+				})
+
+				It("should have correctly merged content for managedcluster03 after drift correction", func() {
+					By("verifying ClusterPermission was fully restored in managedcluster03")
+					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(2))
+					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(6))
+
+					expectedBindings := []ExpectedBinding{
+						// ClusterRoleBindings
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
+						// RoleBindings
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+					}
+					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
+				})
+
+				It("should have correct owner annotations for all clusters after drift correction", func() {
+					By("verifying ClusterPermission owner annotations restored for all clusters")
+					for _, cp := range clusterPermissions {
+						for _, mra := range mras {
+							validateMRAOwnerAnnotations(cp, mra)
+						}
+					}
+
+					By("verifying binding annotations have semantic consistency after drift correction")
+					for _, cp := range clusterPermissions {
+						validateBindingConsistency(cp, mras[:])
+					}
 				})
 			})
 		})
