@@ -230,6 +230,10 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 						mra.ResourceVersion)
 					return ctrl.Result{RequeueAfter: StandardRequeueDelay}, nil
 				}
+				if apierrors.IsNotFound(err) {
+					log.Info("MulticlusterRoleAssignment already deleted, finalizer removal not needed")
+					return ctrl.Result{}, nil
+				}
 				log.Error(err, "Failed to update MulticlusterRoleAssignment with finalizer")
 				return ctrl.Result{}, err
 			} else {

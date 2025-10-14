@@ -2371,20 +2371,52 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					return apierrors.IsNotFound(err)
 				}, "5s", "100ms").Should(BeTrue(), "Resource should be deleted after finalizer removal")
 			})
+
+			It("Should handle MRA already deleted (not found) when removing finalizer (race condition)", func() {
+				Expect(k8sClient.Delete(ctx, mra)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client: k8sClient,
+					UpdateError: apierrors.NewNotFound(schema.GroupResource{
+						Group:    "rbac.open-cluster-management.io",
+						Resource: "multiclusterroleassignments"},
+						mra.Name),
+					ShouldFailUpdate: true,
+					TargetResource:   "multiclusterroleassignments",
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
 		})
 
 		AfterEach(func() {
-			// Clean up test resource
 			testMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{
+			err := k8sClient.Get(ctx, client.ObjectKey{
 				Name:      mra.Name,
 				Namespace: mra.Namespace,
-			}, testMra); err == nil {
-				testMra.Finalizers = []string{}
-				err := k8sClient.Update(ctx, testMra)
-				Expect(err).NotTo(HaveOccurred())
+			}, testMra)
 
-				err = k8sClient.Delete(ctx, testMra)
+			if apierrors.IsNotFound(err) {
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+
+			testMra.Finalizers = []string{}
+			err = k8sClient.Update(ctx, testMra)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Delete(ctx, testMra)
+			if !apierrors.IsNotFound(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
