@@ -461,9 +461,10 @@ var _ = Describe("Manager", Ordered, func() {
 						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
 					unmarshalJSON(mraJSON, &mra)
 
-					By("modifying the MRA to change cluster role from 'view' to 'edit'")
-					mra.Spec.RoleAssignments[0].ClusterRole = "edit"
-					patchK8sMRA(&mra)
+					By("modifying the MRA to change cluster role from 'view' to 'admin-role'")
+					mra.Spec.RoleAssignments[0].ClusterRole = "admin-role"
+					patchK8sResource(
+						"multiclusterroleassignment", mra.Name, openClusterManagementGlobalSetNamespace, mra.Spec)
 
 					By("fetching the updated MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -490,7 +491,7 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "edit", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+						{RoleName: "admin-role", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
@@ -822,7 +823,8 @@ var _ = Describe("Manager", Ordered, func() {
 						TargetNamespaces: []string{"default", "kube-system"},
 					}
 					mra.Spec.RoleAssignments = append(mra.Spec.RoleAssignments, newRoleAssignment)
-					patchK8sMRA(&mra)
+					patchK8sResource(
+						"multiclusterroleassignment", mra.Name, openClusterManagementGlobalSetNamespace, mra.Spec)
 
 					By("fetching updated MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -900,7 +902,8 @@ var _ = Describe("Manager", Ordered, func() {
 						}
 					}
 					mra.Spec.RoleAssignments = updatedRoleAssignments
-					patchK8sMRA(&mra)
+					patchK8sResource(
+						"multiclusterroleassignment", mra.Name, openClusterManagementGlobalSetNamespace, mra.Spec)
 
 					By("fetching updated MulticlusterRoleAssignment")
 					updatedMraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -1213,7 +1216,8 @@ var _ = Describe("Manager", Ordered, func() {
 						mras[0].Spec.RoleAssignments[1].ClusterSelection.ClusterNames, "managedcluster01")
 					mras[0].Spec.RoleAssignments[2].TargetNamespaces = append(
 						mras[0].Spec.RoleAssignments[2].TargetNamespaces, "new-dev-ns")
-					patchK8sMRA(&mras[0])
+					patchK8sResource(
+						"multiclusterroleassignment", mras[0].Name, openClusterManagementGlobalSetNamespace, mras[0].Spec)
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentMultiple1Name))
 					mras[1].Spec.Subject.Kind = groupSubjectKind
@@ -1224,7 +1228,8 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[1].Spec.RoleAssignments[2].Name = "modified-admin-assignment-cluster-1"
 					mras[1].Spec.RoleAssignments[3].TargetNamespaces = append(
 						mras[1].Spec.RoleAssignments[3].TargetNamespaces, "metrics")
-					patchK8sMRA(&mras[1])
+					patchK8sResource(
+						"multiclusterroleassignment", mras[1].Name, openClusterManagementGlobalSetNamespace, mras[1].Spec)
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleRBName))
 					mras[2].Spec.Subject.Name = "modified-user-single-rolebinding"
@@ -1234,7 +1239,8 @@ var _ = Describe("Manager", Ordered, func() {
 						"managedcluster03")
 					mras[2].Spec.RoleAssignments[0].TargetNamespaces = append(
 						mras[2].Spec.RoleAssignments[0].TargetNamespaces, "staging", "prod")
-					patchK8sMRA(&mras[2])
+					patchK8sResource(
+						"multiclusterroleassignment", mras[2].Name, openClusterManagementGlobalSetNamespace, mras[2].Spec)
 
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleCRBName))
 					mras[3].Spec.Subject.Name = "modified-group-single-clusterrolebinding"
@@ -1246,7 +1252,8 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
 						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02",
 						"managedcluster03")
-					patchK8sMRA(&mras[3])
+					patchK8sResource("multiclusterroleassignment", mras[3].Name,
+						openClusterManagementGlobalSetNamespace, mras[3].Spec)
 
 					By("fetching all comprehensively updated MulticlusterRoleAssignments")
 					for i, mraName := range mraNames {
@@ -1832,7 +1839,8 @@ var _ = Describe("Manager", Ordered, func() {
 						},
 					}
 
-					patchK8sMRA(finalMRA)
+					patchK8sResource(
+						"multiclusterroleassignment", finalMRA.Name, openClusterManagementGlobalSetNamespace, finalMRA.Spec)
 
 					By("fetching final MulticlusterRoleAssignment state")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2226,7 +2234,8 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should manually modify ClusterPermission to simulate drift", func() {
 					By("modifying the ClusterPermission to change role from 'view' to 'edit'")
 					(*clusterPermission.Spec.ClusterRoleBindings)[0].RoleRef.Name = "edit"
-					patchK8sClusterPermission(&clusterPermission)
+					patchK8sResource(
+						"clusterpermissions", clusterPermission.Name, clusterPermission.Namespace, clusterPermission.Spec)
 				})
 
 				It("fetch ClusterPermission and validate generation change", func() {
@@ -2372,31 +2381,16 @@ func applyK8sManifest(manifestPath string) {
 	waitForController()
 }
 
-// patchK8sMRA applies a patch to a MulticlusterRoleAssignment using kubectl patch.
-func patchK8sMRA(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
+// patchK8sResource applies a spec patch to a Kubernetes resource using kubectl patch.
+func patchK8sResource(resourceType, resourceName, namespace string, spec any) {
 	patchSpec := map[string]any{
-		"spec": mra.Spec,
+		"spec": spec,
 	}
 	patchBytes, err := json.Marshal(patchSpec)
 	Expect(err).NotTo(HaveOccurred())
 
-	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", mra.Name, "-n",
-		openClusterManagementGlobalSetNamespace, "--type", "merge", "-p", string(patchBytes))
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
-	waitForController()
-}
-
-// patchK8sClusterPermission applies a patch to a ClusterPermission using kubectl patch.
-func patchK8sClusterPermission(cp *clusterpermissionv1alpha1.ClusterPermission) {
-	patchSpec := map[string]any{
-		"spec": cp.Spec,
-	}
-	patchBytes, err := json.Marshal(patchSpec)
-	Expect(err).NotTo(HaveOccurred())
-
-	cmd := exec.Command("kubectl", "patch", "clusterpermissions", cp.Name, "-n",
-		cp.Namespace, "--type", "merge", "-p", string(patchBytes))
+	cmd := exec.Command(
+		"kubectl", "patch", resourceType, resourceName, "-n", namespace, "--type", "merge", "-p", string(patchBytes))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 	waitForController()
