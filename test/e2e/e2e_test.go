@@ -2184,6 +2184,81 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 		})
+
+		Context("should reconcile ClusterPermission when manually modified - tests drift correction", func() {
+			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var initialCPGeneration int64
+
+			AfterAll(func() {
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
+			})
+
+			Context("MRA creation and resource fetching", func() {
+				var clusterPermissionJSON, mraJSON string
+
+				It("should create and fetch MulticlusterRoleAssignment", func() {
+					By("creating a MulticlusterRoleAssignment with one ClusterRoleBinding")
+					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+
+					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
+					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
+						testMulticlusterRoleAssignmentSingleCRBName, openClusterManagementGlobalSetNamespace)
+
+					By("unmarshaling MulticlusterRoleAssignment json")
+					unmarshalJSON(mraJSON, &mra)
+				})
+
+				It("should fetch initial ClusterPermission", func() {
+					By("waiting for ClusterPermission to be created and fetching it")
+					clusterPermissionJSON = fetchK8sResourceJSON(
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+
+					By("unmarshaling ClusterPermission json")
+					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
+
+					By("storing initial generation")
+					initialCPGeneration = clusterPermission.Generation
+				})
+			})
+
+			Context("drift correction after manual modification", func() {
+				It("should manually modify ClusterPermission to simulate drift", func() {
+					By("modifying the ClusterPermission to change role from 'view' to 'edit'")
+					(*clusterPermission.Spec.ClusterRoleBindings)[0].RoleRef.Name = "edit"
+					patchK8sClusterPermission(&clusterPermission)
+				})
+
+				It("fetch ClusterPermission and validate generation change", func() {
+					By("fetching final reconciled ClusterPermission")
+					reconciledJSON := fetchK8sResourceJSON(
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					unmarshalJSON(reconciledJSON, &clusterPermission)
+
+					By("verifying generation incremented after manual modification")
+					Expect(clusterPermission.Generation).To(BeNumerically(">", initialCPGeneration))
+				})
+
+				It("should have correct ClusterRoleBinding after drift correction", func() {
+					By("verifying ClusterPermission has correct ClusterRoleBinding after reconciliation")
+					Expect(*clusterPermission.Spec.ClusterRoleBindings).To(HaveLen(1))
+					Expect(clusterPermission.Spec.RoleBindings).To(BeNil())
+
+					expectedBindings := []ExpectedBinding{
+						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
+					}
+					validateClusterPermissionBindings(clusterPermission, expectedBindings)
+				})
+
+				It("should have correct owner annotations after drift correction", func() {
+					By("verifying ClusterPermission has correct owner annotations")
+					validateMRAOwnerAnnotations(clusterPermission, mra)
+
+					By("verifying binding annotations have semantic consistency")
+					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+				})
+			})
+		})
 	})
 })
 
@@ -2307,6 +2382,21 @@ func patchK8sMRA(mra *rbacv1alpha1.MulticlusterRoleAssignment) {
 
 	cmd := exec.Command("kubectl", "patch", "multiclusterroleassignment", mra.Name, "-n",
 		openClusterManagementGlobalSetNamespace, "--type", "merge", "-p", string(patchBytes))
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+	waitForController()
+}
+
+// patchK8sClusterPermission applies a patch to a ClusterPermission using kubectl patch.
+func patchK8sClusterPermission(cp *clusterpermissionv1alpha1.ClusterPermission) {
+	patchSpec := map[string]any{
+		"spec": cp.Spec,
+	}
+	patchBytes, err := json.Marshal(patchSpec)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "patch", "clusterpermissions", cp.Name, "-n",
+		cp.Namespace, "--type", "merge", "-p", string(patchBytes))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 	waitForController()
