@@ -937,85 +937,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
-		Describe("findMRAsForClusterPermission", func() {
-			It("Should return empty list when object is not a ClusterPermission", func() {
-				namespace := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, namespace)
-				Expect(requests).To(BeEmpty())
-			})
-
-			It("Should return empty list when ClusterPermission has no annotations", func() {
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(BeEmpty())
-			})
-
-			It("Should return empty list when ClusterPermission has no owner annotations", func() {
-				cp.Annotations = map[string]string{
-					"other-annotation": "some-value",
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(BeEmpty())
-			})
-
-			It("Should extract single MRA from owner annotation", func() {
-				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "binding1": "test-namespace/test-mra",
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(HaveLen(1))
-				Expect(requests[0].Namespace).To(Equal("test-namespace"))
-				Expect(requests[0].Name).To(Equal("test-mra"))
-			})
-
-			It("Should extract multiple MRAs from owner annotations", func() {
-				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "binding1": "namespace1/mra1",
-					OwnerAnnotationPrefix + "binding2": "namespace2/mra2",
-					OwnerAnnotationPrefix + "binding3": "namespace1/mra3",
-					"other-annotation":                 "ignored",
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(HaveLen(3))
-
-				requestMap := make(map[string]string)
-				for _, req := range requests {
-					requestMap[req.Namespace+"/"+req.Name] = req.Namespace + "/" + req.Name
-				}
-
-				Expect(requestMap).To(HaveKey("namespace1/mra1"))
-				Expect(requestMap).To(HaveKey("namespace2/mra2"))
-				Expect(requestMap).To(HaveKey("namespace1/mra3"))
-			})
-
-			It("Should deduplicate MRAs when same MRA owns multiple bindings", func() {
-				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "binding1": "test-namespace/test-mra",
-					OwnerAnnotationPrefix + "binding2": "test-namespace/test-mra",
-					OwnerAnnotationPrefix + "binding3": "test-namespace/test-mra",
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(HaveLen(1))
-				Expect(requests[0].Namespace).To(Equal("test-namespace"))
-				Expect(requests[0].Name).To(Equal("test-mra"))
-			})
-
-			It("Should skip invalid MRA identifier formats", func() {
-				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "binding1": "valid-namespace/valid-mra",
-					OwnerAnnotationPrefix + "binding2": "invalid-no-slash",
-					OwnerAnnotationPrefix + "binding3": "too/many/slashes",
-					OwnerAnnotationPrefix + "binding4": "/no-namespace",
-					OwnerAnnotationPrefix + "binding5": "no-name/",
-				}
-				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
-				Expect(requests).To(HaveLen(1))
-				Expect(requests[0].Namespace).To(Equal("valid-namespace"))
-				Expect(requests[0].Name).To(Equal("valid-mra"))
-			})
-		})
-
 		Describe("isRoleAssignmentTargetingCluster", func() {
 			It("Should return true when cluster is in the list", func() {
 				roleAssignment := rbacv1alpha1.RoleAssignment{
@@ -1785,58 +1706,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
 		})
-
-		Describe("isClusterPermissionSpecEmpty", func() {
-			It("Should return true when both are nil", func() {
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: nil,
-					RoleBindings:        nil,
-				}
-				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
-			})
-
-			It("Should return true when both are empty slices", func() {
-				emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
-				emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: &emptyClusterRoleBindings,
-					RoleBindings:        &emptyRoleBindings,
-				}
-				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
-			})
-
-			It("Should return false when ClusterRoleBindings has items", func() {
-				clusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{
-					{
-						Name: "test-binding",
-						RoleRef: &rbacv1.RoleRef{
-							Kind:     ClusterRoleKind,
-							Name:     "test-role",
-							APIGroup: rbacv1.GroupName,
-						},
-					},
-				}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: &clusterRoleBindings,
-					RoleBindings:        nil,
-				}
-				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
-			})
-
-			It("Should return false when RoleBindings has items", func() {
-				roleBindings := []clusterpermissionv1alpha1.RoleBinding{
-					{
-						Name:      "test-role-binding",
-						Namespace: "test-namespace",
-					},
-				}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: nil,
-					RoleBindings:        &roleBindings,
-				}
-				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
-			})
-		})
 	})
 
 	Context("Reconcile Error Handling", func() {
@@ -2192,42 +2061,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle deletion cleanup failure", func() {
-				// Need to create existing ClusterPermission here so that ClusterPermission is updated instead of skipped
-				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      ClusterPermissionManagedName,
-						Namespace: cluster1Name,
-						Labels: map[string]string{
-							ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
-						},
-						Annotations: map[string]string{
-							OwnerAnnotationPrefix + "other-binding": "some-namespace/some-other-mra",
-						},
-					},
-					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
-						ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
-							{
-								Name: "other-binding",
-								RoleRef: &rbacv1.RoleRef{
-									Kind:     ClusterRoleKind,
-									Name:     "other-role",
-									APIGroup: rbacv1.GroupName,
-								},
-								Subjects: []rbacv1.Subject{{Kind: "User", Name: "other-user"}},
-							},
-						},
-					},
-				}
-				Expect(k8sClient.Create(ctx, existingCP)).To(Succeed())
-
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
 					Client:           k8sClient,
-					UpdateError:      fmt.Errorf("failed to update ClusterPermission during deletion cleanup"),
-					ShouldFailUpdate: true,
-					TargetResource:   "clusterpermissions",
+					CreateError:      fmt.Errorf("deletion cleanup failed"),
+					ShouldFailCreate: true,
 				}
 				errorReconciler := &MulticlusterRoleAssignmentReconciler{
 					Client: mockClient,
@@ -2241,7 +2081,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to update ClusterPermission during deletion cleanup"))
+				Expect(err.Error()).To(ContainSubstring("deletion cleanup failed"))
 			})
 		})
 	})
@@ -3103,10 +2943,6 @@ func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ..
 			switch obj.(type) {
 			case *rbacv1alpha1.MulticlusterRoleAssignment:
 				if m.TargetResource == "multiclusterroleassignments" {
-					return m.UpdateError
-				}
-			case *clusterpermissionv1alpha1.ClusterPermission:
-				if m.TargetResource == "clusterpermissions" {
 					return m.UpdateError
 				}
 			}
