@@ -24,6 +24,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -224,7 +225,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 			}
 
 			result := controllerutil.RemoveFinalizer(&mra, FinalizerName)
-			log.Info("Remove finalizer ", "finalizer", FinalizerName, "result", result)
+			log.Info("Removing finalizer ", "finalizer", FinalizerName, "result", result)
 			if err := r.Update(ctx, &mra); err != nil {
 				if apierrors.IsConflict(err) {
 					log.Info("Finalizer remove conflict, requeuing", "generation", mra.Generation, "resourceVersion",
@@ -742,17 +743,15 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	desiredSliceCP := r.calculateDesiredClusterPermissionSlice(mra, cluster)
 
 	if existingCP == nil {
-		log.Info("Creating new ClusterPermission", "name", ClusterPermissionManagedName, "namespace", cluster)
-
 		// Merging empty bindings for "others" because this is a new ClusterPermission
 		newSpec := r.mergeClusterPermissionSpecs(ClusterPermissionBindingSlice{}, desiredSliceCP)
 		newAnnotations := r.mergeClusterPermissionAnnotations(ClusterPermissionBindingSlice{}, desiredSliceCP)
 
 		if r.isClusterPermissionSpecEmpty(newSpec) {
-			log.Info("Skipping ClusterPermission creation - spec is empty", "name", ClusterPermissionManagedName,
-				"namespace", cluster)
 			return nil
 		}
+
+		log.Info("Creating new ClusterPermission", "name", ClusterPermissionManagedName, "namespace", cluster)
 
 		cp := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1071,12 +1070,18 @@ func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionSpecs(
 	allClusterRoleBindings := append(others.ClusterRoleBindings, desired.ClusterRoleBindings...)
 
 	if len(allClusterRoleBindings) > 0 {
+		sort.Slice(allClusterRoleBindings, func(i, j int) bool {
+			return allClusterRoleBindings[i].Name < allClusterRoleBindings[j].Name
+		})
 		cpSpec.ClusterRoleBindings = &allClusterRoleBindings
 	}
 
 	allRoleBindings := append(others.RoleBindings, desired.RoleBindings...)
 
 	if len(allRoleBindings) > 0 {
+		sort.Slice(allRoleBindings, func(i, j int) bool {
+			return allRoleBindings[i].Name < allRoleBindings[j].Name
+		})
 		cpSpec.RoleBindings = &allRoleBindings
 	}
 

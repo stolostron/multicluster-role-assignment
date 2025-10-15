@@ -1876,6 +1876,53 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(roleBindingNames).To(ContainElements(
 					"other-role-binding1", "desired-role-binding1", "desired-role-binding2"))
 			})
+
+			It("Should sort bindings by name for deterministic ordering", func() {
+				others := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "z-binding"},
+						{Name: "a-binding"},
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "m-binding"},
+					},
+				}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*spec.ClusterRoleBindings).To(HaveLen(3))
+
+				bindings := *spec.ClusterRoleBindings
+				Expect(bindings[0].Name).To(Equal("a-binding"))
+				Expect(bindings[1].Name).To(Equal("m-binding"))
+				Expect(bindings[2].Name).To(Equal("z-binding"))
+			})
+
+			It("Should produce consistent results regardless of merge order", func() {
+				slice1 := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "binding-a"},
+					},
+				}
+				slice2 := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "binding-b"},
+					},
+				}
+
+				spec1 := reconciler.mergeClusterPermissionSpecs(slice1, slice2)
+				spec2 := reconciler.mergeClusterPermissionSpecs(slice2, slice1)
+
+				Expect(spec1.ClusterRoleBindings).NotTo(BeNil())
+				Expect(spec2.ClusterRoleBindings).NotTo(BeNil())
+				Expect((*spec1.ClusterRoleBindings)[0].Name).To(Equal("binding-a"))
+				Expect((*spec1.ClusterRoleBindings)[1].Name).To(Equal("binding-b"))
+				Expect((*spec2.ClusterRoleBindings)[0].Name).To(Equal("binding-a"))
+				Expect((*spec2.ClusterRoleBindings)[1].Name).To(Equal("binding-b"))
+			})
 		})
 
 		Describe("mergeClusterPermissionAnnotations", func() {
