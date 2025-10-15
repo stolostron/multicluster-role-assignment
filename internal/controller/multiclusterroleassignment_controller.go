@@ -799,10 +799,18 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	if r.isClusterPermissionSpecEmpty(newSpec) {
 		log.Info("Deleting ClusterPermission", "clusterPermission", updatedCP.Name)
 		if err := r.Delete(ctx, updatedCP); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("ClusterPermission already deleted, deletion not needed")
+				return nil
+			}
 			return err
 		}
 	} else {
 		if err := r.Update(ctx, updatedCP); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("ClusterPermission already deleted, update not needed")
+				return nil
+			}
 			return err
 		}
 	}
