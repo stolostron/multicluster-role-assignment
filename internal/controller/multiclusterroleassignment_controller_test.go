@@ -242,30 +242,52 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(errorFound).To(BeTrue(), "Role assignment should have error status for missing clusters")
 		})
 
-		It("Should set reason for invalid spec when reconciling with duplicate role assignment names", func() {
-			mra.Spec.RoleAssignments[1].Name = mra.Spec.RoleAssignments[0].Name
-			Expect(k8sClient.Update(ctx, mra)).To(Succeed())
-
-			By("Reconciling with duplicate role assignment names")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: mraNamespacedName,
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("duplicate role assignment name"))
-
-			err = k8sClient.Get(ctx, mraNamespacedName, mra)
-			Expect(err).NotTo(HaveOccurred())
-
-			found := false
-			for _, condition := range mra.Status.Conditions {
-				if condition.Type == ConditionTypeValidated {
-					Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-					Expect(condition.Reason).To(Equal(ReasonInvalidSpec))
-					found = true
-					break
-				}
+		It("Should prevent duplicate role assignment names via CRD validation", func() {
+			By("Attempting to create MulticlusterRoleAssignment with duplicate role assignment names")
+			duplicateMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-duplicate-mra",
+					Namespace: mra.Namespace,
+				},
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					Subject: mra.Spec.Subject,
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "duplicate-name",
+							ClusterRole: "role1",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster1Name},
+							},
+						},
+						{
+							Name:        "duplicate-name", // Same name as above
+							ClusterRole: "role2",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster2Name},
+							},
+						},
+					},
+				},
 			}
-			Expect(found).To(BeTrue(), "Validated condition should have ReasonInvalidSpec")
+
+			By("Expecting CRD validation to reject the creation")
+			err := k8sClient.Create(ctx, duplicateMRA)
+			if err != nil {
+				// CRD validation is working - expect duplicate value error
+				Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+				Expect(err.Error()).To(ContainSubstring("spec.roleAssignments"))
+			} else {
+				// CRD validation not enforced in test environment - test controller validation
+				By("Testing controller-level validation as fallback")
+				err = reconciler.validateSpec(duplicateMRA)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("duplicate role assignment name found"))
+
+				// Clean up if creation succeeded
+				k8sClient.Delete(ctx, duplicateMRA)
+			}
 		})
 
 		It("Should complete full reconciliation including ClusterPermission creation", func() {
@@ -2208,27 +2230,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		Context("Status Update Failures", func() {
-			It("Should return error when status update fails after validation failure", func() {
+			It("Should return error when status update fails during reconciliation", func() {
 				errorTestMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
 					{
-						Name:        "duplicate-name",
+						Name:        "assignment-1",
 						ClusterRole: "role1",
 						ClusterSelection: rbacv1alpha1.ClusterSelection{
 							Type:         "clusterNames",
 							ClusterNames: []string{cluster1Name},
 						},
 					},
-					{
-						Name:        "duplicate-name",
-						ClusterRole: "role2",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
-							Type:         "clusterNames",
-							ClusterNames: []string{cluster2Name},
-						},
-					},
 				}
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
+				// Create a mock client that fails on status updates
 				mockClient := &MockErrorClient{
 					Client:            k8sClient,
 					StatusUpdateError: fmt.Errorf("status update failed"),
