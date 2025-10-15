@@ -236,10 +236,9 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 				}
 				log.Error(err, "Failed to update MulticlusterRoleAssignment with finalizer")
 				return ctrl.Result{}, err
-			} else {
-				log.Info("Successfully removed finalizer ", "finalizer", FinalizerName)
-				return ctrl.Result{}, nil
 			}
+
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -263,9 +262,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	}
 
 	r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionTrue, ReasonSpecIsValid, MessageSpecValidationPassed)
-
-	log.Info("Successfully validated MulticlusterRoleAssignment spec", "multiclusterroleassignment", req.NamespacedName,
-		"generation", mra.Generation, "resourceVersion", mra.ResourceVersion)
 
 	allClustersFromSpec, err := r.aggregateClusters(ctx, &mra)
 	if err != nil {
@@ -391,7 +387,6 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 					return nil, fmt.Errorf("failed to validate cluster %s: %w", cluster, err)
 				}
 			} else {
-				log.Info("ManagedCluster found and validated", "cluster", cluster)
 				allActiveClustersMap[cluster] = true
 				allClusters = append(allClusters, cluster)
 			}
@@ -606,8 +601,6 @@ func (r *MulticlusterRoleAssignmentReconciler) setCondition(
 func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string) map[string]error {
 
-	log := logf.FromContext(ctx)
-
 	r.setCondition(mra, ConditionTypeApplied, metav1.ConditionUnknown, ReasonApplyInProgress, MessageApplyInProgress)
 
 	state := &ClusterPermissionProcessingState{
@@ -615,8 +608,6 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 	}
 
 	for _, cluster := range clusters {
-		log.Info("Processing ClusterPermission for cluster", "cluster", cluster)
-
 		if err := r.ensureClusterPermission(ctx, mra, cluster); err != nil {
 			state.FailedClusters[cluster] = err
 		} else {
@@ -778,7 +769,6 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 			return err
 		}
 
-		log.Info("Successfully created ClusterPermission")
 		return nil
 	}
 
@@ -815,7 +805,6 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 		}
 	}
 
-	log.Info("Successfully updated ClusterPermission")
 	return nil
 }
 
@@ -1152,15 +1141,11 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 			len(cleanupErrors), len(allClustersTotal), cleanupErrors)
 	}
 
-	log.Info("Successfully completed MulticlusterRoleAssignment deletion cleanup")
 	return nil
 }
 
 func (r *MulticlusterRoleAssignmentReconciler) updateAllClustersAnnotation(
 	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, allClusters []string) error {
-	log := logf.FromContext(ctx)
-
-	log.Info("Updating all clusters annotation", "multiclusterroleassignment", mra.Name)
 
 	// Fetch a fresh copy to avoid overwriting in-memory status
 	freshMRA := &rbacv1alpha1.MulticlusterRoleAssignment{}
@@ -1220,14 +1205,6 @@ func (r *MulticlusterRoleAssignmentReconciler) findMRAsForClusterPermission(
 			},
 		})
 	}
-
-	mraList := make([]string, 0, len(requests))
-	for _, req := range requests {
-		mraList = append(mraList, fmt.Sprintf("%s/%s", req.Namespace, req.Name))
-	}
-
-	log.Info("Mapped ClusterPermission to MRAs", "clusterPermission", fmt.Sprintf("%s/%s", cp.Namespace, cp.Name),
-		"mraCount", len(requests), "mras", mraList)
 
 	return requests
 }
