@@ -286,7 +286,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err.Error()).To(ContainSubstring("duplicate role assignment name found"))
 
 				// Clean up if creation succeeded
-				k8sClient.Delete(ctx, duplicateMRA)
+				Expect(k8sClient.Delete(ctx, duplicateMRA)).To(Succeed())
 			}
 		})
 
