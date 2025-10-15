@@ -1201,6 +1201,94 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
+			It("Should skip update when ClusterPermission spec and annotations are unchanged", func() {
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster2Name}
+
+				// Create existing ClusterPermission with correct spec already
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				cp.Annotations = map[string]string{
+					reconciler.generateOwnerAnnotationKey(expectedBindingName): reconciler.generateMulticlusterRoleAssignmentIdentifier(mra),
+				}
+				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+						{
+							Name: expectedBindingName,
+							RoleRef: &rbacv1.RoleRef{
+								Kind:     ClusterRoleKind,
+								Name:     "test-role",
+								APIGroup: rbacv1.GroupName,
+							},
+							Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user"}},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				// Track if update was called
+				updateCalled := false
+				mockClient := &clientWrapper{
+					Client: k8sClient,
+					updateFn: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						updateCalled = true
+						return k8sClient.Update(ctx, obj, opts...)
+					},
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updateCalled).To(BeFalse())
+			})
+
+			It("Should update when ClusterPermission spec changes", func() {
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster2Name}
+
+				// Create existing ClusterPermission with DIFFERENT spec
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+						{
+							Name: "different-binding",
+							RoleRef: &rbacv1.RoleRef{
+								Kind:     ClusterRoleKind,
+								Name:     "different-role",
+								APIGroup: rbacv1.GroupName,
+							},
+							Subjects: []rbacv1.Subject{{Kind: "User", Name: "different-user"}},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				// Track if update was called
+				updateCalled := false
+				mockClient := &clientWrapper{
+					Client: k8sClient,
+					updateFn: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						updateCalled = true
+						return k8sClient.Update(ctx, obj, opts...)
+					},
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updateCalled).To(BeTrue())
+			})
 		})
 
 		Describe("processClusterPermissions", func() {
@@ -2250,7 +2338,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle deletion cleanup failure", func() {
-				// Need to create existing ClusterPermission here so that ClusterPermission is updated instead of skipped
 				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      ClusterPermissionManagedName,
@@ -2259,7 +2346,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 							ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
 						},
 						Annotations: map[string]string{
-							OwnerAnnotationPrefix + "other-binding": "some-namespace/some-other-mra",
+							OwnerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
+							OwnerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
 						},
 					},
 					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -2272,6 +2360,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 									APIGroup: rbacv1.GroupName,
 								},
 								Subjects: []rbacv1.Subject{{Kind: "User", Name: "other-user"}},
+							},
+							{
+								Name: "error-test-mra-binding",
+								RoleRef: &rbacv1.RoleRef{
+									Kind:     ClusterRoleKind,
+									Name:     "error-test-role",
+									APIGroup: rbacv1.GroupName,
+								},
+								Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user"}},
 							},
 						},
 					},
@@ -3932,6 +4029,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 type clientWrapper struct {
 	client.Client
 	deleteFn func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error
+	updateFn func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error
 }
 
 func (c *clientWrapper) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
@@ -3939,4 +4037,11 @@ func (c *clientWrapper) Delete(ctx context.Context, obj client.Object, opts ...c
 		return c.deleteFn(ctx, obj, opts...)
 	}
 	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func (c *clientWrapper) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if c.updateFn != nil {
+		return c.updateFn(ctx, obj, opts...)
+	}
+	return c.Client.Update(ctx, obj, opts...)
 }

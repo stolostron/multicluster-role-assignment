@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/stolostron/multicluster-role-assignment/internal/utils"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -772,8 +773,6 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 		return nil
 	}
 
-	log.Info("Updating existing ClusterPermission", "name", ClusterPermissionManagedName, "namespace", cluster)
-
 	// otherSliceCP are the bindings and annotations for the given ClusterPermission that come from OTHER
 	// MulticlusterRoleAssignments. In other words, these are pre-existing bindings and annotations on the
 	// ClusterPermission that are not managed by this MulticlusterRoleAssignment.
@@ -782,27 +781,35 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	newSpec := r.mergeClusterPermissionSpecs(otherSliceCP, desiredSliceCP)
 	newAnnotations := r.mergeClusterPermissionAnnotations(otherSliceCP, desiredSliceCP)
 
-	updatedCP := existingCP
-	updatedCP.Spec = newSpec
-	updatedCP.Annotations = newAnnotations
-
 	if r.isClusterPermissionSpecEmpty(newSpec) {
-		log.Info("Deleting ClusterPermission", "clusterPermission", updatedCP.Name)
-		if err := r.Delete(ctx, updatedCP); err != nil {
+		log.Info("Deleting ClusterPermission", "clusterPermission", existingCP.Name)
+		if err := r.Delete(ctx, existingCP); err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info("ClusterPermission already deleted, deletion not needed")
 				return nil
 			}
 			return err
 		}
-	} else {
-		if err := r.Update(ctx, updatedCP); err != nil {
-			if apierrors.IsNotFound(err) {
-				log.Info("ClusterPermission already deleted, update not needed")
-				return nil
-			}
-			return err
+		return nil
+	}
+
+	specChanged := !equality.Semantic.DeepEqual(existingCP.Spec, newSpec)
+	annotationsChanged := !equality.Semantic.DeepEqual(existingCP.Annotations, newAnnotations)
+
+	if !specChanged && !annotationsChanged {
+		return nil
+	}
+
+	existingCP.Spec = newSpec
+	existingCP.Annotations = newAnnotations
+
+	log.Info("Updating existing ClusterPermission", "name", ClusterPermissionManagedName, "namespace", cluster)
+	if err := r.Update(ctx, existingCP); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("ClusterPermission already deleted, update not needed")
+			return nil
 		}
+		return err
 	}
 
 	return nil
