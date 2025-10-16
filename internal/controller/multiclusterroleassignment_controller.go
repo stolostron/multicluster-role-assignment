@@ -152,8 +152,6 @@ const (
 	AllClustersAnnotation = "clusters.rbac.open-cluster-management.io"
 )
 
-// TODO: Make error constants for validateSpec functions
-
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
 	client.Client
@@ -550,21 +548,26 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	}
 
 	if errorCount > 0 {
-		return metav1.ConditionFalse, ReasonPartialFailure, fmt.Sprintf("%d out of %d %s", errorCount,
-			totalRoleAssignments, MessageRoleAssignmentsFailed)
+		return metav1.ConditionFalse, ReasonPartialFailure, formatStatusMessage(
+			errorCount, totalRoleAssignments, MessageRoleAssignmentsFailed)
 	}
 
 	if pendingCount > 0 {
-		return metav1.ConditionFalse, ReasonInProgress, fmt.Sprintf("%d out of %d %s", pendingCount,
-			totalRoleAssignments, MessageRoleAssignmentsPending)
+		return metav1.ConditionFalse, ReasonInProgress, formatStatusMessage(
+			pendingCount, totalRoleAssignments, MessageRoleAssignmentsPending)
 	}
 
 	if activeCount == totalRoleAssignments && totalRoleAssignments > 0 {
-		return metav1.ConditionTrue, ReasonAllApplied, fmt.Sprintf("%d out of %d %s", activeCount, totalRoleAssignments,
-			MessageRoleAssignmentsAppliedSuccessfully)
+		return metav1.ConditionTrue, ReasonAllApplied, formatStatusMessage(
+			activeCount, totalRoleAssignments, MessageRoleAssignmentsAppliedSuccessfully)
 	}
 
 	return metav1.ConditionUnknown, ReasonUnknown, MessageStatusCannotBeDetermined
+}
+
+// formatStatusMessage creates a standardized status message with count information.
+func formatStatusMessage(count, total int, message string) string {
+	return fmt.Sprintf("%d out of %d %s", count, total, message)
 }
 
 // setCondition sets a condition in the MulticlusterRoleAssignment status.
@@ -1046,12 +1049,16 @@ func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSli
 		for key, value := range cp.Annotations {
 			if !strings.HasPrefix(key, OwnerAnnotationPrefix) {
 				othersSlice.OwnerAnnotations[key] = value
-			} else if value != mraIdentifier {
-				if bindingName, found := strings.CutPrefix(key, OwnerAnnotationPrefix); found {
-					if allExistingBindingNames[bindingName] {
-						othersSlice.OwnerAnnotations[key] = value
-					}
-				}
+				continue
+			}
+
+			if value == mraIdentifier {
+				continue
+			}
+
+			bindingName := strings.TrimPrefix(key, OwnerAnnotationPrefix)
+			if allExistingBindingNames[bindingName] {
+				othersSlice.OwnerAnnotations[key] = value
 			}
 		}
 	}
