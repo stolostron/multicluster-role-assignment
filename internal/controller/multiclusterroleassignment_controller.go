@@ -152,8 +152,6 @@ const (
 	AllClustersAnnotation = "clusters.rbac.open-cluster-management.io"
 )
 
-// TODO: Make error constants for validateSpec functions
-
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
 	client.Client
@@ -1046,12 +1044,16 @@ func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSli
 		for key, value := range cp.Annotations {
 			if !strings.HasPrefix(key, OwnerAnnotationPrefix) {
 				othersSlice.OwnerAnnotations[key] = value
-			} else if value != mraIdentifier {
-				if bindingName, found := strings.CutPrefix(key, OwnerAnnotationPrefix); found {
-					if allExistingBindingNames[bindingName] {
-						othersSlice.OwnerAnnotations[key] = value
-					}
-				}
+				continue
+			}
+
+			if value == mraIdentifier {
+				continue
+			}
+
+			bindingName := strings.TrimPrefix(key, OwnerAnnotationPrefix)
+			if allExistingBindingNames[bindingName] {
+				othersSlice.OwnerAnnotations[key] = value
 			}
 		}
 	}
