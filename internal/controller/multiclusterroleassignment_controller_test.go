@@ -937,6 +937,85 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
+		Describe("findMRAsForClusterPermission", func() {
+			It("Should return empty list when object is not a ClusterPermission", func() {
+				namespace := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, namespace)
+				Expect(requests).To(BeEmpty())
+			})
+
+			It("Should return empty list when ClusterPermission has no annotations", func() {
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(BeEmpty())
+			})
+
+			It("Should return empty list when ClusterPermission has no owner annotations", func() {
+				cp.Annotations = map[string]string{
+					"other-annotation": "some-value",
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(BeEmpty())
+			})
+
+			It("Should extract single MRA from owner annotation", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "binding1": "test-namespace/test-mra",
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(HaveLen(1))
+				Expect(requests[0].Namespace).To(Equal("test-namespace"))
+				Expect(requests[0].Name).To(Equal("test-mra"))
+			})
+
+			It("Should extract multiple MRAs from owner annotations", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "binding1": "namespace1/mra1",
+					OwnerAnnotationPrefix + "binding2": "namespace2/mra2",
+					OwnerAnnotationPrefix + "binding3": "namespace1/mra3",
+					"other-annotation":                 "ignored",
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(HaveLen(3))
+
+				requestMap := make(map[string]string)
+				for _, req := range requests {
+					requestMap[req.Namespace+"/"+req.Name] = req.Namespace + "/" + req.Name
+				}
+
+				Expect(requestMap).To(HaveKey("namespace1/mra1"))
+				Expect(requestMap).To(HaveKey("namespace2/mra2"))
+				Expect(requestMap).To(HaveKey("namespace1/mra3"))
+			})
+
+			It("Should deduplicate MRAs when same MRA owns multiple bindings", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "binding1": "test-namespace/test-mra",
+					OwnerAnnotationPrefix + "binding2": "test-namespace/test-mra",
+					OwnerAnnotationPrefix + "binding3": "test-namespace/test-mra",
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(HaveLen(1))
+				Expect(requests[0].Namespace).To(Equal("test-namespace"))
+				Expect(requests[0].Name).To(Equal("test-mra"))
+			})
+
+			It("Should skip invalid MRA identifier formats", func() {
+				cp.Annotations = map[string]string{
+					OwnerAnnotationPrefix + "binding1": "valid-namespace/valid-mra",
+					OwnerAnnotationPrefix + "binding2": "invalid-no-slash",
+					OwnerAnnotationPrefix + "binding3": "too/many/slashes",
+					OwnerAnnotationPrefix + "binding4": "/no-namespace",
+					OwnerAnnotationPrefix + "binding5": "no-name/",
+				}
+				requests := reconciler.findMRAsForClusterPermission(ctx, cp)
+				Expect(requests).To(HaveLen(1))
+				Expect(requests[0].Namespace).To(Equal("valid-namespace"))
+				Expect(requests[0].Name).To(Equal("valid-mra"))
+			})
+		})
+
 		Describe("isRoleAssignmentTargetingCluster", func() {
 			It("Should return true when cluster is in the list", func() {
 				roleAssignment := rbacv1alpha1.RoleAssignment{
@@ -1063,6 +1142,152 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("not managed by this controller"))
+			})
+
+			It("Should handle NotFound gracefully when deleting ClusterPermission (race condition)", func() {
+				// Create MRA that doesn't target cluster2 (will trigger delete)
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster1Name}
+
+				// Create existing ClusterPermission in cluster2
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client: k8sClient,
+					DeleteError: apierrors.NewNotFound(schema.GroupResource{
+						Group:    "rbac.open-cluster-management.io",
+						Resource: "clusterpermissions"},
+						ClusterPermissionManagedName),
+					ShouldFailDelete: true,
+					TargetResource:   "clusterpermissions",
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should handle NotFound gracefully when updating ClusterPermission (race condition)", func() {
+				// Create MRA that targets cluster2 (will trigger update)
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster2Name}
+
+				// Create existing ClusterPermission in cluster2
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client: k8sClient,
+					UpdateError: apierrors.NewNotFound(schema.GroupResource{
+						Group:    "rbac.open-cluster-management.io",
+						Resource: "clusterpermissions"},
+						ClusterPermissionManagedName),
+					ShouldFailUpdate: true,
+					TargetResource:   "clusterpermissions",
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should skip update when ClusterPermission spec and annotations are unchanged", func() {
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster2Name}
+
+				// Create existing ClusterPermission with correct spec already
+				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				cp.Annotations = map[string]string{
+					reconciler.generateOwnerAnnotationKey(expectedBindingName): reconciler.generateMulticlusterRoleAssignmentIdentifier(mra),
+				}
+				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+						{
+							Name: expectedBindingName,
+							RoleRef: &rbacv1.RoleRef{
+								Kind:     ClusterRoleKind,
+								Name:     "test-role",
+								APIGroup: rbacv1.GroupName,
+							},
+							Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user"}},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				// Track if update was called
+				updateCalled := false
+				mockClient := &clientWrapper{
+					Client: k8sClient,
+					updateFn: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						updateCalled = true
+						return k8sClient.Update(ctx, obj, opts...)
+					},
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updateCalled).To(BeFalse())
+			})
+
+			It("Should update when ClusterPermission spec changes", func() {
+				mra.Spec.RoleAssignments[0].ClusterSelection.ClusterNames = []string{cluster2Name}
+
+				// Create existing ClusterPermission with DIFFERENT spec
+				cp.Namespace = cluster2Name
+				cp.Labels = map[string]string{
+					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				}
+				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+						{
+							Name: "different-binding",
+							RoleRef: &rbacv1.RoleRef{
+								Kind:     ClusterRoleKind,
+								Name:     "different-role",
+								APIGroup: rbacv1.GroupName,
+							},
+							Subjects: []rbacv1.Subject{{Kind: "User", Name: "different-user"}},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+				// Track if update was called
+				updateCalled := false
+				mockClient := &clientWrapper{
+					Client: k8sClient,
+					updateFn: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						updateCalled = true
+						return k8sClient.Update(ctx, obj, opts...)
+					},
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updateCalled).To(BeTrue())
 			})
 		})
 
@@ -1651,6 +1876,53 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(roleBindingNames).To(ContainElements(
 					"other-role-binding1", "desired-role-binding1", "desired-role-binding2"))
 			})
+
+			It("Should sort bindings by name for deterministic ordering", func() {
+				others := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "z-binding"},
+						{Name: "a-binding"},
+					},
+				}
+				desired := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "m-binding"},
+					},
+				}
+
+				spec := reconciler.mergeClusterPermissionSpecs(others, desired)
+
+				Expect(spec.ClusterRoleBindings).NotTo(BeNil())
+				Expect(*spec.ClusterRoleBindings).To(HaveLen(3))
+
+				bindings := *spec.ClusterRoleBindings
+				Expect(bindings[0].Name).To(Equal("a-binding"))
+				Expect(bindings[1].Name).To(Equal("m-binding"))
+				Expect(bindings[2].Name).To(Equal("z-binding"))
+			})
+
+			It("Should produce consistent results regardless of merge order", func() {
+				slice1 := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "binding-a"},
+					},
+				}
+				slice2 := ClusterPermissionBindingSlice{
+					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+						{Name: "binding-b"},
+					},
+				}
+
+				spec1 := reconciler.mergeClusterPermissionSpecs(slice1, slice2)
+				spec2 := reconciler.mergeClusterPermissionSpecs(slice2, slice1)
+
+				Expect(spec1.ClusterRoleBindings).NotTo(BeNil())
+				Expect(spec2.ClusterRoleBindings).NotTo(BeNil())
+				Expect((*spec1.ClusterRoleBindings)[0].Name).To(Equal("binding-a"))
+				Expect((*spec1.ClusterRoleBindings)[1].Name).To(Equal("binding-b"))
+				Expect((*spec2.ClusterRoleBindings)[0].Name).To(Equal("binding-a"))
+				Expect((*spec2.ClusterRoleBindings)[1].Name).To(Equal("binding-b"))
+			})
 		})
 
 		Describe("mergeClusterPermissionAnnotations", func() {
@@ -1704,6 +1976,58 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(annotations).To(HaveLen(1))
 				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
+			})
+		})
+
+		Describe("isClusterPermissionSpecEmpty", func() {
+			It("Should return true when both are nil", func() {
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: nil,
+					RoleBindings:        nil,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
+			})
+
+			It("Should return true when both are empty slices", func() {
+				emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
+				emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &emptyClusterRoleBindings,
+					RoleBindings:        &emptyRoleBindings,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeTrue())
+			})
+
+			It("Should return false when ClusterRoleBindings has items", func() {
+				clusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{
+					{
+						Name: "test-binding",
+						RoleRef: &rbacv1.RoleRef{
+							Kind:     ClusterRoleKind,
+							Name:     "test-role",
+							APIGroup: rbacv1.GroupName,
+						},
+					},
+				}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &clusterRoleBindings,
+					RoleBindings:        nil,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
+			})
+
+			It("Should return false when RoleBindings has items", func() {
+				roleBindings := []clusterpermissionv1alpha1.RoleBinding{
+					{
+						Name:      "test-role-binding",
+						Namespace: "test-namespace",
+					},
+				}
+				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: nil,
+					RoleBindings:        &roleBindings,
+				}
+				Expect(reconciler.isClusterPermissionSpecEmpty(spec)).To(BeFalse())
 			})
 		})
 	})
@@ -2061,13 +2385,51 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle deletion cleanup failure", func() {
+				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ClusterPermissionManagedName,
+						Namespace: cluster1Name,
+						Labels: map[string]string{
+							ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+						},
+						Annotations: map[string]string{
+							OwnerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
+							OwnerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
+						},
+					},
+					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
+						ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+							{
+								Name: "other-binding",
+								RoleRef: &rbacv1.RoleRef{
+									Kind:     ClusterRoleKind,
+									Name:     "other-role",
+									APIGroup: rbacv1.GroupName,
+								},
+								Subjects: []rbacv1.Subject{{Kind: "User", Name: "other-user"}},
+							},
+							{
+								Name: "error-test-mra-binding",
+								RoleRef: &rbacv1.RoleRef{
+									Kind:     ClusterRoleKind,
+									Name:     "error-test-role",
+									APIGroup: rbacv1.GroupName,
+								},
+								Subjects: []rbacv1.Subject{{Kind: "User", Name: "test-user"}},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, existingCP)).To(Succeed())
+
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
 					Client:           k8sClient,
-					CreateError:      fmt.Errorf("deletion cleanup failed"),
-					ShouldFailCreate: true,
+					UpdateError:      fmt.Errorf("failed to update ClusterPermission during deletion cleanup"),
+					ShouldFailUpdate: true,
+					TargetResource:   "clusterpermissions",
 				}
 				errorReconciler := &MulticlusterRoleAssignmentReconciler{
 					Client: mockClient,
@@ -2081,7 +2443,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("deletion cleanup failed"))
+				Expect(err.Error()).To(ContainSubstring("failed to update ClusterPermission during deletion cleanup"))
 			})
 		})
 	})
@@ -2211,20 +2573,52 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					return apierrors.IsNotFound(err)
 				}, "5s", "100ms").Should(BeTrue(), "Resource should be deleted after finalizer removal")
 			})
+
+			It("Should handle MRA already deleted (not found) when removing finalizer (race condition)", func() {
+				Expect(k8sClient.Delete(ctx, mra)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client: k8sClient,
+					UpdateError: apierrors.NewNotFound(schema.GroupResource{
+						Group:    "rbac.open-cluster-management.io",
+						Resource: "multiclusterroleassignments"},
+						mra.Name),
+					ShouldFailUpdate: true,
+					TargetResource:   "multiclusterroleassignments",
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
 		})
 
 		AfterEach(func() {
-			// Clean up test resource
 			testMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{
+			err := k8sClient.Get(ctx, client.ObjectKey{
 				Name:      mra.Name,
 				Namespace: mra.Namespace,
-			}, testMra); err == nil {
-				testMra.Finalizers = []string{}
-				err := k8sClient.Update(ctx, testMra)
-				Expect(err).NotTo(HaveOccurred())
+			}, testMra)
 
-				err = k8sClient.Delete(ctx, testMra)
+			if apierrors.IsNotFound(err) {
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+
+			testMra.Finalizers = []string{}
+			err = k8sClient.Update(ctx, testMra)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Delete(ctx, testMra)
+			if !apierrors.IsNotFound(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
@@ -2910,11 +3304,13 @@ type MockErrorClient struct {
 	GetError          error
 	UpdateError       error
 	CreateError       error
+	DeleteError       error
 	StatusUpdateError error
 	ShouldFail        bool
 	ShouldFailGet     bool
 	ShouldFailUpdate  bool
 	ShouldFailCreate  bool
+	ShouldFailDelete  bool
 	ShouldFailStatus  bool
 	TargetResource    string
 }
@@ -2945,6 +3341,10 @@ func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ..
 				if m.TargetResource == "multiclusterroleassignments" {
 					return m.UpdateError
 				}
+			case *clusterpermissionv1alpha1.ClusterPermission:
+				if m.TargetResource == "clusterpermissions" {
+					return m.UpdateError
+				}
 			}
 		} else {
 			return m.UpdateError
@@ -2958,6 +3358,22 @@ func (m *MockErrorClient) Create(ctx context.Context, obj client.Object, opts ..
 		return m.CreateError
 	}
 	return m.Client.Create(ctx, obj, opts...)
+}
+
+func (m *MockErrorClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if m.ShouldFailDelete || m.ShouldFail {
+		if m.TargetResource != "" {
+			switch obj.(type) {
+			case *clusterpermissionv1alpha1.ClusterPermission:
+				if m.TargetResource == "clusterpermissions" {
+					return m.DeleteError
+				}
+			}
+		} else {
+			return m.DeleteError
+		}
+	}
+	return m.Client.Delete(ctx, obj, opts...)
 }
 
 func (m *MockErrorClient) Status() client.StatusWriter {
@@ -3660,6 +4076,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 type clientWrapper struct {
 	client.Client
 	deleteFn func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error
+	updateFn func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error
 }
 
 func (c *clientWrapper) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
@@ -3667,4 +4084,11 @@ func (c *clientWrapper) Delete(ctx context.Context, obj client.Object, opts ...c
 		return c.deleteFn(ctx, obj, opts...)
 	}
 	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func (c *clientWrapper) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if c.updateFn != nil {
+		return c.updateFn(ctx, obj, opts...)
+	}
+	return c.Client.Update(ctx, obj, opts...)
 }
