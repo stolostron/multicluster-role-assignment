@@ -2548,12 +2548,6 @@ func validateMRASuccessConditions(mra rbacv1alpha1.MulticlusterRoleAssignment) {
 	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
 	Expect(appliedCondition.Reason).To(Equal("ClusterPermissionApplied"))
 	Expect(appliedCondition.Message).To(Equal("ClusterPermission applied successfully"))
-
-	validatedCondition := findCondition(mra.Status.Conditions, "Validated")
-	Expect(validatedCondition).NotTo(BeNil())
-	Expect(validatedCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(validatedCondition.Reason).To(Equal("SpecIsValid"))
-	Expect(validatedCondition.Message).To(Equal("Spec validation passed"))
 }
 
 // findCondition finds a condition by type in a slice of conditions.

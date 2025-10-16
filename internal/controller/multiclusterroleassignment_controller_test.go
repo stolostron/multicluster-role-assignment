@@ -185,8 +185,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			err = k8sClient.Get(ctx, mraNamespacedName, mra)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Note: No longer checking ConditionTypeValidated since CRD validation handles spec validation
-
 			Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 			for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
 				Expect(roleAssignmentStatus.Status).To(Equal(StatusTypeActive))
