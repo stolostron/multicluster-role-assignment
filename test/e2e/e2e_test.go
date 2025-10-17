@@ -429,7 +429,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct role assignment status", func() {
 					By("verifying role assignment status details")
-					Expect(mra.Status.RoleAssignments).To(HaveLen(2))
+					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 
 					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
