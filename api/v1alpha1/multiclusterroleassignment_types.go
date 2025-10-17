@@ -33,6 +33,8 @@ type MulticlusterRoleAssignmentSpec struct {
 	// RoleAssignments defines the list of role assignments for different roles, namespaces, and cluster sets.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=name
 	RoleAssignments []RoleAssignment `json:"roleAssignments"`
 }
 
