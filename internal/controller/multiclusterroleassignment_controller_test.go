@@ -239,7 +239,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 							},
 						},
 						{
-							Name:        "duplicate-name", // Same name as above
+							Name:        "duplicate-name",
 							ClusterRole: "role2",
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
 								Type:         "clusterNames",
@@ -481,7 +481,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should not modify Ready condition", func() {
-				originalReadyCondition := mra.Status.Conditions[1] // Ready is now at index 1
+				originalReadyCondition := mra.Status.Conditions[1]
 
 				reconciler.clearStaleStatus(mra)
 
