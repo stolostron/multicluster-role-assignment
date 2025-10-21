@@ -185,17 +185,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			err = k8sClient.Get(ctx, mraNamespacedName, mra)
 			Expect(err).NotTo(HaveOccurred())
 
-			found := false
-			for _, condition := range mra.Status.Conditions {
-				if condition.Type == ConditionTypeValidated {
-					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-					Expect(condition.Reason).To(Equal(ReasonSpecIsValid))
-					found = true
-					break
-				}
-			}
-			Expect(found).To(BeTrue(), "Validated condition status should be true")
-
 			Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 			for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
 				Expect(roleAssignmentStatus.Status).To(Equal(StatusTypeActive))
@@ -216,17 +205,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			err = k8sClient.Get(ctx, mraNamespacedName, mra)
 			Expect(err).NotTo(HaveOccurred())
 
-			found := false
-			for _, condition := range mra.Status.Conditions {
-				if condition.Type == ConditionTypeValidated {
-					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-					Expect(condition.Reason).To(Equal(ReasonSpecIsValid))
-					found = true
-					break
-				}
-			}
-			Expect(found).To(BeTrue(), "Validated condition should be True")
-
 			Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 			errorFound := false
 			for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
@@ -242,30 +220,41 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(errorFound).To(BeTrue(), "Role assignment should have error status for missing clusters")
 		})
 
-		It("Should set reason for invalid spec when reconciling with duplicate role assignment names", func() {
-			mra.Spec.RoleAssignments[1].Name = mra.Spec.RoleAssignments[0].Name
-			Expect(k8sClient.Update(ctx, mra)).To(Succeed())
-
-			By("Reconciling with duplicate role assignment names")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: mraNamespacedName,
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("duplicate role assignment name"))
-
-			err = k8sClient.Get(ctx, mraNamespacedName, mra)
-			Expect(err).NotTo(HaveOccurred())
-
-			found := false
-			for _, condition := range mra.Status.Conditions {
-				if condition.Type == ConditionTypeValidated {
-					Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-					Expect(condition.Reason).To(Equal(ReasonInvalidSpec))
-					found = true
-					break
-				}
+		It("Should prevent duplicate role assignment names via CRD validation", func() {
+			By("Attempting to create MulticlusterRoleAssignment with duplicate role assignment names")
+			duplicateMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-duplicate-mra",
+					Namespace: mra.Namespace,
+				},
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					Subject: mra.Spec.Subject,
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "duplicate-name",
+							ClusterRole: "role1",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster1Name},
+							},
+						},
+						{
+							Name:        "duplicate-name",
+							ClusterRole: "role2",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:         "clusterNames",
+								ClusterNames: []string{cluster2Name},
+							},
+						},
+					},
+				},
 			}
-			Expect(found).To(BeTrue(), "Validated condition should have ReasonInvalidSpec")
+
+			By("Expecting CRD validation to reject the creation")
+			err := k8sClient.Create(ctx, duplicateMRA)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			Expect(err.Error()).To(ContainSubstring("spec.roleAssignments"))
 		})
 
 		It("Should complete full reconciliation including ClusterPermission creation", func() {
@@ -289,15 +278,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(cp.Labels[ClusterPermissionManagedByLabel]).To(Equal(ClusterPermissionManagedByValue))
 
 			By("Checking status conditions")
-			validatedFound := false
 			appliedFound := false
 			readyFound := false
 
 			for _, condition := range mra.Status.Conditions {
 				switch condition.Type {
-				case ConditionTypeValidated:
-					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-					validatedFound = true
 				case ConditionTypeApplied:
 					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 					appliedFound = true
@@ -307,7 +292,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 			}
 
-			Expect(validatedFound).To(BeTrue(), "Validated condition should be present")
 			Expect(appliedFound).To(BeTrue(), "Applied condition should be present")
 			Expect(readyFound).To(BeTrue(), "Ready condition should be present")
 
@@ -317,24 +301,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Expect(status.Status).To(Equal(StatusTypeActive))
 				}
 			}
-		})
-	})
-
-	Context("Validation Logic", func() {
-		Describe("validateSpec", func() {
-			It("Should validate spec with unique role assignment names", func() {
-				err := reconciler.validateSpec(mra)
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("Should not validate spec with duplicate role assignment names", func() {
-				// Create duplicate role assignment names
-				mra.Spec.RoleAssignments[1].Name = mra.Spec.RoleAssignments[0].Name
-
-				err := reconciler.validateSpec(mra)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("duplicate role assignment name found"))
-			})
 		})
 	})
 
@@ -466,13 +432,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Generation = 2
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:               ConditionTypeValidated,
-						Status:             metav1.ConditionTrue,
-						Reason:             ReasonSpecIsValid,
-						Message:            MessageSpecValidationPassed,
-						ObservedGeneration: 1,
-					},
-					{
 						Type:               ConditionTypeApplied,
 						Status:             metav1.ConditionTrue,
 						Reason:             ReasonClusterPermissionApplied,
@@ -521,27 +480,18 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(appliedCondition.ObservedGeneration).To(Equal(mra.Generation))
 			})
 
-			It("Should not modify other conditions", func() {
-				originalValidatedCondition := mra.Status.Conditions[0]
-				originalReadyCondition := mra.Status.Conditions[2]
+			It("Should not modify Ready condition", func() {
+				originalReadyCondition := mra.Status.Conditions[1]
 
 				reconciler.clearStaleStatus(mra)
 
-				var newValidatedCondition, newReadyCondition *metav1.Condition
+				var newReadyCondition *metav1.Condition
 				for i, condition := range mra.Status.Conditions {
-					switch condition.Type {
-					case ConditionTypeValidated:
-						newValidatedCondition = &mra.Status.Conditions[i]
-					case ConditionTypeReady:
+					if condition.Type == ConditionTypeReady {
 						newReadyCondition = &mra.Status.Conditions[i]
+						break
 					}
 				}
-
-				Expect(newValidatedCondition.Status).To(Equal(originalValidatedCondition.Status))
-				Expect(newValidatedCondition.Reason).To(Equal(originalValidatedCondition.Reason))
-				Expect(newValidatedCondition.Message).To(Equal(originalValidatedCondition.Message))
-				Expect(newValidatedCondition.ObservedGeneration).To(Equal(
-					originalValidatedCondition.ObservedGeneration))
 
 				Expect(newReadyCondition.Status).To(Equal(originalReadyCondition.Status))
 				Expect(newReadyCondition.Reason).To(Equal(originalReadyCondition.Reason))
@@ -563,10 +513,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should handle missing Applied condition gracefully", func() {
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:               ConditionTypeValidated,
+						Type:               ConditionTypeReady,
 						Status:             metav1.ConditionTrue,
-						Reason:             ReasonSpecIsValid,
-						Message:            MessageSpecValidationPassed,
+						Reason:             ReasonAllApplied,
+						Message:            MessageRoleAssignmentsAppliedSuccessfully,
 						ObservedGeneration: 1,
 					},
 				}
@@ -576,7 +526,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}).NotTo(Panic())
 
 				Expect(mra.Status.Conditions).To(HaveLen(1))
-				Expect(mra.Status.Conditions[0].Type).To(Equal(ConditionTypeValidated))
+				Expect(mra.Status.Conditions[0].Type).To(Equal(ConditionTypeReady))
 			})
 
 			It("Should handle empty role assignments gracefully", func() {
@@ -684,10 +634,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			BeforeEach(func() {
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:   ConditionTypeValidated,
-						Status: metav1.ConditionTrue,
-					},
-					{
 						Type:   ConditionTypeApplied,
 						Status: metav1.ConditionTrue,
 					},
@@ -705,17 +651,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 			})
 
-			It("Should return False when Validated condition is False", func() {
-				mra.Status.Conditions[0].Status = metav1.ConditionFalse
-
-				status, reason, message := reconciler.calculateReadyCondition(mra)
-				Expect(status).To(Equal(metav1.ConditionFalse))
-				Expect(reason).To(Equal(ReasonInvalidSpec))
-				Expect(message).To(Equal(MessageSpecValidationFailed))
-			})
-
 			It("Should return False when Applied condition is False", func() {
-				mra.Status.Conditions[1].Status = metav1.ConditionFalse
+				mra.Status.Conditions[0].Status = metav1.ConditionFalse
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
@@ -2190,7 +2127,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should skip reconcile when all conditions are current for generation", func() {
 				errorTestMRA.Generation = 1
 				errorTestMRA.Status.Conditions = []metav1.Condition{
-					{Type: ConditionTypeValidated, Status: metav1.ConditionTrue, ObservedGeneration: 1},
 					{Type: ConditionTypeApplied, Status: metav1.ConditionTrue, ObservedGeneration: 1},
 					{Type: ConditionTypeReady, Status: metav1.ConditionTrue, ObservedGeneration: 1},
 				}
@@ -2208,27 +2144,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		Context("Status Update Failures", func() {
-			It("Should return error when status update fails after validation failure", func() {
+			It("Should return error when status update fails during reconciliation", func() {
 				errorTestMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
 					{
-						Name:        "duplicate-name",
+						Name:        "assignment-1",
 						ClusterRole: "role1",
 						ClusterSelection: rbacv1alpha1.ClusterSelection{
 							Type:         "clusterNames",
 							ClusterNames: []string{cluster1Name},
 						},
 					},
-					{
-						Name:        "duplicate-name",
-						ClusterRole: "role2",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
-							Type:         "clusterNames",
-							ClusterNames: []string{cluster2Name},
-						},
-					},
 				}
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
+				// Create a mock client that fails on status updates
 				mockClient := &MockErrorClient{
 					Client:            k8sClient,
 					StatusUpdateError: fmt.Errorf("status update failed"),
@@ -2997,12 +2926,6 @@ func TestUpdateStatus(t *testing.T) {
 		Status: rbacv1alpha1.MulticlusterRoleAssignmentStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:    ConditionTypeValidated,
-					Status:  metav1.ConditionTrue,
-					Reason:  ReasonSpecIsValid,
-					Message: MessageSpecValidationPassed,
-				},
-				{
 					Type:    ConditionTypeApplied,
 					Status:  metav1.ConditionTrue,
 					Reason:  ReasonClusterPermissionApplied,
@@ -3074,10 +2997,10 @@ func TestUpdateStatus(t *testing.T) {
 		// Modify status to test update
 		fetchedMra.Status.Conditions = []metav1.Condition{
 			{
-				Type:    ConditionTypeValidated,
+				Type:    ConditionTypeApplied,
 				Status:  metav1.ConditionFalse,
-				Reason:  ReasonInvalidSpec,
-				Message: "Custom validation error",
+				Reason:  ReasonClusterPermissionFailed,
+				Message: "Custom application error",
 			},
 		}
 
@@ -3099,15 +3022,15 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Verify custom condition was preserved
-		validatedCondition := findConditionByType(fetchedMra.Status.Conditions, ConditionTypeValidated)
-		if validatedCondition == nil {
-			t.Fatalf("Validated condition not found")
+		appliedCondition := findConditionByType(fetchedMra.Status.Conditions, ConditionTypeApplied)
+		if appliedCondition == nil {
+			t.Fatalf("Applied condition not found")
 		}
-		if validatedCondition.Status != metav1.ConditionFalse {
-			t.Fatalf("Expected Validated condition status to be False, got %s", validatedCondition.Status)
+		if appliedCondition.Status != metav1.ConditionFalse {
+			t.Fatalf("Expected Applied condition status to be False, got %s", appliedCondition.Status)
 		}
-		if validatedCondition.Message != "Custom validation error" {
-			t.Fatalf("Expected custom message to be preserved, got %s", validatedCondition.Message)
+		if appliedCondition.Message != "Custom application error" {
+			t.Fatalf("Expected custom message to be preserved, got %s", appliedCondition.Message)
 		}
 	})
 
@@ -3176,12 +3099,6 @@ func TestUpdateStatus(t *testing.T) {
 
 		// Set conditions that should result in Ready=True
 		mra.Status.Conditions = []metav1.Condition{
-			{
-				Type:    ConditionTypeValidated,
-				Status:  metav1.ConditionTrue,
-				Reason:  ReasonSpecIsValid,
-				Message: MessageSpecValidationPassed,
-			},
 			{
 				Type:    ConditionTypeApplied,
 				Status:  metav1.ConditionTrue,

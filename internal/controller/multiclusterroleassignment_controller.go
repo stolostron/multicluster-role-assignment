@@ -53,9 +53,6 @@ import (
 
 // Condition types
 const (
-	// ConditionTypeValidated indicates whether the MulticlusterRoleAssignment spec has been validated.
-	// Status: True = spec is valid, False = spec is not valid, Unknown = unable to validate
-	ConditionTypeValidated = "Validated"
 
 	// ConditionTypeApplied indicates whether the ClusterPermission resources have been successfully created/updated
 	// across all target clusters.
@@ -66,17 +63,6 @@ const (
 	// ConditionTypeReady is the top-level condition indicating overall operational status.
 	// Status: True = ready and working, False = problems detected, Unknown = unable to determine ready condition
 	ConditionTypeReady = "Ready"
-)
-
-// ConditionTypeValidated related constants
-const (
-	// ConditionTypeValidated Reasons
-	ReasonInvalidSpec = "InvalidSpec"
-	ReasonSpecIsValid = "SpecIsValid"
-
-	// ConditionTypeValidated Messages
-	MessageSpecValidationPassed = "Spec validation passed"
-	MessageSpecValidationFailed = "Spec validation failed"
 )
 
 // ConditionTypeApplied related constants
@@ -249,20 +235,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	r.clearStaleStatus(&mra)
 
-	if err := r.validateSpec(&mra); err != nil {
-		log.Error(err, "MulticlusterRoleAssignment spec validation failed")
-
-		r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionFalse, ReasonInvalidSpec, fmt.Sprintf("%s: %s",
-			MessageSpecValidationFailed, err.Error()))
-		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
-			log.Error(statusErr, "Failed to update status after validation failure")
-			return ctrl.Result{}, statusErr
-		}
-		return ctrl.Result{}, err
-	}
-
-	r.setCondition(&mra, ConditionTypeValidated, metav1.ConditionTrue, ReasonSpecIsValid, MessageSpecValidationPassed)
-
 	allClustersFromSpec, err := r.aggregateClusters(ctx, &mra)
 	if err != nil {
 		log.Error(err, "Failed to aggregate target clusters")
@@ -320,20 +292,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		mra.Generation, "resourceVersion", mra.ResourceVersion)
 
 	return ctrl.Result{}, nil
-}
-
-// validateSpec performs basic validation on the MulticlusterRoleAssignment spec.
-func (r *MulticlusterRoleAssignmentReconciler) validateSpec(mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
-	// Check for duplicate RoleAssignment names (they are not valid and should be blocked by validating webhook)
-	namesMap := make(map[string]bool)
-	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if namesMap[roleAssignment.Name] {
-			return fmt.Errorf("duplicate role assignment name found: %s", roleAssignment.Name)
-		}
-		namesMap[roleAssignment.Name] = true
-	}
-
-	return nil
 }
 
 // aggregateClusters aggregates all cluster names from RoleAssignment specs and returns a deduplicated list of cluster
@@ -514,19 +472,12 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(
 func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	mra *rbacv1alpha1.MulticlusterRoleAssignment) (metav1.ConditionStatus, string, string) {
 
-	var validatedCondition, appliedCondition *metav1.Condition
+	var appliedCondition *metav1.Condition
 
 	for _, condition := range mra.Status.Conditions {
-		if condition.Type == ConditionTypeValidated {
-			validatedCondition = &condition
-		}
 		if condition.Type == ConditionTypeApplied {
 			appliedCondition = &condition
 		}
-	}
-
-	if validatedCondition != nil && validatedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, ReasonInvalidSpec, MessageSpecValidationFailed
 	}
 
 	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
