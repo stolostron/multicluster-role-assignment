@@ -6,13 +6,14 @@
 **Ticket Link:**  
 <!-- e.g. https://issues.redhat.com/browse/ACM-12345 -->
 
-**Type of Change:**  
+**Type of Change:**
 <!-- Select one -->
-- [ ] 🐞 Bug Fix  
-- [ ] ✨ Feature  
+- [ ] 🐞 Bug Fix
+- [ ] 🧹 Chore
+- [ ] ✨ Feature
 - [ ] 🔧 Refactor
 - [ ] 💸 Tech Debt
-- [ ] 🧪 Test-related  
+- [ ] 🧪 Test-related
 - [ ] 📄 Docs
 
 ---
