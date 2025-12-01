@@ -46,7 +46,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -172,7 +171,6 @@ type ClusterPermissionBindingSlice struct {
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=clusterpermissions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placements,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placementdecisions,verbs=get;list;watch
 
@@ -310,9 +308,7 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 
 	log := logf.FromContext(ctx)
 
-	allActiveClustersMap := make(map[string]bool)
-	allMissingClustersMap := make(map[string]bool)
-	var allClusters []string
+	clustersMap := make(map[string]bool)
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
 		// Only set to aggregating status if not already in error state
@@ -345,45 +341,19 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 			continue
 		}
 
-		var missingClustersInRA []string
 		for _, cluster := range clustersInRA {
-			if allActiveClustersMap[cluster] {
-				continue
-			} else if allMissingClustersMap[cluster] {
-				missingClustersInRA = append(missingClustersInRA, cluster)
-				continue
-			}
-
-			var managedCluster clusterv1.ManagedCluster
-			err := r.Get(ctx, client.ObjectKey{Name: cluster}, &managedCluster)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					log.Error(
-						err, "Resolved cluster not found", "cluster", cluster, "roleAssignment", roleAssignment.Name)
-					missingClustersInRA = append(missingClustersInRA, cluster)
-					allMissingClustersMap[cluster] = true
-				} else {
-					log.Error(
-						err, "Failed to get ManagedCluster", "cluster", cluster, "roleAssignment", roleAssignment.Name)
-					return nil, fmt.Errorf("failed to validate cluster %s: %w", cluster, err)
-				}
-			} else {
-				allActiveClustersMap[cluster] = true
-				allClusters = append(allClusters, cluster)
-			}
+			clustersMap[cluster] = true
 		}
 
-		if len(missingClustersInRA) > 0 {
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonMissingClusters,
-				fmt.Sprintf("%s: %v", MessageMissingClusters, missingClustersInRA))
-		} else {
-			// Only update to pending if not already active - preserve active status if clusters are still valid
-			if existingStatus == nil || existingStatus.Status != StatusTypeActive {
-				r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClustersValid,
-					MessageClustersValid)
-			}
+		// Only update to pending if not already active - preserve active status if clusters are still valid
+		if existingStatus == nil || existingStatus.Status != StatusTypeActive {
+			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypePending, ReasonClustersValid,
+				MessageClustersValid)
 		}
 	}
+
+	allClusters := slices.Collect(maps.Keys(clustersMap))
+	slices.Sort(allClusters)
 
 	return allClusters, nil
 }
@@ -428,11 +398,8 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 		}
 	}
 
-	clusters := make([]string, 0, len(clusterSet))
-	for cluster := range clusterSet {
-		clusters = append(clusters, cluster)
-	}
-	sort.Strings(clusters)
+	clusters := slices.Collect(maps.Keys(clusterSet))
+	slices.Sort(clusters)
 
 	log.Info("Resolved clusters from Placement", "placement", placementRef.Name, "namespace", placementRef.Namespace,
 		"clusterCount", len(clusters), "clusters", clusters)
@@ -460,11 +427,8 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 		}
 	}
 
-	allClusters := make([]string, 0, len(allClustersMap))
-	for cluster := range allClustersMap {
-		allClusters = append(allClusters, cluster)
-	}
-	sort.Strings(allClusters)
+	allClusters := slices.Collect(maps.Keys(allClustersMap))
+	slices.Sort(allClusters)
 
 	log.Info("Resolved all placement clusters", "totalClusters", len(allClusters))
 
