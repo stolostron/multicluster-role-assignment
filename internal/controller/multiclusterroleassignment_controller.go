@@ -104,7 +104,6 @@ const (
 
 	// RoleAssignmentStatus Reasons
 	ReasonInitializing              = "Initializing"
-	ReasonMissingClusters           = "MissingClusters"
 	ReasonAggregatingClusters       = "AggregatingClusters"
 	ReasonClustersValid             = "ClustersValid"
 	ReasonPlacementResolutionFailed = "PlacementResolutionFailed"
@@ -113,7 +112,6 @@ const (
 
 	// RoleAssignmentStatus Messages
 	MessageInitializing              = "Initializing role assignment"
-	MessageMissingClusters           = "Missing managed clusters"
 	MessageAggregatingClusters       = "Aggregating target clusters"
 	MessageClustersValid             = "All managed clusters are valid"
 	MessagePlacementResolutionFailed = "Failed to resolve clusters from placements"
@@ -329,8 +327,14 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 		clustersInRA, err := r.resolveAllPlacementClusters(ctx, roleAssignment.ClusterSelection.Placements)
 		if err != nil {
 			log.Error(err, "Failed to resolve placement clusters", "roleAssignment", roleAssignment.Name)
-			r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonPlacementResolutionFailed,
-				fmt.Sprintf("%s: %v", MessagePlacementResolutionFailed, err))
+
+			if strings.Contains(err.Error(), "not found") {
+				r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonPlacementNotFound,
+					fmt.Sprintf("%s: %v", MessagePlacementNotFound, err))
+			} else {
+				r.setRoleAssignmentStatus(mra, roleAssignment.Name, StatusTypeError, ReasonPlacementResolutionFailed,
+					fmt.Sprintf("%s: %v", MessagePlacementResolutionFailed, err))
+			}
 			continue
 		}
 
