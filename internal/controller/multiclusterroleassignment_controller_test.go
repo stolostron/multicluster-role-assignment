@@ -26,7 +26,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,8 +37,8 @@ import (
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
@@ -83,15 +82,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				ObjectMeta: metav1.ObjectMeta{Name: namespaceName},
 			}
 			Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
-		}
-
-		By("Creating all test ManagedClusters")
-		clusterNames := []string{cluster1Name, cluster2Name, cluster3Name}
-		for _, clusterName := range clusterNames {
-			testCluster := &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: clusterName},
-			}
-			Expect(k8sClient.Create(ctx, testCluster)).To(Succeed())
 		}
 	})
 
@@ -2591,7 +2581,6 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		rbacv1alpha1.AddToScheme,
-		clusterv1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 		corev1.AddToScheme,
@@ -2754,18 +2743,6 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		},
 	}
 
-	testCluster1 := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster1",
-		},
-	}
-
-	testCluster2 := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster2",
-		},
-	}
-
 	placement1 := &clusterv1beta1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "placement1",
@@ -2812,8 +2789,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 
 	t.Run("Test handle MulticlusterRoleAssignment deletion", func(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(
-			testMra1, testMra2, testCp1, testCp2, testCluster1, testCluster2, placement1, placementDecision1,
-			placement2, placementDecision2).Build()
+			testMra1, testMra2, testCp1, testCp2, placement1, placementDecision1, placement2, placementDecision2).Build()
 
 		reconciler.Client = fakeClient
 		reconciler.Scheme = testscheme
@@ -2858,7 +2834,6 @@ func TestAggregateClusters(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		rbacv1alpha1.AddToScheme,
-		clusterv1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		corev1.AddToScheme,
 	} {
@@ -2899,18 +2874,6 @@ func TestAggregateClusters(t *testing.T) {
 					},
 				},
 			},
-		},
-	}
-
-	testCluster1 := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster1",
-		},
-	}
-
-	testCluster2 := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster2",
 		},
 	}
 
@@ -2959,9 +2922,10 @@ func TestAggregateClusters(t *testing.T) {
 	}
 
 	t.Run("Test aggregateClusters", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(testMra, testCluster1, testCluster2,
-			placement1, placementDecision1, placement2, placementDecision2).WithStatusSubresource(
-			&rbacv1alpha1.MulticlusterRoleAssignment{}).Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(
+			testMra, placement1, placementDecision1, placement2, placementDecision2).
+			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+			Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
 			Client: fakeClient,
@@ -3010,7 +2974,6 @@ func TestUpdateStatus(t *testing.T) {
 	testscheme := scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		rbacv1alpha1.AddToScheme,
-		clusterv1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -3369,10 +3332,6 @@ func (m *MockErrorClient) Get(
 	if m.ShouldFailGet || (m.ShouldFail && m.TargetResource == "") {
 		if m.TargetResource != "" {
 			switch obj.(type) {
-			case *clusterv1.ManagedCluster:
-				if m.TargetResource == "managedclusters" {
-					return m.GetError
-				}
 			case *clusterv1beta1.Placement:
 				if m.TargetResource == "placements" {
 					return m.GetError
@@ -3503,7 +3462,6 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	testscheme := scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		rbacv1alpha1.AddToScheme,
-		clusterv1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -3763,7 +3721,6 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	var testScheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		rbacv1alpha1.AddToScheme,
-		clusterv1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {

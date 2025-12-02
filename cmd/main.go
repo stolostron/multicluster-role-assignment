@@ -26,21 +26,21 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/stolostron/multicluster-role-assignment/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
-	"github.com/stolostron/multicluster-role-assignment/internal/controller"
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -53,7 +53,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(rbacv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
 	utilruntime.Must(clusterpermissionv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
