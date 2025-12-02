@@ -33,6 +33,7 @@ import (
 
 	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	// +kubebuilder:scaffold:imports
@@ -65,6 +66,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = clusterv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clusterv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = clusterpermissionv1alpha1.AddToScheme(scheme.Scheme)
