@@ -105,26 +105,12 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("creating managed cluster namespaces and ManagedClusters")
+		By("creating managed cluster namespaces")
 		for i := 1; i <= 3; i++ {
 			clusterName := fmt.Sprintf("managedcluster%02d", i)
 
 			By(fmt.Sprintf("creating the %s namespace", clusterName))
 			cmd = exec.Command("kubectl", "create", "ns", clusterName)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			By(fmt.Sprintf("creating ManagedCluster %s", clusterName))
-			managedClusterTemplate, err := os.ReadFile("test/testdata/managedcluster-template.yaml")
-			Expect(err).NotTo(HaveOccurred())
-
-			managedCluster := strings.ReplaceAll(
-				string(managedClusterTemplate), "CLUSTER_NAME_PLACEHOLDER", clusterName)
-			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
-			err = os.WriteFile(managedClusterFile, []byte(managedCluster), os.FileMode(0o644))
-			Expect(err).NotTo(HaveOccurred())
-
-			cmd = exec.Command("kubectl", "apply", "-f", managedClusterFile)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 		}
@@ -149,15 +135,11 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("cleaning up managed clusters and namespaces")
+		By("cleaning up managed cluster namespaces")
 		for i := 1; i <= 3; i++ {
 			clusterName := fmt.Sprintf("managedcluster%02d", i)
-			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
 
-			cmd := exec.Command("kubectl", "delete", "-f", managedClusterFile)
-			_, _ = utils.Run(cmd)
-
-			cmd = exec.Command("kubectl", "delete", "ns", clusterName)
+			cmd := exec.Command("kubectl", "delete", "ns", clusterName)
 			_, _ = utils.Run(cmd)
 		}
 
@@ -774,12 +756,8 @@ var _ = Describe("Manager", Ordered, func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
 					"managedcluster01", "managedcluster02", "managedcluster03", "newmanagedcluster04"})
 
-				By("cleaning up newmanagedcluster04 namespace and ManagedCluster")
+				By("cleaning up newmanagedcluster04 namespace")
 				cmd := exec.Command("kubectl", "delete", "ns", "newmanagedcluster04")
-				_, _ = utils.Run(cmd)
-
-				managedClusterFile := "/tmp/newmanagedcluster04.yaml"
-				cmd = exec.Command("kubectl", "delete", "-f", managedClusterFile)
 				_, _ = utils.Run(cmd)
 			})
 
@@ -793,20 +771,6 @@ var _ = Describe("Manager", Ordered, func() {
 					By("creating newmanagedcluster04 namespace")
 					cmd := exec.Command("kubectl", "create", "ns", "newmanagedcluster04")
 					_, err := utils.Run(cmd)
-					Expect(err).NotTo(HaveOccurred())
-
-					By("creating ManagedCluster newmanagedcluster04")
-					managedClusterTemplate, err := os.ReadFile("test/testdata/managedcluster-template.yaml")
-					Expect(err).NotTo(HaveOccurred())
-
-					managedCluster := strings.ReplaceAll(
-						string(managedClusterTemplate), "CLUSTER_NAME_PLACEHOLDER", "newmanagedcluster04")
-					managedClusterFile := "/tmp/newmanagedcluster04.yaml"
-					err = os.WriteFile(managedClusterFile, []byte(managedCluster), os.FileMode(0o644))
-					Expect(err).NotTo(HaveOccurred())
-
-					cmd = exec.Command("kubectl", "apply", "-f", managedClusterFile)
-					_, err = utils.Run(cmd)
 					Expect(err).NotTo(HaveOccurred())
 
 					By("fetching and modifying MRA to add newmanagedcluster04 RoleAssignment")
