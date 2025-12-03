@@ -28,13 +28,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/onsi/gomega/format"
+	"github.com/stolostron/multicluster-role-assignment/test/utils"
+
+	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
-
-	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
-	"github.com/stolostron/multicluster-role-assignment/test/utils"
 )
 
 // namespace where the project is deployed in
@@ -115,6 +116,26 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 		}
 
+		By("creating Placements and PlacementDecisions")
+		placements := []struct {
+			name     string
+			clusters []string
+		}{
+			{"placement-cluster-01", []string{"managedcluster01"}},
+			{"placement-cluster-02", []string{"managedcluster02"}},
+			{"placement-cluster-03", []string{"managedcluster03"}},
+			{"placement-cluster-01-02", []string{"managedcluster01", "managedcluster02"}},
+			{"placement-cluster-01-02-03", []string{"managedcluster01", "managedcluster02", "managedcluster03"}},
+		}
+
+		for _, p := range placements {
+			By(fmt.Sprintf("creating Placement %s", p.name))
+			createPlacement(p.name, openClusterManagementGlobalSetNamespace)
+
+			By(fmt.Sprintf("creating PlacementDecision for %s", p.name))
+			createPlacementDecision(p.name, openClusterManagementGlobalSetNamespace, p.clusters)
+		}
+
 		By("deploying the controller-manager")
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
 		_, err = utils.Run(cmd)
@@ -134,6 +155,28 @@ var _ = Describe("Manager", Ordered, func() {
 		By("cleaning up the curl pod for metrics")
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
+
+		By("cleaning up Placements and PlacementDecisions")
+		placementNames := []string{
+			"placement-cluster-01",
+			"placement-cluster-02",
+			"placement-cluster-03",
+			"placement-cluster-01-02",
+			"placement-cluster-01-02-03",
+		}
+
+		for _, placementName := range placementNames {
+			By(fmt.Sprintf("deleting PlacementDecision for %s", placementName))
+			pdName := placementName + "-decision-1"
+			cmd := exec.Command(
+				"kubectl", "delete", "placementdecision", pdName, "-n", openClusterManagementGlobalSetNamespace)
+			_, _ = utils.Run(cmd)
+
+			By(fmt.Sprintf("deleting Placement %s", placementName))
+			cmd = exec.Command(
+				"kubectl", "delete", "placement", placementName, "-n", openClusterManagementGlobalSetNamespace)
+			_, _ = utils.Run(cmd)
+		}
 
 		By("cleaning up managed cluster namespaces")
 		for i := 1; i <= 3; i++ {
@@ -2820,6 +2863,61 @@ func checkMRAForBindingExistance(mra rbacv1alpha1.MulticlusterRoleAssignment, bi
 	}
 
 	return false
+}
+
+// createPlacement creates a Placement resource using kubectl.
+// NOTE: The Placement spec is intentionally minimal/empty because these e2e tests do not run the Placement controller.
+// PlacementDecisions are manually created.
+func createPlacement(name, namespace string) {
+	placementYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: %s
+  namespace: %s
+spec: {}
+`, name, namespace)
+
+	placementFile := fmt.Sprintf("/tmp/%s.yaml", name)
+	err := os.WriteFile(placementFile, []byte(placementYAML), os.FileMode(0o644))
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", placementFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// createPlacementDecision creates a PlacementDecision resource for a specified Placement.
+func createPlacementDecision(placementName, namespace string, clusters []string) {
+	pdName := placementName + "-decision-1"
+
+	var decisions string
+	for _, cluster := range clusters {
+		decisions += fmt.Sprintf("  - clusterName: %s\n    reason: \"\"\n", cluster)
+	}
+
+	pdYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: PlacementDecision
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    cluster.open-cluster-management.io/placement: %s
+status:
+  decisions:
+%s`, pdName, namespace, placementName, decisions)
+
+	pdFile := fmt.Sprintf("/tmp/%s.yaml", pdName)
+	err := os.WriteFile(pdFile, []byte(pdYAML), os.FileMode(0o644))
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", pdFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Update status using the same YAML file with --subresource=status --server-side
+	cmd = exec.Command("kubectl", "apply", "-f", pdFile, "--subresource=status", "--server-side")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
 }
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
