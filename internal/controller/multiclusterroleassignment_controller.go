@@ -240,16 +240,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	r.clearStaleStatus(&mra)
 
-	allClustersFromSpec, err := r.aggregateClusters(ctx, &mra)
-	if err != nil {
-		log.Error(err, "Failed to aggregate target clusters")
-
-		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
-			log.Error(statusErr, "Failed to update status after cluster aggregation failure")
-		}
-
-		return ctrl.Result{}, err
-	}
+	allClustersFromSpec := r.aggregateClusters(ctx, &mra)
 
 	// Add missing clusters to allClusters
 	previousClusters := []string{}
@@ -302,7 +293,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 // aggregateClusters aggregates all cluster names from RoleAssignment specs and returns a deduplicated list of cluster
 // names. Validates clusters exist and updates role assignment statuses.
 func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
-	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) ([]string, error) {
+	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) []string {
 
 	log := logf.FromContext(ctx)
 
@@ -359,7 +350,7 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 	allClusters := slices.Collect(maps.Keys(clustersMap))
 	slices.Sort(allClusters)
 
-	return allClusters, nil
+	return allClusters
 }
 
 // resolvePlacementClusters resolves a Placement reference to a list of cluster names by querying PlacementDecision
@@ -473,11 +464,11 @@ func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
 
 // isClusterPermissionManaged checks if a ClusterPermission has the correct management label
 func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionManaged(obj client.Object) bool {
-	labels := obj.GetLabels()
-	if labels == nil {
+	cpLabels := obj.GetLabels()
+	if cpLabels == nil {
 		return false
 	}
-	return labels[ClusterPermissionManagedByLabel] == ClusterPermissionManagedByValue
+	return cpLabels[ClusterPermissionManagedByLabel] == ClusterPermissionManagedByValue
 }
 
 // updateStatus calculates and saves the current status state.
@@ -596,8 +587,8 @@ func formatStatusMessage(count, total int, message string) string {
 }
 
 // setCondition sets a condition in the MulticlusterRoleAssignment status.
-func (r *MulticlusterRoleAssignmentReconciler) setCondition(
-	mra *rbacv1alpha1.MulticlusterRoleAssignment, conditionType string, status metav1.ConditionStatus, reason, message string) {
+func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.MulticlusterRoleAssignment,
+	conditionType string, status metav1.ConditionStatus, reason, message string) {
 
 	condition := metav1.Condition{
 		Type:               conditionType,
@@ -1153,11 +1144,7 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 
 	log.Info("Handling MulticlusterRoleAssignment deletion")
 
-	allClustersInSpec, err := r.aggregateClusters(ctx, mra)
-	if err != nil {
-		log.Error(err, "Failed to aggregate target clusters")
-		return err
-	}
+	allClustersInSpec := r.aggregateClusters(ctx, mra)
 
 	// Add clusters from annotation in case they were removed from spec before deletion
 	previousClusters := []string{}

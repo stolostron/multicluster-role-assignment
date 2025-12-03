@@ -43,10 +43,11 @@ import (
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
+const multiclusterRoleAssignmentNamespace = "open-cluster-management-global-set"
+
 var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	ctx := context.Background()
 	const multiclusterRoleAssignmentName = "test-multicluster-role-assignment"
-	const multiclusterRoleAssignmentNamespace = "open-cluster-management-global-set"
 
 	mraNamespacedName := types.NamespacedName{
 		Name:      multiclusterRoleAssignmentName,
@@ -99,13 +100,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		}
 
 		By("Creating shared test Placements and PlacementDecisions")
-		Expect(createTestPlacement(ctx, k8sClient, placement1Name, multiclusterRoleAssignmentNamespace)).To(Succeed())
-		Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", placement1Name,
-			multiclusterRoleAssignmentNamespace, []string{cluster1Name, cluster2Name})).To(Succeed())
+		Expect(createTestPlacement(ctx, k8sClient, placement1Name)).To(Succeed())
+		Expect(createTestPlacementDecision(
+			ctx, k8sClient, "decision-1", placement1Name, []string{cluster1Name, cluster2Name})).To(Succeed())
 
-		Expect(createTestPlacement(ctx, k8sClient, placement2Name, multiclusterRoleAssignmentNamespace)).To(Succeed())
-		Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", placement2Name,
-			multiclusterRoleAssignmentNamespace, []string{cluster3Name})).To(Succeed())
+		Expect(createTestPlacement(ctx, k8sClient, placement2Name)).To(Succeed())
+		Expect(createTestPlacementDecision(
+			ctx, k8sClient, "decision-1", placement2Name, []string{cluster3Name})).To(Succeed())
 
 		By("Creating the MulticlusterRoleAssignment")
 		mra = &rbacv1alpha1.MulticlusterRoleAssignment{
@@ -772,15 +773,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	Context("Cluster Aggregation Tests", func() {
 		Describe("aggregateClusters", func() {
 			It("Should aggregate clusters from role assignments", func() {
-				clusters, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				clusters := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
 
 			It("Should update role assignment statuses during aggregation", func() {
-				_, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				reconciler.aggregateClusters(ctx, mra)
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
@@ -798,8 +797,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement-2", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				clusters := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(BeEmpty())
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
@@ -818,11 +816,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should set no clusters resolved and pending status when Placement has no decisions", func() {
 				emptyPlacementName := "empty-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, emptyPlacementName, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, emptyPlacementName)).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", emptyPlacementName,
-					multiclusterRoleAssignmentNamespace, []string{})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", emptyPlacementName, []string{})).To(Succeed())
 
 				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
@@ -831,8 +828,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				clusters := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(BeEmpty())
 
 				for _, status := range mra.Status.RoleAssignments {
@@ -847,8 +843,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				clusters := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(2))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name))
 
@@ -866,17 +861,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should deduplicate clusters across RoleAssignments", func() {
 				overlappingPlacement := "overlapping-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, overlappingPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", overlappingPlacement,
-					multiclusterRoleAssignmentNamespace, []string{cluster2Name, cluster3Name})).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, overlappingPlacement)).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", overlappingPlacement, []string{cluster2Name, cluster3Name})).To(Succeed())
 
 				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
 					{Name: overlappingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, err := reconciler.aggregateClusters(ctx, mra)
-				Expect(err).NotTo(HaveOccurred())
+				clusters := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
@@ -895,14 +888,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should resolve clusters from multiple PlacementDecisions", func() {
 				multiDecisionPlacement := "multi-decision-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, multiDecisionPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, multiDecisionPlacement)).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", multiDecisionPlacement,
-					multiclusterRoleAssignmentNamespace, []string{"cluster-a", "cluster-b"})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", multiDecisionPlacement, []string{"cluster-a", "cluster-b"})).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-2", multiDecisionPlacement,
-					multiclusterRoleAssignmentNamespace, []string{"cluster-c", "cluster-d"})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-2", multiDecisionPlacement, []string{"cluster-c", "cluster-d"})).To(Succeed())
 
 				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
 					Name:      multiDecisionPlacement,
@@ -926,8 +918,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should return empty list when no PlacementDecisions exist", func() {
 				noDecisionPlacement := "no-decision-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, noDecisionPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, noDecisionPlacement)).To(Succeed())
 
 				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
 					Name:      noDecisionPlacement,
@@ -939,11 +930,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should handle PlacementDecisions with empty Status.Decisions", func() {
 				emptyStatusPlacement := "empty-status-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, emptyStatusPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, emptyStatusPlacement)).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", emptyStatusPlacement,
-					multiclusterRoleAssignmentNamespace, []string{})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", emptyStatusPlacement, []string{})).To(Succeed())
 
 				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
 					Name:      emptyStatusPlacement,
@@ -955,14 +945,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should deduplicate clusters within same Placement", func() {
 				dupePlacement := "dupe-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, dupePlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, dupePlacement)).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", dupePlacement,
-					multiclusterRoleAssignmentNamespace, []string{"cluster-x", "cluster-y"})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", dupePlacement, []string{"cluster-x", "cluster-y"})).To(Succeed())
 
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-2", dupePlacement,
-					multiclusterRoleAssignmentNamespace, []string{"cluster-y", "cluster-z"})).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-2", dupePlacement, []string{"cluster-y", "cluster-z"})).To(Succeed())
 
 				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
 					Name:      dupePlacement,
@@ -975,11 +964,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should return sorted cluster list", func() {
 				sortedPlacement := "sorted-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, sortedPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, sortedPlacement)).To(Succeed())
 
 				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", sortedPlacement,
-					multiclusterRoleAssignmentNamespace, []string{
+					[]string{
 						"zebra-cluster",
 						"alpha-cluster",
 						"mike-cluster",
@@ -1033,10 +1021,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should handle all Placements resolving to empty clusters", func() {
 				emptyPlacement1 := "empty-1"
 				emptyPlacement2 := "empty-2"
-				Expect(createTestPlacement(
-					ctx, k8sClient, emptyPlacement1, multiclusterRoleAssignmentNamespace)).To(Succeed())
-				Expect(createTestPlacement(
-					ctx, k8sClient, emptyPlacement2, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement1)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement2)).To(Succeed())
 
 				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
 					{Name: emptyPlacement1, Namespace: multiclusterRoleAssignmentNamespace},
@@ -1048,10 +1034,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should maintain deterministic ordering", func() {
 				reverseOrderingPlacement := "reverse-order-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, reverseOrderingPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", reverseOrderingPlacement,
-					multiclusterRoleAssignmentNamespace, []string{cluster2Name, cluster1Name})).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, reverseOrderingPlacement)).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", reverseOrderingPlacement, []string{cluster2Name, cluster1Name})).To(Succeed())
 
 				// Call multiple times to verify consistent ordering
 				clusters1, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
@@ -1250,8 +1235,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should return false when Placement has no clusters", func() {
 				emptyPlacement := "empty-targeting-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, emptyPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement)).To(Succeed())
 
 				roleAssignment := rbacv1alpha1.RoleAssignment{
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
@@ -1266,10 +1250,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should handle multiple Placements in ClusterSelection", func() {
 				thirdPlacement := "third-placement"
-				Expect(createTestPlacement(
-					ctx, k8sClient, thirdPlacement, multiclusterRoleAssignmentNamespace)).To(Succeed())
-				Expect(createTestPlacementDecision(ctx, k8sClient, "decision-1", thirdPlacement,
-					multiclusterRoleAssignmentNamespace, []string{"cluster-alpha", "cluster-beta"})).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, thirdPlacement)).To(Succeed())
+				Expect(createTestPlacementDecision(
+					ctx, k8sClient, "decision-1", thirdPlacement, []string{"cluster-alpha", "cluster-beta"})).To(Succeed())
 
 				roleAssignment := rbacv1alpha1.RoleAssignment{
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
@@ -1570,11 +1553,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should handle ClusterPermission creation failures", func() {
 				nonExistentCluster := "non-existent-cluster"
 
-				Expect(createTestPlacement(
-					ctx, k8sClient, "test-placement-nonexistent", multiclusterRoleAssignmentNamespace)).To(Succeed())
+				Expect(createTestPlacement(ctx, k8sClient, "test-placement-nonexistent")).To(Succeed())
 				Expect(createTestPlacementDecision(
-					ctx, k8sClient, "decision-1", "test-placement-nonexistent", multiclusterRoleAssignmentNamespace,
-					[]string{nonExistentCluster})).To(Succeed())
+					ctx, k8sClient, "decision-1", "test-placement-nonexistent", []string{nonExistentCluster})).To(Succeed())
 
 				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
 					{Name: "test-placement-nonexistent", Namespace: multiclusterRoleAssignmentNamespace},
@@ -1613,9 +1594,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				nonExistentCluster := "mixed-test-non-existent"
 
 				Expect(createTestPlacement(
-					ctx, k8sClient, "test-placement-mixed", multiclusterRoleAssignmentNamespace)).To(Succeed())
+					ctx, k8sClient, "test-placement-mixed")).To(Succeed())
 				Expect(createTestPlacementDecision(
-					ctx, k8sClient, "decision-1", "test-placement-mixed", multiclusterRoleAssignmentNamespace,
+					ctx, k8sClient, "decision-1", "test-placement-mixed",
 					[]string{existingCluster, nonExistentCluster})).To(Succeed())
 
 				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
@@ -3262,10 +3243,7 @@ func TestAggregateClusters(t *testing.T) {
 			t.Fatalf("update Status error = %v", err)
 		}
 
-		clusters, err := reconciler.aggregateClusters(ctx, mra)
-		if err != nil {
-			t.Fatalf("aggregateClusters error = %v", err)
-		}
+		clusters := reconciler.aggregateClusters(ctx, mra)
 		if len(clusters) != 2 {
 			t.Fatalf("aggregateClusters returned %d clusters, want 2", len(clusters))
 		}
@@ -4451,11 +4429,11 @@ func (c *clientWrapper) Update(ctx context.Context, obj client.Object, opts ...c
 	return c.Client.Update(ctx, obj, opts...)
 }
 
-func createTestPlacement(ctx context.Context, k8sClient client.Client, name, namespace string) error {
+func createTestPlacement(ctx context.Context, k8sClient client.Client, name string) error {
 	placement := &clusterv1beta1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: multiclusterRoleAssignmentNamespace,
 		},
 		Spec: clusterv1beta1.PlacementSpec{
 			Predicates: []clusterv1beta1.ClusterPredicate{
@@ -4471,7 +4449,7 @@ func createTestPlacement(ctx context.Context, k8sClient client.Client, name, nam
 }
 
 func createTestPlacementDecision(ctx context.Context, k8sClient client.Client, placementDecisionNameSuffix string,
-	placementName, namespace string, clusters []string) error {
+	placementName string, clusters []string) error {
 
 	decisions := make([]clusterv1beta1.ClusterDecision, len(clusters))
 	for i, cluster := range clusters {
@@ -4483,7 +4461,7 @@ func createTestPlacementDecision(ctx context.Context, k8sClient client.Client, p
 	pd := &clusterv1beta1.PlacementDecision{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      placementName + "-" + placementDecisionNameSuffix,
-			Namespace: namespace,
+			Namespace: multiclusterRoleAssignmentNamespace,
 			Labels: map[string]string{
 				clusterv1beta1.PlacementLabel: placementName,
 			},
