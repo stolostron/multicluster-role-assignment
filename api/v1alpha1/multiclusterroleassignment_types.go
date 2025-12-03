@@ -21,9 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // MulticlusterRoleAssignmentSpec defines the desired state of MulticlusterRoleAssignment.
 type MulticlusterRoleAssignmentSpec struct {
 	// Subject defines the user, group, or service account for all role assignments.
@@ -60,16 +57,29 @@ type RoleAssignment struct {
 	ClusterSelection ClusterSelection `json:"clusterSelection"`
 }
 
+// PlacementRef represents a reference to a Placement resource
+type PlacementRef struct {
+	// Name of the Placement resource
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Namespace of the Placement resource
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace"`
+}
+
 type ClusterSelection struct {
 	// Type defines the type of cluster selection.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum={clusterNames}
+	// +kubebuilder:validation:Enum={placements}
 	Type string `json:"type"`
 
-	// ClusterNames defines the clusters where the role should be applied.
+	// Placements defines the Placement resources to use for cluster selection.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	ClusterNames []string `json:"clusterNames"`
+	Placements []PlacementRef `json:"placements"`
 }
 
 // MulticlusterRoleAssignmentStatus defines the observed state of MulticlusterRoleAssignment.

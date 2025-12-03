@@ -56,20 +56,34 @@ spec:
                       description: ClusterSelection defines the type of cluster selection
                         and the clusters to be selected.
                       properties:
-                        clusterNames:
-                          description: ClusterNames defines the clusters where the
-                            role should be applied.
+                        placements:
+                          description: Placements defines the Placement resources
+                            to use for cluster selection.
                           items:
-                            type: string
+                            description: PlacementRef represents a reference to a
+                              Placement resource
+                            properties:
+                              name:
+                                description: Name of the Placement resource
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: Namespace of the Placement resource
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            - namespace
+                            type: object
                           minItems: 1
                           type: array
                         type:
                           description: Type defines the type of cluster selection.
                           enum:
-                          - clusterNames
+                          - placements
                           type: string
                       required:
-                      - clusterNames
+                      - placements
                       - type
                       type: object
                     name:
