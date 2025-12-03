@@ -2713,12 +2713,32 @@ func validateMRAAllClustersAnnotation(mra rbacv1alpha1.MulticlusterRoleAssignmen
 		mra.Namespace, mra.Name, actualAnnotationValue))
 }
 
+// getClustersFromPlacements queries PlacementDecisions for the given Placements and returns the selected clusters.
+func getClustersFromPlacements(placements []rbacv1alpha1.PlacementRef) []string {
+	var clusters []string
+	for _, placement := range placements {
+		cmd := exec.Command("kubectl", "get", "placementdecision",
+			"-n", placement.Namespace,
+			"-l", fmt.Sprintf("cluster.open-cluster-management.io/placement=%s", placement.Name),
+			"-o", "jsonpath={.items[*].status.decisions[*].clusterName}")
+		output, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		if output != "" {
+			clusterNames := strings.Fields(output)
+			clusters = append(clusters, clusterNames...)
+		}
+	}
+	return clusters
+}
+
 // getTargetedClustersFromMRA extracts all unique cluster names targeted by the MRA's role assignments.
 func getTargetedClustersFromMRA(mra rbacv1alpha1.MulticlusterRoleAssignment) []string {
 	var uniqueClusters []string
 	clusterMap := make(map[string]bool)
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		for _, clusterName := range roleAssignment.ClusterSelection.ClusterNames {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		for _, clusterName := range clusters {
 			if !clusterMap[clusterName] {
 				clusterMap[clusterName] = true
 				uniqueClusters = append(uniqueClusters, clusterName)
@@ -2738,7 +2758,8 @@ func validateMRAOwnerAnnotations(cp clusterpermissionv1alpha1.ClusterPermission,
 
 	expectedAnnotationCount := 0
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !slices.Contains(roleAssignment.ClusterSelection.ClusterNames, clusterName) {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		if !slices.Contains(clusters, clusterName) {
 			continue
 		}
 
@@ -2843,7 +2864,8 @@ func checkMRAForBindingExistance(mra rbacv1alpha1.MulticlusterRoleAssignment, bi
 	}
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !slices.Contains(roleAssignment.ClusterSelection.ClusterNames, clusterName) {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		if !slices.Contains(clusters, clusterName) {
 			continue
 		}
 
