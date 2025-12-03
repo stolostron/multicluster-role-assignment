@@ -15,30 +15,31 @@ spec:
     - default
     - kube-system
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
-      - managedcluster02
+      type: placements
+      placements:
+      - name: placement-cluster-01-02
+        namespace: open-cluster-management-global-set
   - name: edit-assignment-cluster-3
     clusterRole: edit
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster03
+      type: placements
+      placements:
+      - name: placement-cluster-03
+        namespace: open-cluster-management-global-set
   - name: admin-assignment-cluster-1
     clusterRole: admin
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
+      type: placements
+      placements:
+      - name: placement-cluster-01
+        namespace: open-cluster-management-global-set
   - name: monitoring-assignment-namespaced-all-clusters
     clusterRole: system:mon
     targetNamespaces:
     - monitoring
     - observability
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
-      - managedcluster02
-      - managedcluster03
+      type: placements
+      placements:
+      - name: placement-cluster-01-02-03
+        namespace: open-cluster-management-global-set

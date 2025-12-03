@@ -12,6 +12,7 @@ spec:
   - name: test-role-assignment
     clusterRole: view
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
+      type: placements
+      placements:
+      - name: placement-cluster-01
+        namespace: open-cluster-management-global-set

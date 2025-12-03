@@ -12,51 +12,52 @@ spec:
   - name: admin-assignment-cluster-1
     clusterRole: admin
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
+      type: placements
+      placements:
+      - name: placement-cluster-01
+        namespace: open-cluster-management-global-set
   - name: view-assignment-all-clusters
     clusterRole: view
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
-      - managedcluster02
-      - managedcluster03
+      type: placements
+      placements:
+      - name: placement-cluster-01-02-03
+        namespace: open-cluster-management-global-set
   - name: edit-assignment-single-namespace
     clusterRole: edit
     targetNamespaces:
     - default
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster02
+      type: placements
+      placements:
+      - name: placement-cluster-02
+        namespace: open-cluster-management-global-set
   - name: monitoring-assignment-multi-namespace-single-cluster
     clusterRole: system:mon
     targetNamespaces:
     - monitoring
     - observability
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster03
+      type: placements
+      placements:
+      - name: placement-cluster-03
+        namespace: open-cluster-management-global-set
   - name: dev-assignment-single-namespace-multi-cluster
     clusterRole: edit
     targetNamespaces:
     - development
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
-      - managedcluster02
+      type: placements
+      placements:
+      - name: placement-cluster-01-02
+        namespace: open-cluster-management-global-set
   - name: logging-assignment-multi-namespace-multi-cluster
     clusterRole: view
     targetNamespaces:
     - logging
     - kube-system
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster01
-      - managedcluster02
-      - managedcluster03
+      type: placements
+      placements:
+      - name: placement-cluster-01-02-03
+        namespace: open-cluster-management-global-set
