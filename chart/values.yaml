@@ -1,0 +1,15 @@
+# Copyright (c) 2020 Red Hat, Inc.
+
+global:
+  imageOverrides: {}
+  templateOverrides: {}
+  namespace: default
+  pullSecret: null
+  pullPolicy: Always
+hubconfig:
+  nodeSelector: null
+  proxyConfigs: {}
+  replicaCount: 1
+  tolerations: []
+  ocpVersion: 4.12.0
+org: open-cluster-management
