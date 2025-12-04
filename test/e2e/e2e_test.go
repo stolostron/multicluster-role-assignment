@@ -28,13 +28,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/onsi/gomega/format"
+	"github.com/stolostron/multicluster-role-assignment/test/utils"
+
+	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
-
-	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
-	"github.com/stolostron/multicluster-role-assignment/test/utils"
 )
 
 // namespace where the project is deployed in
@@ -105,7 +106,7 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("creating managed cluster namespaces and ManagedClusters")
+		By("creating managed cluster namespaces")
 		for i := 1; i <= 3; i++ {
 			clusterName := fmt.Sprintf("managedcluster%02d", i)
 
@@ -113,20 +114,28 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd = exec.Command("kubectl", "create", "ns", clusterName)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+		}
 
-			By(fmt.Sprintf("creating ManagedCluster %s", clusterName))
-			managedClusterTemplate, err := os.ReadFile("test/testdata/managedcluster-template.yaml")
-			Expect(err).NotTo(HaveOccurred())
+		By("creating Placements and PlacementDecisions")
+		placements := []struct {
+			name     string
+			clusters []string
+		}{
+			{"placement-cluster-01", []string{"managedcluster01"}},
+			{"placement-cluster-02", []string{"managedcluster02"}},
+			{"placement-cluster-03", []string{"managedcluster03"}},
+			{"placement-cluster-01-02", []string{"managedcluster01", "managedcluster02"}},
+			{"placement-cluster-01-02-03", []string{"managedcluster01", "managedcluster02", "managedcluster03"}},
+			{"placement-cluster-02-03", []string{"managedcluster02", "managedcluster03"}},
+			{"placement-cluster-01-03", []string{"managedcluster01", "managedcluster03"}},
+		}
 
-			managedCluster := strings.ReplaceAll(
-				string(managedClusterTemplate), "CLUSTER_NAME_PLACEHOLDER", clusterName)
-			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
-			err = os.WriteFile(managedClusterFile, []byte(managedCluster), os.FileMode(0o644))
-			Expect(err).NotTo(HaveOccurred())
+		for _, p := range placements {
+			By(fmt.Sprintf("creating Placement %s", p.name))
+			createPlacement(p.name, openClusterManagementGlobalSetNamespace)
 
-			cmd = exec.Command("kubectl", "apply", "-f", managedClusterFile)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
+			By(fmt.Sprintf("creating PlacementDecision for %s", p.name))
+			createPlacementDecision(p.name, openClusterManagementGlobalSetNamespace, p.clusters)
 		}
 
 		By("deploying the controller-manager")
@@ -149,15 +158,35 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("cleaning up managed clusters and namespaces")
-		for i := 1; i <= 3; i++ {
-			clusterName := fmt.Sprintf("managedcluster%02d", i)
-			managedClusterFile := fmt.Sprintf("/tmp/%s.yaml", clusterName)
+		By("cleaning up Placements and PlacementDecisions")
+		placementNames := []string{
+			"placement-cluster-01",
+			"placement-cluster-02",
+			"placement-cluster-03",
+			"placement-cluster-01-02",
+			"placement-cluster-01-02-03",
+			"placement-cluster-02-03",
+			"placement-cluster-01-03",
+		}
 
-			cmd := exec.Command("kubectl", "delete", "-f", managedClusterFile)
+		for _, placementName := range placementNames {
+			By(fmt.Sprintf("deleting PlacementDecision for %s", placementName))
+			pdName := placementName + "-decision-1"
+			cmd := exec.Command(
+				"kubectl", "delete", "placementdecision", pdName, "-n", openClusterManagementGlobalSetNamespace)
 			_, _ = utils.Run(cmd)
 
-			cmd = exec.Command("kubectl", "delete", "ns", clusterName)
+			By(fmt.Sprintf("deleting Placement %s", placementName))
+			cmd = exec.Command(
+				"kubectl", "delete", "placement", placementName, "-n", openClusterManagementGlobalSetNamespace)
+			_, _ = utils.Run(cmd)
+		}
+
+		By("cleaning up managed cluster namespaces")
+		for i := 1; i <= 3; i++ {
+			clusterName := fmt.Sprintf("managedcluster%02d", i)
+
+			cmd := exec.Command("kubectl", "delete", "ns", clusterName)
 			_, _ = utils.Run(cmd)
 		}
 
@@ -774,12 +803,16 @@ var _ = Describe("Manager", Ordered, func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
 					"managedcluster01", "managedcluster02", "managedcluster03", "newmanagedcluster04"})
 
-				By("cleaning up newmanagedcluster04 namespace and ManagedCluster")
-				cmd := exec.Command("kubectl", "delete", "ns", "newmanagedcluster04")
+				By("cleaning up placement-newcluster-04")
+				cmd := exec.Command("kubectl", "delete", "placementdecision", "placement-newcluster-04-decision-1",
+					"-n", openClusterManagementGlobalSetNamespace)
+				_, _ = utils.Run(cmd)
+				cmd = exec.Command("kubectl", "delete", "placement", "placement-newcluster-04",
+					"-n", openClusterManagementGlobalSetNamespace)
 				_, _ = utils.Run(cmd)
 
-				managedClusterFile := "/tmp/newmanagedcluster04.yaml"
-				cmd = exec.Command("kubectl", "delete", "-f", managedClusterFile)
+				By("cleaning up newmanagedcluster04 namespace")
+				cmd = exec.Command("kubectl", "delete", "ns", "newmanagedcluster04")
 				_, _ = utils.Run(cmd)
 			})
 
@@ -795,19 +828,10 @@ var _ = Describe("Manager", Ordered, func() {
 					_, err := utils.Run(cmd)
 					Expect(err).NotTo(HaveOccurred())
 
-					By("creating ManagedCluster newmanagedcluster04")
-					managedClusterTemplate, err := os.ReadFile("test/testdata/managedcluster-template.yaml")
-					Expect(err).NotTo(HaveOccurred())
-
-					managedCluster := strings.ReplaceAll(
-						string(managedClusterTemplate), "CLUSTER_NAME_PLACEHOLDER", "newmanagedcluster04")
-					managedClusterFile := "/tmp/newmanagedcluster04.yaml"
-					err = os.WriteFile(managedClusterFile, []byte(managedCluster), os.FileMode(0o644))
-					Expect(err).NotTo(HaveOccurred())
-
-					cmd = exec.Command("kubectl", "apply", "-f", managedClusterFile)
-					_, err = utils.Run(cmd)
-					Expect(err).NotTo(HaveOccurred())
+					By("creating Placement and PlacementDecision for newmanagedcluster04")
+					createPlacement("placement-newcluster-04", openClusterManagementGlobalSetNamespace)
+					createPlacementDecision("placement-newcluster-04", openClusterManagementGlobalSetNamespace,
+						[]string{"newmanagedcluster04"})
 
 					By("fetching and modifying MRA to add newmanagedcluster04 RoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -818,8 +842,13 @@ var _ = Describe("Manager", Ordered, func() {
 						Name:        "cluster04-assignment",
 						ClusterRole: "view",
 						ClusterSelection: rbacv1alpha1.ClusterSelection{
-							Type:         "clusterNames",
-							ClusterNames: []string{"newmanagedcluster04"},
+							Type: "placements",
+							Placements: []rbacv1alpha1.PlacementRef{
+								{
+									Name:      "placement-newcluster-04",
+									Namespace: openClusterManagementGlobalSetNamespace,
+								},
+							},
 						},
 						TargetNamespaces: []string{"default", "kube-system"},
 					}
@@ -1213,8 +1242,6 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[0].Spec.Subject.Kind = groupSubjectKind
 					mras[0].Spec.RoleAssignments[0].Name = "modified-admin-assignment-cluster-1"
 					mras[0].Spec.RoleAssignments[0].ClusterRole = "edit"
-					mras[0].Spec.RoleAssignments[1].ClusterSelection.ClusterNames = append(
-						mras[0].Spec.RoleAssignments[1].ClusterSelection.ClusterNames, "managedcluster01")
 					mras[0].Spec.RoleAssignments[2].TargetNamespaces = append(
 						mras[0].Spec.RoleAssignments[2].TargetNamespaces, "new-dev-ns")
 					patchK8sResource(
@@ -1235,8 +1262,12 @@ var _ = Describe("Manager", Ordered, func() {
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleRBName))
 					mras[2].Spec.Subject.Name = "modified-user-single-rolebinding"
 					mras[2].Spec.RoleAssignments[0].Name = "modified-test-role-assignment-namespaced"
-					mras[2].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
-						mras[2].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster01", "managedcluster03")
+					mras[2].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+						{
+							Name:      "placement-cluster-01-02-03",
+							Namespace: openClusterManagementGlobalSetNamespace,
+						},
+					}
 					mras[2].Spec.RoleAssignments[0].TargetNamespaces = append(
 						mras[2].Spec.RoleAssignments[0].TargetNamespaces, "staging", "prod")
 					patchK8sResource(
@@ -1248,8 +1279,12 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.RoleAssignments[0].Name = "modified-test-role-assignment"
 					mras[3].Spec.RoleAssignments[0].ClusterRole = "admin"
 					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system", "applications"}
-					mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames = append(
-						mras[3].Spec.RoleAssignments[0].ClusterSelection.ClusterNames, "managedcluster02", "managedcluster03")
+					mras[3].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+						{
+							Name:      "placement-cluster-01-02-03",
+							Namespace: openClusterManagementGlobalSetNamespace,
+						},
+					}
 					patchK8sResource("multiclusterroleassignment", mras[3].Name,
 						openClusterManagementGlobalSetNamespace, mras[3].Spec)
 
@@ -1491,73 +1526,84 @@ var _ = Describe("Manager", Ordered, func() {
 						// Patch 1
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "admin-assignment-cluster-1", "clusterRole": "edit",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 2
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{},
 							{"name": "view-assignment-all-clusters", "clusterRole": "view",
-								"clusterSelection": map[string]any{"type": "clusterNames",
-									"clusterNames": []string{"managedcluster01", "managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 3
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {},
 							{"name": "edit-assignment-single-namespace", "clusterRole": "edit",
 								"targetNamespaces": []string{"default", "rapid-dev-1"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 4
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {},
 							{"name": "monitoring-assignment-multi-namespace-single-cluster", "clusterRole": "admin",
 								"targetNamespaces": []string{"monitoring", "observability"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 5
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {}, {},
 							{"name": "dev-assignment-single-namespace-multi-cluster", "clusterRole": "admin",
 								"targetNamespaces": []string{"rapid-admin-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames",
-									"clusterNames": []string{"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 6
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {}, {}, {},
 							{"name": "logging-assignment-multi-namespace-multi-cluster", "clusterRole": "view",
 								"targetNamespaces": []string{"development", "rapid-staging"},
-								"clusterSelection": map[string]any{"type": "clusterNames",
-									"clusterNames": []string{"managedcluster01", "managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 7
 						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-1"}}},
 						// Patch 8
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "new-admin-assignment", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "new-edit-assignment", "clusterRole": "edit",
 								"targetNamespaces": []string{"default", "rapid-dev-1", "rapid-dev-2"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 9
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "temp-admin", "clusterRole": "admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "temp-view", "clusterRole": "view",
 								"targetNamespaces": []string{"temp-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "temp-edit", "clusterRole": "edit",
 								"targetNamespaces": []string{"temp-edit-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 10
 						{"spec": map[string]any{"subject": map[string]any{"kind": "Group"}}},
@@ -1565,8 +1611,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "dynamic-admin", "clusterRole": "admin",
 								"targetNamespaces": []string{"dynamic-ns-1", "dynamic-ns-2"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 12
 						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-2"}}},
@@ -1574,23 +1621,27 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "complex-assignment-1", "clusterRole": "view",
 								"targetNamespaces": []string{"complex-ns-1"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "complex-assignment-2", "clusterRole": "edit",
 								"targetNamespaces": []string{"complex-ns-2", "complex-ns-3"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "complex-assignment-3", "clusterRole": "admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 14
 						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-3", "kind": "User"}}},
 						// Patch 15
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "override-assignment", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 16
 						{"spec": map[string]any{
@@ -1598,16 +1649,18 @@ var _ = Describe("Manager", Ordered, func() {
 							"roleAssignments": []map[string]any{
 								{"name": "combo-assignment", "clusterRole": "edit",
 									"targetNamespaces": []string{"combo-ns"},
-									"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-										"managedcluster02"}}},
+									"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+									}}},
 							},
 						}},
 						// Patch 17
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "penultimate-assignment", "clusterRole": "view",
 								"targetNamespaces": []string{"penultimate-ns-1", "penultimate-ns-2"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 18
 						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-group-temp"}}},
@@ -1615,33 +1668,38 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "pre-final-assignment", "clusterRole": "admin",
 								"targetNamespaces": []string{"pre-final-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 20
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-assignment-20", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-ns-20"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 21
 						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-21"}}},
 						// Patch 22
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-22-admin", "clusterRole": "admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-22-edit", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-22-ns1", "chaos-22-ns2"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 23
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "admin-assignment-cluster-1", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 24
 						{"spec": map[string]any{
@@ -1649,21 +1707,29 @@ var _ = Describe("Manager", Ordered, func() {
 							"roleAssignments": []map[string]any{
 								{"name": "chaos-24-view", "clusterRole": "view",
 									"targetNamespaces": []string{"chaos-24-ns"},
-									"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-										"managedcluster02", "managedcluster03"}}},
+									"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
+									}}},
 							},
 						}},
 						// Patch 25
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-25-1", "clusterRole": "view", "clusterSelection": map[string]any{
-								"type": "clusterNames", "clusterNames": []string{"managedcluster01"}}},
+								"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-25-2", "clusterRole": "edit", "clusterSelection": map[string]any{
-								"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+								"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-25-3", "clusterRole": "admin", "clusterSelection": map[string]any{
-								"type": "clusterNames", "clusterNames": []string{"managedcluster03"}}},
+								"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-25-4", "clusterRole": "view", "targetNamespaces": []string{"chaos-25-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 26
 						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-26", "kind": "User"}}},
@@ -1671,8 +1737,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-27-assignment", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-27-ns1", "chaos-27-ns2", "chaos-27-ns3"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 28
 						{"spec": map[string]any{"subject": map[string]any{"kind": "Group"}}},
@@ -1681,18 +1748,21 @@ var _ = Describe("Manager", Ordered, func() {
 							{"name": "chaos-29-multi-ns", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-29-ns1", "chaos-29-ns2", "chaos-29-ns3",
 									"chaos-29-ns4", "chaos-29-ns5"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 30
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-30-cluster", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": "clusterNames",
-									"clusterNames": []string{"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-30-namespaced", "clusterRole": "admin",
 								"targetNamespaces": []string{"chaos-30-ns"}, "clusterSelection": map[string]any{
-									"type": "clusterNames", "clusterNames": []string{
-										"managedcluster02", "managedcluster03"}}},
+									"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
+									}}},
 						}}},
 						// Patch 31
 						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-31"}}},
@@ -1700,40 +1770,51 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-32-single", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-32-single-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster02", "managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 33
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-33-admin", "clusterRole": "admin", "clusterSelection": map[string]any{
-								"type": "clusterNames", "clusterNames": []string{"managedcluster01"}}},
+								"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-33-edit-ns", "clusterRole": "edit", "targetNamespaces": []string{
 								"chaos-33-ns1", "chaos-33-ns2"}, "clusterSelection": map[string]any{
-								"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+								"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-33-view-multi", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-33-ns3"}, "clusterSelection": map[string]any{
-									"type": "clusterNames", "clusterNames": []string{
-										"managedcluster01", "managedcluster03"}}},
+									"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
+									}}},
 						}}},
 						// Patch 34
 						{"spec": map[string]any{
 							"subject": map[string]any{"name": "chaos-group-34", "kind": "Group"},
 							"roleAssignments": []map[string]any{
 								{"name": "chaos-34-simple", "clusterRole": "view", "clusterSelection": map[string]any{
-									"type": "clusterNames", "clusterNames": []string{"managedcluster02"}}},
+									"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+									}}},
 							},
 						}},
 						// Patch 35
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-35-1", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-1"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-35-2", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-2"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 							{"name": "chaos-35-3", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-3"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster03"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 36
 						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-36", "kind": "User"}}},
@@ -1741,8 +1822,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-37-duplicate", "clusterRole": "admin",
 								"targetNamespaces": []string{"chaos-37-ns"},
-								"clusterSelection": map[string]any{"type": "clusterNames", "clusterNames": []string{
-									"managedcluster01", "managedcluster01", "managedcluster02"}}},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
+								}}},
 						}}},
 						// Patch 38
 						{"spec": map[string]any{"roleAssignments": []map[string]any{}}},
@@ -1785,8 +1867,13 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:        "admin-assignment-cluster-1",
 							ClusterRole: "view",
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Type:         "clusterNames",
-								ClusterNames: []string{"managedcluster01", "managedcluster02", "managedcluster03"},
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "placement-cluster-01-02-03",
+										Namespace: openClusterManagementGlobalSetNamespace,
+									},
+								},
 							},
 						},
 						{
@@ -1794,8 +1881,13 @@ var _ = Describe("Manager", Ordered, func() {
 							ClusterRole:      "edit",
 							TargetNamespaces: []string{"default", "rapid-dev-1", "rapid-dev-2", "rapid-final-ns"},
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Type:         "clusterNames",
-								ClusterNames: []string{"managedcluster02", "managedcluster03"},
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "placement-cluster-02-03",
+										Namespace: openClusterManagementGlobalSetNamespace,
+									},
+								},
 							},
 						},
 						{
@@ -1803,8 +1895,13 @@ var _ = Describe("Manager", Ordered, func() {
 							ClusterRole:      "admin",
 							TargetNamespaces: []string{"monitoring", "observability"},
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Type:         "clusterNames",
-								ClusterNames: []string{"managedcluster03"},
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "placement-cluster-03",
+										Namespace: openClusterManagementGlobalSetNamespace,
+									},
+								},
 							},
 						},
 						{
@@ -1812,8 +1909,13 @@ var _ = Describe("Manager", Ordered, func() {
 							ClusterRole:      "admin",
 							TargetNamespaces: []string{"rapid-admin-ns"},
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Type:         "clusterNames",
-								ClusterNames: []string{"managedcluster01"},
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "placement-cluster-01",
+										Namespace: openClusterManagementGlobalSetNamespace,
+									},
+								},
 							},
 						},
 						{
@@ -1822,8 +1924,13 @@ var _ = Describe("Manager", Ordered, func() {
 							TargetNamespaces: []string{
 								"development", "rapid-staging", "logging", "kube-system", "rapid-prod", "rapid-test"},
 							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Type:         "clusterNames",
-								ClusterNames: []string{"managedcluster01", "managedcluster02", "managedcluster03"},
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "placement-cluster-01-02-03",
+										Namespace: openClusterManagementGlobalSetNamespace,
+									},
+								},
 							},
 						},
 					}
@@ -2706,12 +2813,32 @@ func validateMRAAllClustersAnnotation(mra rbacv1alpha1.MulticlusterRoleAssignmen
 		mra.Namespace, mra.Name, actualAnnotationValue))
 }
 
+// getClustersFromPlacements queries PlacementDecisions for the given Placements and returns the selected clusters.
+func getClustersFromPlacements(placements []rbacv1alpha1.PlacementRef) []string {
+	var clusters []string
+	for _, placement := range placements {
+		cmd := exec.Command("kubectl", "get", "placementdecision",
+			"-n", placement.Namespace,
+			"-l", fmt.Sprintf("cluster.open-cluster-management.io/placement=%s", placement.Name),
+			"-o", "jsonpath={.items[*].status.decisions[*].clusterName}")
+		output, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		if output != "" {
+			clusterNames := strings.Fields(output)
+			clusters = append(clusters, clusterNames...)
+		}
+	}
+	return clusters
+}
+
 // getTargetedClustersFromMRA extracts all unique cluster names targeted by the MRA's role assignments.
 func getTargetedClustersFromMRA(mra rbacv1alpha1.MulticlusterRoleAssignment) []string {
 	var uniqueClusters []string
 	clusterMap := make(map[string]bool)
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		for _, clusterName := range roleAssignment.ClusterSelection.ClusterNames {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		for _, clusterName := range clusters {
 			if !clusterMap[clusterName] {
 				clusterMap[clusterName] = true
 				uniqueClusters = append(uniqueClusters, clusterName)
@@ -2731,7 +2858,8 @@ func validateMRAOwnerAnnotations(cp clusterpermissionv1alpha1.ClusterPermission,
 
 	expectedAnnotationCount := 0
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !slices.Contains(roleAssignment.ClusterSelection.ClusterNames, clusterName) {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		if !slices.Contains(clusters, clusterName) {
 			continue
 		}
 
@@ -2836,7 +2964,8 @@ func checkMRAForBindingExistance(mra rbacv1alpha1.MulticlusterRoleAssignment, bi
 	}
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !slices.Contains(roleAssignment.ClusterSelection.ClusterNames, clusterName) {
+		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
+		if !slices.Contains(clusters, clusterName) {
 			continue
 		}
 
@@ -2856,6 +2985,61 @@ func checkMRAForBindingExistance(mra rbacv1alpha1.MulticlusterRoleAssignment, bi
 	}
 
 	return false
+}
+
+// createPlacement creates a Placement resource using kubectl.
+// NOTE: The Placement spec is intentionally minimal/empty because these e2e tests do not run the Placement controller.
+// PlacementDecisions are manually created.
+func createPlacement(name, namespace string) {
+	placementYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: %s
+  namespace: %s
+spec: {}
+`, name, namespace)
+
+	placementFile := fmt.Sprintf("/tmp/%s.yaml", name)
+	err := os.WriteFile(placementFile, []byte(placementYAML), os.FileMode(0o644))
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", placementFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// createPlacementDecision creates a PlacementDecision resource for a specified Placement.
+func createPlacementDecision(placementName, namespace string, clusters []string) {
+	pdName := placementName + "-decision-1"
+
+	var decisions string
+	for _, cluster := range clusters {
+		decisions += fmt.Sprintf("  - clusterName: %s\n    reason: \"\"\n", cluster)
+	}
+
+	pdYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: PlacementDecision
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    cluster.open-cluster-management.io/placement: %s
+status:
+  decisions:
+%s`, pdName, namespace, placementName, decisions)
+
+	pdFile := fmt.Sprintf("/tmp/%s.yaml", pdName)
+	err := os.WriteFile(pdFile, []byte(pdYAML), os.FileMode(0o644))
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", pdFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Update status using the same YAML file with --subresource=status --server-side
+	cmd = exec.Command("kubectl", "apply", "-f", pdFile, "--subresource=status", "--server-side")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
 }
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.

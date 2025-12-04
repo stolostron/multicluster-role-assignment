@@ -18,6 +18,7 @@ spec:
     - observability
     - logging
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - managedcluster02
+      type: placements
+      placements:
+      - name: placement-cluster-02
+        namespace: open-cluster-management-global-set

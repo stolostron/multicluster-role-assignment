@@ -29,6 +29,7 @@ Creating `MulticlusterRoleAssignment` resources will create `ClusterPermission` 
 - [Open Cluster Management](https://open-cluster-management.io/) hub cluster
 - Managed clusters registered with the hub
 - `kubectl` configured to access your cluster
+- [Placement](https://open-cluster-management.io/concepts/placement/) resources created for cluster selection
 
 ### Installation
 
@@ -64,16 +65,16 @@ spec:
     - development
     - staging
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - cluster-east
-      - cluster-west
+      type: placements
+      placements:
+      - name: dev-clusters
+        namespace: open-cluster-management-global-set
 ```
 
 This example:
 - Grants the user `jane.developer` the `view` cluster role
 - Applies the role to the `development` and `staging` namespaces
-- Targets the `cluster-east` and `cluster-west` managed clusters
+- Targets clusters selected by the `dev-clusters` Placement resource
 
 ## API Reference
 
@@ -101,8 +102,15 @@ The `MulticlusterRoleAssignment` custom resource defines role assignments across
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
-| `type` | `string` | Type of cluster selection (currently only `clusterNames`) | Yes |
-| `clusterNames` | `[]string` | List of cluster names to target | Yes |
+| `type` | `string` | Type of cluster selection (currently only `placements`) | Yes |
+| `placements` | `[]PlacementRef` | List of Placement resources to use for cluster selection | Yes |
+
+#### PlacementRef Fields
+
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `name` | `string` | Name of the Placement resource | Yes |
+| `namespace` | `string` | Namespace of the Placement resource | Yes |
 
 #### Status
 
@@ -120,6 +128,7 @@ apiVersion: rbac.open-cluster-management.io/v1alpha1
 kind: MulticlusterRoleAssignment
 metadata:
   name: admin-multi-role
+  namespace: open-cluster-management-global-set
 spec:
   subject:
     kind: User
@@ -131,18 +140,19 @@ spec:
     targetNamespaces:
     - production
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - prod-cluster-1
-      - prod-cluster-2
+      type: placements
+      placements:
+      - name: prod-clusters
+        namespace: open-cluster-management-global-set
   - name: dev-edit
     clusterRole: edit
     targetNamespaces:
     - development
     clusterSelection:
-      type: clusterNames
-      clusterNames:
-      - dev-cluster-1
+      type: placements
+      placements:
+      - name: dev-clusters
+        namespace: open-cluster-management-global-set
 ```
 
 ## Development
@@ -151,6 +161,7 @@ spec:
 
 - Go 1.24+
 - Kubernetes cluster for testing
+- [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for e2e tests)
 
 ### Local Development
 
@@ -175,6 +186,25 @@ spec:
    make install run
    ```
 
+### End-to-End Testing
+
+E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) to create an isolated test environment.
+
+1. **Set up Kind cluster**:
+   ```bash
+   make setup-test-e2e
+   ```
+
+2. **Run e2e tests**:
+   ```bash
+   make test-e2e
+   ```
+
+3. **Clean up Kind cluster**:
+   ```bash
+   make cleanup-test-e2e
+   ```
+
 ### Building and Deployment
 
 1. **Build the operator image**:
@@ -196,6 +226,9 @@ spec:
 
 - `make help` - Display available make targets
 - `make test` - Run unit tests
+- `make test-e2e` - Run e2e tests (requires Kind)
+- `make setup-test-e2e` - Create Kind cluster for e2e tests
+- `make cleanup-test-e2e` - Delete Kind cluster
 - `make build` - Build the operator binary
 - `make docker-build` - Build the container image
 - `make install` - Install CRDs to the cluster
@@ -227,9 +260,10 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 ### Common Issues
 
 1. **Role assignments not appearing on target clusters**:
+   - Verify the referenced Placement resources exist in the correct namespace
+   - Check that PlacementDecisions have been created with selected clusters
    - Verify the target clusters are registered as ManagedClusters
    - Check the operator logs for connection issues
-   - Ensure the specified cluster names match the ManagedCluster names
 
 2. **Permission denied errors**:
    - Verify the operator has the necessary RBAC permissions
@@ -237,7 +271,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
    - Ensure the subject (user/group/SA) is valid
 
 3. **Status shows "Error" for role assignments**:
-   - Check the detailed message in the status
+   - Check the detailed message in the status for specific errors like "PlacementNotFound" or "PlacementResolutionFailed"
    - Verify network connectivity to target clusters
    - Ensure the target namespaces exist
 
