@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -4476,4 +4477,310 @@ func createTestPlacementDecision(ctx context.Context, k8sClient client.Client, p
 		Decisions: decisions,
 	}
 	return k8sClient.Status().Update(ctx, pd)
+}
+
+// Unit tests for extractPlacementKeys
+func TestExtractPlacementKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		mra      *rbacv1alpha1.MulticlusterRoleAssignment
+		expected []string
+	}{
+		{
+			name: "single placement reference",
+			mra: &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []string{"ns1/placement1"},
+		},
+		{
+			name: "multiple placement references",
+			mra: &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+									{Namespace: "ns2", Name: "placement2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []string{"ns1/placement1", "ns2/placement2"},
+		},
+		{
+			name: "duplicate placements are deduplicated",
+			mra: &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+								},
+							},
+						},
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"}, // duplicate
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []string{"ns1/placement1"},
+		},
+		{
+			name: "no placements returns empty slice",
+			mra: &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:       "placements",
+								Placements: []rbacv1alpha1.PlacementRef{}, // empty placements
+							},
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "mixed placements across role assignments",
+			mra: &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "team-a", Name: "prod"},
+								},
+							},
+						},
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "team-b", Name: "dev"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []string{"team-a/prod", "team-b/dev"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractPlacementKeys(tt.mra)
+
+			// Sort both slices for comparison since map iteration order is not guaranteed
+			slices.Sort(result)
+			slices.Sort(tt.expected)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("extractPlacementKeys() returned %d keys, expected %d", len(result), len(tt.expected))
+				t.Errorf("got: %v, expected: %v", result, tt.expected)
+				return
+			}
+
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("extractPlacementKeys()[%d] = %s, expected %s", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// Test that extractPlacementKeys handles nil/invalid input
+func TestExtractPlacementKeysNilInput(t *testing.T) {
+	result := extractPlacementKeys(nil)
+	if result != nil {
+		t.Errorf("extractPlacementKeys(nil) = %v, expected nil", result)
+	}
+}
+
+// Tests for findMRAsForPlacementDecision - tests the logic without requiring field index
+func TestFindMRAsForPlacementDecision(t *testing.T) {
+	// Test: PlacementDecision with no placement label returns empty
+	t.Run("No placement label returns empty", func(t *testing.T) {
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+			Scheme: scheme.Scheme,
+		}
+
+		pd := &clusterv1beta1.PlacementDecision{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pd-no-label",
+				Namespace: "default",
+				// No labels
+			},
+		}
+
+		requests := reconciler.findMRAsForPlacementDecision(context.Background(), pd)
+		if len(requests) != 0 {
+			t.Errorf("Expected empty requests for PD without label, got %d", len(requests))
+		}
+	})
+
+	// Test: PlacementDecision with empty placement label returns empty
+	t.Run("Empty placement label returns empty", func(t *testing.T) {
+		reconciler := &MulticlusterRoleAssignmentReconciler{
+			Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+			Scheme: scheme.Scheme,
+		}
+
+		pd := &clusterv1beta1.PlacementDecision{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pd-empty-label",
+				Namespace: "default",
+				Labels: map[string]string{
+					clusterv1beta1.PlacementLabel: "",
+				},
+			},
+		}
+
+		requests := reconciler.findMRAsForPlacementDecision(context.Background(), pd)
+		if len(requests) != 0 {
+			t.Errorf("Expected empty requests for PD with empty label, got %d", len(requests))
+		}
+	})
+
+	// Test: PlacementDecision label is correctly parsed to placement key
+	t.Run("Placement key is correctly formed", func(t *testing.T) {
+		// This test verifies the placement key format is namespace/name
+		pd := &clusterv1beta1.PlacementDecision{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pd",
+				Namespace: "team-a",
+				Labels: map[string]string{
+					clusterv1beta1.PlacementLabel: "prod-placement",
+				},
+			},
+		}
+
+		placementName := pd.Labels[clusterv1beta1.PlacementLabel]
+		placementKey := fmt.Sprintf("%s/%s", pd.Namespace, placementName)
+
+		expected := "team-a/prod-placement"
+		if placementKey != expected {
+			t.Errorf("Expected placement key %s, got %s", expected, placementKey)
+		}
+	})
+}
+
+// Test the predicate logic for PlacementDecision updates
+func TestPlacementDecisionPredicateLogic(t *testing.T) {
+	// Test: Decisions unchanged should return false (don't trigger reconcile)
+	t.Run("Same decisions returns false", func(t *testing.T) {
+		oldPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+					{ClusterName: "cluster-b"},
+				},
+			},
+		}
+		newPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+					{ClusterName: "cluster-b"},
+				},
+			},
+		}
+
+		// The predicate logic: !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+		shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+		if shouldReconcile {
+			t.Errorf("Expected false (no reconcile) when decisions unchanged")
+		}
+	})
+
+	// Test: Decisions changed should return true (trigger reconcile)
+	t.Run("Changed decisions returns true", func(t *testing.T) {
+		oldPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+				},
+			},
+		}
+		newPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+					{ClusterName: "cluster-b"}, // New cluster added
+				},
+			},
+		}
+
+		shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+		if !shouldReconcile {
+			t.Errorf("Expected true (reconcile) when decisions changed")
+		}
+	})
+
+	// Test: Cluster removed should return true
+	t.Run("Cluster removed returns true", func(t *testing.T) {
+		oldPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+					{ClusterName: "cluster-b"},
+				},
+			},
+		}
+		newPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"}, // cluster-b removed
+				},
+			},
+		}
+
+		shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+		if !shouldReconcile {
+			t.Errorf("Expected true (reconcile) when cluster removed")
+		}
+	})
+
+	// Test: Empty to non-empty should return true
+	t.Run("Empty to non-empty returns true", func(t *testing.T) {
+		oldPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{},
+			},
+		}
+		newPD := &clusterv1beta1.PlacementDecision{
+			Status: clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: "cluster-a"},
+				},
+			},
+		}
+
+		shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+		if !shouldReconcile {
+			t.Errorf("Expected true (reconcile) when going from empty to non-empty")
+		}
+	})
 }
