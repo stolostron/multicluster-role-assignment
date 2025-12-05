@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -203,6 +204,11 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+	// Setup field indexes for efficient lookups (e.g., MRAs by Placement reference)
+	if err := controller.SetupIndexes(context.Background(), mgr); err != nil {
+		setupLog.Error(err, "unable to setup field indexes")
 		os.Exit(1)
 	}
 

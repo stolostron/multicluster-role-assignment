@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -141,6 +142,54 @@ const (
 	// AllClustersAnnotation is the annotation key for the all clusters separated by semicolon
 	AllClustersAnnotation = "clusters.rbac.open-cluster-management.io"
 )
+
+// Field indexing constants
+const (
+	// PlacementIndexField is the field path used for indexing MRAs by Placement references
+	PlacementIndexField = "spec.roleAssignments.clusterSelection.placements"
+)
+
+// SetupIndexes configures field indexes for efficient lookups.
+// This should be called before setting up the controller.
+func SetupIndexes(ctx context.Context, mgr ctrl.Manager) error {
+	// Index MRAs by the Placements they reference in their RoleAssignments
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&rbacv1alpha1.MulticlusterRoleAssignment{},
+		PlacementIndexField,
+		extractPlacementKeys,
+	); err != nil {
+		return fmt.Errorf("failed to setup placement index: %w", err)
+	}
+
+	return nil
+}
+
+// extractPlacementKeys extracts placement keys from an MRA for indexing.
+// Returns keys in format "namespace/name" for each referenced Placement.
+func extractPlacementKeys(obj client.Object) []string {
+	mra, ok := obj.(*rbacv1alpha1.MulticlusterRoleAssignment)
+	if !ok {
+		return nil
+	}
+
+	// Use a map to deduplicate placement references
+	placementSet := make(map[string]struct{})
+	for _, ra := range mra.Spec.RoleAssignments {
+		for _, p := range ra.ClusterSelection.Placements {
+			key := fmt.Sprintf("%s/%s", p.Namespace, p.Name)
+			placementSet[key] = struct{}{}
+		}
+	}
+
+	// Convert map to slice
+	placements := make([]string, 0, len(placementSet))
+	for key := range placementSet {
+		placements = append(placements, key)
+	}
+
+	return placements
+}
 
 // MulticlusterRoleAssignmentReconciler reconciles a MulticlusterRoleAssignment object.
 type MulticlusterRoleAssignmentReconciler struct {
@@ -1247,6 +1296,50 @@ func (r *MulticlusterRoleAssignmentReconciler) findMRAsForClusterPermission(
 	return requests
 }
 
+// findMRAsForPlacementDecision maps a PlacementDecision to the MRAs that reference its Placement
+func (r *MulticlusterRoleAssignmentReconciler) findMRAsForPlacementDecision(
+	ctx context.Context, obj client.Object) []reconcile.Request {
+
+	log := logf.FromContext(ctx)
+
+	pd, ok := obj.(*clusterv1beta1.PlacementDecision)
+	if !ok {
+		log.Error(fmt.Errorf("unexpected object type"), "Expected PlacementDecision", "got", obj)
+		return nil
+	}
+
+	// Get the Placement name from the PlacementDecision label
+	placementName := pd.Labels[clusterv1beta1.PlacementLabel]
+	if placementName == "" {
+		log.V(1).Info("PlacementDecision has no placement label, skipping", "placementDecision", pd.Name)
+		return nil
+	}
+
+	placementKey := fmt.Sprintf("%s/%s", pd.Namespace, placementName)
+
+	var mraList rbacv1alpha1.MulticlusterRoleAssignmentList
+	if err := r.List(ctx, &mraList, client.MatchingFields{PlacementIndexField: placementKey}); err != nil {
+		log.Error(err, "Failed to list MulticlusterRoleAssignments for PlacementDecision mapping")
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(mraList.Items))
+	for _, mra := range mraList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Namespace: mra.Namespace,
+				Name:      mra.Name,
+			},
+		})
+		log.Info("PlacementDecision change detected, queueing MRA for reconciliation",
+			"placementDecision", pd.Name,
+			"placement", placementName,
+			"mra", mra.Namespace+"/"+mra.Name)
+	}
+
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -1261,6 +1354,24 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 					predicate.GenerationChangedPredicate{},
 				),
 			),
+		).
+		Watches(
+			&clusterv1beta1.PlacementDecision{},
+			handler.EnqueueRequestsFromMapFunc(r.findMRAsForPlacementDecision),
+			builder.WithPredicates(predicate.Funcs{
+				CreateFunc: func(e event.CreateEvent) bool {
+					return true // Handler filters via field index
+				},
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldPD := e.ObjectOld.(*clusterv1beta1.PlacementDecision)
+					newPD := e.ObjectNew.(*clusterv1beta1.PlacementDecision)
+					// Only trigger if cluster decisions actually changed
+					return !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return true // Handler filters via field index
+				},
+			}),
 		).
 		Named("multiclusterroleassignment").
 		Complete(r)
