@@ -27,6 +27,7 @@ import (
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -47,6 +48,7 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+	mgr       ctrl.Manager
 )
 
 func TestControllers(t *testing.T) {
@@ -91,6 +93,25 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	By("setting up manager with field indexes")
+	mgr, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
+
+	By("starting manager in background")
+	go func() {
+		defer GinkgoRecover()
+		err := mgr.Start(ctx)
+		Expect(err).NotTo(HaveOccurred(), "failed to start manager")
+	}()
+
+	By("waiting for cache to sync")
+	Eventually(func() bool {
+		return mgr.GetCache().WaitForCacheSync(ctx)
+	}).Should(BeTrue(), "cache failed to sync")
 })
 
 var _ = AfterSuite(func() {
