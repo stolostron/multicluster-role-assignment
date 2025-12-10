@@ -2339,7 +2339,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should update PlacementDecision to include managedcluster02", func() {
 					By("updating PlacementDecision to add managedcluster02")
 					addedClusters := []string{"managedcluster01", "managedcluster02"}
-					updatePlacementDecision("placement-cluster-01", openClusterManagementGlobalSetNamespace, addedClusters)
+					updatePlacementDecision("placement-cluster-01", addedClusters)
 				})
 
 				It("should create ClusterPermission on managedcluster02", func() {
@@ -2408,7 +2408,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should update PlacementDecision to keep only managedcluster02", func() {
 					By("updating PlacementDecision to remove managedcluster01")
 					remainingClusters := []string{"managedcluster02"}
-					updatePlacementDecision("placement-cluster-01", openClusterManagementGlobalSetNamespace, remainingClusters)
+					updatePlacementDecision("placement-cluster-01", remainingClusters)
 				})
 
 				It("should delete ClusterPermission from managedcluster01", func() {
@@ -2453,7 +2453,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("PlacementDecision becomes empty", func() {
 				It("should update PlacementDecision to have no clusters", func() {
 					By("updating PlacementDecision to empty cluster list")
-					updatePlacementDecision("placement-cluster-01", openClusterManagementGlobalSetNamespace, []string{})
+					updatePlacementDecision("placement-cluster-01", []string{})
 				})
 
 				It("should delete ClusterPermission from managedcluster02", func() {
@@ -2548,7 +2548,7 @@ var _ = Describe("Manager", Ordered, func() {
 						spec)
 
 					By("ensuring PlacementDecision has clusters")
-					updatePlacementDecision("placement-cluster-01", openClusterManagementGlobalSetNamespace,
+					updatePlacementDecision("placement-cluster-01",
 						[]string{"managedcluster01", "managedcluster02"})
 				})
 
@@ -2652,7 +2652,7 @@ var _ = Describe("Manager", Ordered, func() {
 					_, _ = utils.Run(cmd)
 
 					By("updating placement-cluster-03 to add managedcluster04")
-					updatePlacementDecision("placement-cluster-03", openClusterManagementGlobalSetNamespace,
+					updatePlacementDecision("placement-cluster-03",
 						[]string{"managedcluster03", "managedcluster04"})
 
 					By("fetching updated MRA")
@@ -2700,9 +2700,8 @@ var _ = Describe("Manager", Ordered, func() {
 					// placement-cluster-01 → managedcluster01
 					// placement-cluster-01-02 → managedcluster01, managedcluster02
 					// managedcluster01 is in BOTH - should be deduplicated
-					updatePlacementDecision("placement-cluster-01", openClusterManagementGlobalSetNamespace,
-						[]string{"managedcluster01"})
-					updatePlacementDecision("placement-cluster-01-02", openClusterManagementGlobalSetNamespace,
+					updatePlacementDecision("placement-cluster-01", []string{"managedcluster01"})
+					updatePlacementDecision("placement-cluster-01-02",
 						[]string{"managedcluster01", "managedcluster02"})
 
 					By("patching MRA to reference TWO overlapping placements in one roleAssignment")
@@ -3194,7 +3193,9 @@ func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]rba
 }
 
 // validateRoleAssignmentPlacementNotFoundStatus validates that a role assignment has placement not found status.
-func validateRoleAssignmentPlacementNotFoundStatus(roleassignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus, name string) {
+func validateRoleAssignmentPlacementNotFoundStatus(
+	roleassignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus,
+	name string) {
 	assignment := roleassignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
 	Expect(assignment.Status).To(Equal("Error"))
@@ -3553,7 +3554,8 @@ status:
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func updatePlacementDecision(placementName, namespace string, clusters []string) {
+func updatePlacementDecision(placementName string, clusters []string) {
+	namespace := openClusterManagementGlobalSetNamespace
 	pdName := placementName + "-decision-1"
 
 	var decisions string
