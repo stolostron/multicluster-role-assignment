@@ -705,8 +705,9 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 }
 
 // updateRoleAssignmentStatuses updates role assignment statuses based on the final ClusterPermission processing state.
-func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(mra *rbacv1alpha1.MulticlusterRoleAssignment,
-	clusters []string, state *ClusterPermissionProcessingState, roleAssignmentClusters map[string][]string) {
+func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string, state *ClusterPermissionProcessingState,
+	roleAssignmentClusters map[string][]string) {
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
 		// Check if role assignment already has an error status, like from the previous cluster validation stage. If
@@ -886,8 +887,8 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 
 // isRoleAssignmentTargetingCluster checks if a role assignment targets a specific cluster using the pre-computed role
 // assignment clusters map.
-func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(roleAssignment rbacv1alpha1.RoleAssignment,
-	cluster string, roleAssignmentClusters map[string][]string) bool {
+func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
+	roleAssignment rbacv1alpha1.RoleAssignment, cluster string, roleAssignmentClusters map[string][]string) bool {
 
 	clusters, exists := roleAssignmentClusters[roleAssignment.Name]
 	if !exists {
