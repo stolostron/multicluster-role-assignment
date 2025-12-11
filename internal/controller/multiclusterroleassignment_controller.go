@@ -1329,8 +1329,8 @@ func (h *clusterPermissionEventHandler) findAffectedMRAs(
 	oldRoleBindings := h.buildRoleBindingMap(oldCP)
 	newRoleBindings := h.buildRoleBindingMap(newCP)
 
-	h.compareClusterRoleBindings(oldClusterRoleBindings, newClusterRoleBindings, newCP, affectedMRAs)
-	h.compareRoleBindings(oldRoleBindings, newRoleBindings, newCP, affectedMRAs)
+	h.compareClusterRoleBindings(oldClusterRoleBindings, newClusterRoleBindings, oldCP, newCP, affectedMRAs)
+	h.compareRoleBindings(oldRoleBindings, newRoleBindings, oldCP, newCP, affectedMRAs)
 
 	if h.hasOrphanedBindings(newCP, newClusterRoleBindings, newRoleBindings) {
 		// Orphaned bindings detected - reconcile all owners to clean up
@@ -1371,19 +1371,20 @@ func (h *clusterPermissionEventHandler) buildRoleBindingMap(
 // compareClusterRoleBindings compares old and new ClusterRoleBindings and identifies affected MRAs
 func (h *clusterPermissionEventHandler) compareClusterRoleBindings(
 	oldBindings, newBindings map[string]clusterpermissionv1alpha1.ClusterRoleBinding,
-	cp *clusterpermissionv1alpha1.ClusterPermission, affectedMRAs map[string]bool) {
+	oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission,
+	affectedMRAs map[string]bool) {
 
 	for name, newBinding := range newBindings {
 		oldBinding, exists := oldBindings[name]
 
 		if !exists {
-			// Binding added
-			if owner := h.getOwnerFromAnnotation(cp, name); owner != "" {
+			// Binding added - look up owner in new CP
+			if owner := h.getOwnerFromAnnotation(newCP, name); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		} else if !equality.Semantic.DeepEqual(oldBinding, newBinding) {
-			// Binding modified
-			if owner := h.getOwnerFromAnnotation(cp, name); owner != "" {
+			// Binding modified - look up owner in new CP
+			if owner := h.getOwnerFromAnnotation(newCP, name); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		}
@@ -1391,8 +1392,8 @@ func (h *clusterPermissionEventHandler) compareClusterRoleBindings(
 
 	for name := range oldBindings {
 		if _, exists := newBindings[name]; !exists {
-			// Binding removed
-			if owner := h.getOwnerFromAnnotation(cp, name); owner != "" {
+			// Binding removed - look up owner in old CP (annotation removed from new8)
+			if owner := h.getOwnerFromAnnotation(oldCP, name); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		}
@@ -1402,19 +1403,20 @@ func (h *clusterPermissionEventHandler) compareClusterRoleBindings(
 // compareRoleBindings compares old and new RoleBindings and identifies affected MRAs
 func (h *clusterPermissionEventHandler) compareRoleBindings(
 	oldBindings, newBindings map[string]clusterpermissionv1alpha1.RoleBinding,
-	cp *clusterpermissionv1alpha1.ClusterPermission, affectedMRAs map[string]bool) {
+	oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission,
+	affectedMRAs map[string]bool) {
 
 	for key, newBinding := range newBindings {
 		oldBinding, exists := oldBindings[key]
 
 		if !exists {
-			// Binding added
-			if owner := h.getOwnerFromAnnotation(cp, newBinding.Name); owner != "" {
+			// Binding added - look up owner in new CP
+			if owner := h.getOwnerFromAnnotation(newCP, newBinding.Name); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		} else if !equality.Semantic.DeepEqual(oldBinding, newBinding) {
-			// Binding modified
-			if owner := h.getOwnerFromAnnotation(cp, newBinding.Name); owner != "" {
+			// Binding modified - look up owner in new CP
+			if owner := h.getOwnerFromAnnotation(newCP, newBinding.Name); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		}
@@ -1424,8 +1426,8 @@ func (h *clusterPermissionEventHandler) compareRoleBindings(
 		if _, exists := newBindings[key]; !exists {
 			parts := strings.Split(key, "/")
 			if len(parts) == 2 {
-				// Binding removed
-				if owner := h.getOwnerFromAnnotation(cp, parts[1]); owner != "" {
+				// Binding removed - look up owner in old CP (annotation removed from new)
+				if owner := h.getOwnerFromAnnotation(oldCP, parts[1]); owner != "" {
 					affectedMRAs[owner] = true
 				}
 			}
