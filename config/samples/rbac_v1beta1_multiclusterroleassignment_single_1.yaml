@@ -1,4 +1,4 @@
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: test-multicluster-role-assignment-single-clusterrolebinding
@@ -9,10 +9,10 @@ spec:
     name: test-user-single-clusterrolebinding
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
-  - name: test-role-assignment
-    clusterRole: view
-    clusterSelection:
-      type: placements
-      placements:
-      - name: placement-cluster-01
-        namespace: open-cluster-management-global-set
+    - name: test-role-assignment
+      clusterRole: view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: placement-cluster-01
+            namespace: open-cluster-management-global-set

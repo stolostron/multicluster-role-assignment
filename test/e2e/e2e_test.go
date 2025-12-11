@@ -32,7 +32,7 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/stolostron/multicluster-role-assignment/test/utils"
 
-	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	rbacv1beta1 "github.com/stolostron/multicluster-role-assignment/api/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
@@ -418,7 +418,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"MulticlusterRoleAssignment is created", func() {
 
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
@@ -429,7 +429,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -467,7 +467,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 			})
 
@@ -494,7 +494,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should modify ClusterPermission when MulticlusterRoleAssignment role name is edited", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
@@ -505,7 +505,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and modify MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("fetching the initial MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -552,7 +552,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 			})
 
@@ -581,7 +581,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"is created", func() {
 
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
@@ -592,7 +592,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -635,7 +635,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 			})
 
@@ -667,7 +667,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should create and delete MulticlusterRoleAssignment", func() {
 				By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
-				applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml")
+				applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml")
 
 				By("deleting the MulticlusterRoleAssignment")
 				deleteK8sMRA(testMulticlusterRoleAssignmentSingleRBName)
@@ -687,7 +687,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should create multiple ClusterPermissions across different clusters", func() {
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
@@ -700,7 +700,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -785,7 +785,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("verifying binding annotations have semantic consistency")
 					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+						validateBindingConsistency(cp, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 					}
 				})
 			})
@@ -818,7 +818,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should handle creating and deleting a ClusterPermission for a new and unique cluster", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
@@ -842,7 +842,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create initial MRA and managed cluster", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("creating newmanagedcluster04 namespace")
 					cmd := exec.Command("kubectl", "create", "ns", "newmanagedcluster04")
@@ -859,12 +859,12 @@ var _ = Describe("Manager", Ordered, func() {
 						testMulticlusterRoleAssignmentMultiple1Name, openClusterManagementGlobalSetNamespace)
 					unmarshalJSON(mraJSON, &mra)
 
-					newRoleAssignment := rbacv1alpha1.RoleAssignment{
+					newRoleAssignment := rbacv1beta1.RoleAssignment{
 						Name:        "cluster04-assignment",
 						ClusterRole: "view",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{
 									Name:      "placement-newcluster-04",
 									Namespace: openClusterManagementGlobalSetNamespace,
@@ -912,7 +912,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 			})
 
@@ -946,7 +946,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(updatedMraJSON, &mra)
 
 					By("removing cluster04-assignment from MRA")
-					var updatedRoleAssignments []rbacv1alpha1.RoleAssignment
+					var updatedRoleAssignments []rbacv1beta1.RoleAssignment
 					for _, ra := range mra.Spec.RoleAssignments {
 						if ra.Name != "cluster04-assignment" {
 							updatedRoleAssignments = append(updatedRoleAssignments, ra)
@@ -1000,7 +1000,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"ClusterPermissions modify", func() {
 
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+			var mras [4]rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
@@ -1018,10 +1018,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
 					manifestFiles := []string{
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -1217,7 +1217,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"ClusterPermissions accordingly", func() {
 
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+			var mras [4]rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
@@ -1236,10 +1236,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and comprehensively modify all MulticlusterRoleAssignments", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
 					manifestFiles := []string{
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -1283,7 +1283,7 @@ var _ = Describe("Manager", Ordered, func() {
 					By(fmt.Sprintf("Comprehensive modification of %s", testMulticlusterRoleAssignmentSingleRBName))
 					mras[2].Spec.Subject.Name = "modified-user-single-rolebinding"
 					mras[2].Spec.RoleAssignments[0].Name = "modified-test-role-assignment-namespaced"
-					mras[2].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+					mras[2].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 						{
 							Name:      "placement-cluster-01-02-03",
 							Namespace: openClusterManagementGlobalSetNamespace,
@@ -1300,7 +1300,7 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.RoleAssignments[0].Name = "modified-test-role-assignment"
 					mras[3].Spec.RoleAssignments[0].ClusterRole = "admin"
 					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system", "applications"}
-					mras[3].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+					mras[3].Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 						{
 							Name:      "placement-cluster-01-02-03",
 							Namespace: openClusterManagementGlobalSetNamespace,
@@ -1521,7 +1521,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should handle rapid overlapping PATCH operations and maintain consistency", func() {
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
@@ -1534,7 +1534,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create MRA and apply many overlapping PATCH operations", func() {
 					By("creating MulticlusterRoleAssignment using multiple_2.yaml")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml")
 
 					By("fetching initial MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -1883,13 +1883,13 @@ var _ = Describe("Manager", Ordered, func() {
 					finalMRA := mra.DeepCopy()
 					finalMRA.Spec.Subject.Name = "rapid-final-group"
 					finalMRA.Spec.Subject.Kind = "Group"
-					finalMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+					finalMRA.Spec.RoleAssignments = []rbacv1beta1.RoleAssignment{
 						{
 							Name:        "admin-assignment-cluster-1",
 							ClusterRole: "view",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-01-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
@@ -1901,9 +1901,9 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:             "edit-assignment-single-namespace",
 							ClusterRole:      "edit",
 							TargetNamespaces: []string{"default", "rapid-dev-1", "rapid-dev-2", "rapid-final-ns"},
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
@@ -1915,9 +1915,9 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:             "monitoring-assignment-multi-namespace-single-cluster",
 							ClusterRole:      "admin",
 							TargetNamespaces: []string{"monitoring", "observability"},
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
@@ -1929,9 +1929,9 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:             "dev-assignment-single-namespace-multi-cluster",
 							ClusterRole:      "admin",
 							TargetNamespaces: []string{"rapid-admin-ns"},
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-01",
 										Namespace: openClusterManagementGlobalSetNamespace,
@@ -1944,9 +1944,9 @@ var _ = Describe("Manager", Ordered, func() {
 							ClusterRole: "view",
 							TargetNamespaces: []string{
 								"development", "rapid-staging", "logging", "kube-system", "rapid-prod", "rapid-test"},
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-01-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
@@ -2062,7 +2062,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("verifying binding annotations have semantic consistency after rapid patching")
 					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+						validateBindingConsistency(cp, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 					}
 				})
 			})
@@ -2095,7 +2095,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"with shared ClusterPermissions", func() {
 
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+			var mras [4]rbacv1beta1.MulticlusterRoleAssignment
 
 			Context("resource creation and deletion", func() {
 				var mraJSONs [4]string
@@ -2104,10 +2104,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and DELETE operations")
 					manifestFiles := []string{
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -2313,7 +2313,7 @@ var _ = Describe("Manager", Ordered, func() {
 		// PlacementDecision Dynamic Update Tests
 		Context("Should reconcile MRA when PlacementDecision changes", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName,
@@ -2323,7 +2323,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("Create MRA with single cluster setup", func() {
 				It("should create MRA referencing Placement targeting only managedcluster01", func() {
 					By("creating MRA referencing Placement targeting only managedcluster01")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MRA to be created and fetching it")
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2360,7 +2360,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 
 				})
 
@@ -2382,7 +2382,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 
 				It("should have correct MRA status for both clusters", func() {
@@ -2477,19 +2477,19 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MRA references non-existent Placement", func() {
 				It("should have MRA status reflecting PlacementNotFound", Label("allows-errors"), func() {
 					By("patching the MRA to reference non-existent Placement")
-					spec := rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					spec := rbacv1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: rbacv1.Subject{
 							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
-						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						RoleAssignments: []rbacv1beta1.RoleAssignment{
 							{
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
-								ClusterSelection: rbacv1alpha1.ClusterSelection{
+								ClusterSelection: rbacv1beta1.ClusterSelection{
 									Type: "placements",
-									Placements: []rbacv1alpha1.PlacementRef{
+									Placements: []rbacv1beta1.PlacementRef{
 										{
 											Name:      "non-existent-placement",
 											Namespace: openClusterManagementGlobalSetNamespace,
@@ -2520,19 +2520,19 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("Restore valid placement and verify recovery", func() {
 				It("should patch MRA back to valid placement", func() {
 					By("patching the MRA to reference valid Placement again")
-					spec := rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					spec := rbacv1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: rbacv1.Subject{
 							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
-						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						RoleAssignments: []rbacv1beta1.RoleAssignment{
 							{
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
-								ClusterSelection: rbacv1alpha1.ClusterSelection{
+								ClusterSelection: rbacv1beta1.ClusterSelection{
 									Type: "placements",
-									Placements: []rbacv1alpha1.PlacementRef{
+									Placements: []rbacv1beta1.PlacementRef{
 										{
 											Name:      "placement-cluster-01",
 											Namespace: openClusterManagementGlobalSetNamespace,
@@ -2607,7 +2607,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create MRA with multiple roleAssignments referencing different placements", func() {
 					By("applying MRA with 4 roleAssignments with cluster01 targeted by 3 of them")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("fetching MRA")
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2687,7 +2687,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("Single RoleAssignment with multiple overlapping Placements", func() {
 				BeforeAll(func() {
 					// Create the MRA that was cleaned up by the previous context
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 				})
 
 				AfterAll(func() {
@@ -2705,19 +2705,19 @@ var _ = Describe("Manager", Ordered, func() {
 						[]string{"managedcluster01", "managedcluster02"})
 
 					By("patching MRA to reference TWO overlapping placements in one roleAssignment")
-					spec := rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					spec := rbacv1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: rbacv1.Subject{
 							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
-						RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						RoleAssignments: []rbacv1beta1.RoleAssignment{
 							{
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
-								ClusterSelection: rbacv1alpha1.ClusterSelection{
+								ClusterSelection: rbacv1beta1.ClusterSelection{
 									Type: "placements",
-									Placements: []rbacv1alpha1.PlacementRef{
+									Placements: []rbacv1beta1.PlacementRef{
 										{
 											Name:      "placement-cluster-01",
 											Namespace: openClusterManagementGlobalSetNamespace,
@@ -2780,7 +2780,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should reconcile ClusterPermission when manually modified - tests drift correction", func() {
 			var clusterPermission clusterpermissionv1alpha1.ClusterPermission
-			var mra rbacv1alpha1.MulticlusterRoleAssignment
+			var mra rbacv1beta1.MulticlusterRoleAssignment
 			var initialCPGeneration int64
 
 			AfterAll(func() {
@@ -2792,7 +2792,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one ClusterRoleBinding")
-					applyK8sManifest("config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml")
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2849,7 +2849,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateMRAOwnerAnnotations(clusterPermission, mra)
 
 					By("verifying binding annotations have semantic consistency")
-					validateBindingConsistency(clusterPermission, []rbacv1alpha1.MulticlusterRoleAssignment{mra})
+					validateBindingConsistency(clusterPermission, []rbacv1beta1.MulticlusterRoleAssignment{mra})
 				})
 			})
 		})
@@ -2858,7 +2858,7 @@ var _ = Describe("Manager", Ordered, func() {
 			"correction", func() {
 
 			var clusterPermissions [3]clusterpermissionv1alpha1.ClusterPermission
-			var mras [4]rbacv1alpha1.MulticlusterRoleAssignment
+			var mras [4]rbacv1beta1.MulticlusterRoleAssignment
 			var initialCPGenerations [3]int64
 
 			AfterAll(func() {
@@ -2877,10 +2877,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially")
 					manifestFiles := []string{
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_multiple_1.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_2.yaml",
-						"config/samples/rbac_v1alpha1_multiclusterroleassignment_single_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -3132,7 +3132,7 @@ func validateClusterPermissionBindings(clusterPermission clusterpermissionv1alph
 }
 
 // validateMRASuccessConditions validates the expected success conditions for a MulticlusterRoleAssignment.
-func validateMRASuccessConditions(mra rbacv1alpha1.MulticlusterRoleAssignment) {
+func validateMRASuccessConditions(mra rbacv1beta1.MulticlusterRoleAssignment) {
 	readyCondition := findCondition(mra.Status.Conditions, "Ready")
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
@@ -3158,9 +3158,9 @@ func findCondition(conditions []metav1.Condition, conditionType string) *metav1.
 
 // mapRoleAssignmentsByName creates a map of role assignments indexed by name.
 func mapRoleAssignmentsByName(
-	mra rbacv1alpha1.MulticlusterRoleAssignment) map[string]rbacv1alpha1.RoleAssignmentStatus {
+	mra rbacv1beta1.MulticlusterRoleAssignment) map[string]rbacv1beta1.RoleAssignmentStatus {
 
-	roleAssignmentsByName := make(map[string]rbacv1alpha1.RoleAssignmentStatus)
+	roleAssignmentsByName := make(map[string]rbacv1beta1.RoleAssignmentStatus)
 	for _, ra := range mra.Status.RoleAssignments {
 		roleAssignmentsByName[ra.Name] = ra
 	}
@@ -3168,7 +3168,7 @@ func mapRoleAssignmentsByName(
 }
 
 // validateRoleAssignmentSuccessStatus validates that a role assignment has the expected success statuses.
-func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus,
+func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1beta1.RoleAssignmentStatus,
 	name string) {
 
 	assignment := roleAssignmentsByName[name]
@@ -3182,7 +3182,7 @@ func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]rbacv1
 
 // validateRoleAssignmentNoClustersStatus validates that a role assignment has the expected
 // pending status when no clusters are resolved from the placement.
-func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus,
+func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]rbacv1beta1.RoleAssignmentStatus,
 	name string) {
 
 	assignment := roleAssignmentsByName[name]
@@ -3194,7 +3194,7 @@ func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]rba
 
 // validateRoleAssignmentPlacementNotFoundStatus validates that a role assignment has placement not found status.
 func validateRoleAssignmentPlacementNotFoundStatus(
-	roleassignmentsByName map[string]rbacv1alpha1.RoleAssignmentStatus,
+	roleassignmentsByName map[string]rbacv1beta1.RoleAssignmentStatus,
 	name string) {
 	assignment := roleassignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
@@ -3292,7 +3292,7 @@ func cleanupTestResources(mraName string, clusterNames []string) {
 
 // validateMRAAllClustersAnnotation validates that the MulticlusterRoleAssignment contains the correct all clusters
 // annotation that matches the clusters targeted in its role assignments.
-func validateMRAAllClustersAnnotation(mra rbacv1alpha1.MulticlusterRoleAssignment) {
+func validateMRAAllClustersAnnotation(mra rbacv1beta1.MulticlusterRoleAssignment) {
 	const allClustersAnnotation = "clusters.rbac.open-cluster-management.io"
 
 	expectedClusters := getTargetedClustersFromMRA(mra)
@@ -3326,7 +3326,7 @@ func validateMRAAllClustersAnnotation(mra rbacv1alpha1.MulticlusterRoleAssignmen
 }
 
 // getClustersFromPlacements queries PlacementDecisions for the given Placements and returns the selected clusters.
-func getClustersFromPlacements(placements []rbacv1alpha1.PlacementRef) []string {
+func getClustersFromPlacements(placements []rbacv1beta1.PlacementRef) []string {
 	var clusters []string
 	for _, placement := range placements {
 		cmd := exec.Command("kubectl", "get", "placementdecision",
@@ -3345,7 +3345,7 @@ func getClustersFromPlacements(placements []rbacv1alpha1.PlacementRef) []string 
 }
 
 // getTargetedClustersFromMRA extracts all unique cluster names targeted by the MRA's role assignments.
-func getTargetedClustersFromMRA(mra rbacv1alpha1.MulticlusterRoleAssignment) []string {
+func getTargetedClustersFromMRA(mra rbacv1beta1.MulticlusterRoleAssignment) []string {
 	var uniqueClusters []string
 	clusterMap := make(map[string]bool)
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
@@ -3363,7 +3363,7 @@ func getTargetedClustersFromMRA(mra rbacv1alpha1.MulticlusterRoleAssignment) []s
 // validateMRAOwnerAnnotations validates that this ClusterPermission contains the correct number of owner annotations
 // for this MulticlusterRoleAssignment, with proper MRA identifier values, and no unexpected annotations.
 func validateMRAOwnerAnnotations(cp clusterpermissionv1alpha1.ClusterPermission,
-	mra rbacv1alpha1.MulticlusterRoleAssignment) {
+	mra rbacv1beta1.MulticlusterRoleAssignment) {
 
 	mraNamespaceAndName := fmt.Sprintf("%s/%s", mra.Namespace, mra.Name)
 	clusterName := cp.Namespace
@@ -3400,7 +3400,7 @@ func validateMRAOwnerAnnotations(cp clusterpermissionv1alpha1.ClusterPermission,
 // validateBindingConsistency validates that each owner annotation references a ClusterPermission binding whose
 // properties (subject, role, namespace) are consistent with what exists on the referenced MRA.
 func validateBindingConsistency(cp clusterpermissionv1alpha1.ClusterPermission,
-	mras []rbacv1alpha1.MulticlusterRoleAssignment) {
+	mras []rbacv1beta1.MulticlusterRoleAssignment) {
 
 	for annotationKey, annotationValue := range cp.Annotations {
 		if !strings.HasPrefix(annotationKey, clusterPermissionOwnerAnnotationPrefix) {
@@ -3410,7 +3410,7 @@ func validateBindingConsistency(cp clusterpermissionv1alpha1.ClusterPermission,
 
 		bindingName := strings.TrimPrefix(annotationKey, clusterPermissionOwnerAnnotationPrefix)
 
-		var referencedMRA *rbacv1alpha1.MulticlusterRoleAssignment
+		var referencedMRA *rbacv1beta1.MulticlusterRoleAssignment
 		for _, mra := range mras {
 			if fmt.Sprintf("%s/%s", mra.Namespace, mra.Name) == referencedMRANamespaceAndName {
 				referencedMRA = &mra
@@ -3468,7 +3468,7 @@ func locateClusterPermissionBinding(cp clusterpermissionv1alpha1.ClusterPermissi
 
 // checkMRAForBindingExistance checks if the given MRA has a role assignment that would justify creating a binding with
 // the given properties on the specified cluster.
-func checkMRAForBindingExistance(mra rbacv1alpha1.MulticlusterRoleAssignment, binding ExpectedBinding,
+func checkMRAForBindingExistance(mra rbacv1beta1.MulticlusterRoleAssignment, binding ExpectedBinding,
 	clusterName string) bool {
 
 	if mra.Spec.Subject.Name != binding.SubjectName {

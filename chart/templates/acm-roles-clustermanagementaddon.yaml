@@ -1,4 +1,4 @@
-apiVersion: addon.open-cluster-management.io/v1alpha1
+apiVersion: addon.open-cluster-management.io/v1beta1
 kind: ClusterManagementAddOn
 metadata:
   name: acm-roles
@@ -16,5 +16,5 @@ spec:
   installStrategy:
     type: Placements
     placements:
-    - name: acm-roles-placement
-      namespace: open-cluster-management-global-set
+      - name: acm-roles-placement
+        namespace: open-cluster-management-global-set

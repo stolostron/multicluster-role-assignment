@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	rbacv1alpha1 "github.com/stolostron/multicluster-role-assignment/api/v1alpha1"
+	rbacv1beta1 "github.com/stolostron/multicluster-role-assignment/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -55,7 +55,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Namespace: multiclusterRoleAssignmentNamespace,
 	}
 
-	var mra *rbacv1alpha1.MulticlusterRoleAssignment
+	var mra *rbacv1beta1.MulticlusterRoleAssignment
 	var cp *clusterpermissionv1alpha1.ClusterPermission
 
 	const roleAssignment1Name = "test-assignment-1"
@@ -110,24 +110,24 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			ctx, k8sClient, "decision-1", placement2Name, []string{cluster3Name})).To(Succeed())
 
 		By("Creating the MulticlusterRoleAssignment")
-		mra = &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra = &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       multiclusterRoleAssignmentName,
 				Namespace:  multiclusterRoleAssignmentNamespace,
 				Finalizers: []string{FinalizerName},
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        roleAssignment1Name,
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -135,9 +135,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{
 						Name:        roleAssignment2Name,
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -150,14 +150,14 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 	AfterEach(func() {
 		By("Removing finalizer from MulticlusterRoleAssignment")
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		if err := k8sClient.Get(ctx, mraNamespacedName, mra); err == nil {
 			mra.Finalizers = []string{}
 			Expect(k8sClient.Update(ctx, mra)).To(Succeed())
 		}
 
 		By("Deleting the MulticlusterRoleAssignment")
-		mra = &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra = &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      mraNamespacedName.Name,
 				Namespace: mraNamespacedName.Namespace,
@@ -167,7 +167,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		By("Waiting for MulticlusterRoleAssignment deletion to complete")
 		Eventually(func() bool {
-			err := k8sClient.Get(ctx, mraNamespacedName, &rbacv1alpha1.MulticlusterRoleAssignment{})
+			err := k8sClient.Get(ctx, mraNamespacedName, &rbacv1beta1.MulticlusterRoleAssignment{})
 			return apierrors.IsNotFound(err)
 		}, "10s", "100ms").Should(BeTrue(), "MulticlusterRoleAssignment should be deleted")
 
@@ -260,24 +260,24 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		It("should return reconcile requests for matching MRAs", func() {
 			// Create an MRA that references a test placement
-			testMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+			testMRA := &rbacv1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-mra-for-pd-lookup",
 					Namespace: multiclusterRoleAssignmentNamespace,
 				},
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 					Subject: rbacv1.Subject{
 						Kind:     "User",
 						APIGroup: "rbac.authorization.k8s.io",
 						Name:     "test-user-pd-lookup",
 					},
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
 							Name:        "pd-lookup-assignment",
 							ClusterRole: "view",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{
 										Name:      "lookup-test-placement",
 										Namespace: multiclusterRoleAssignmentNamespace,
@@ -331,12 +331,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 	Context("extractPlacementKeys", func() {
 		It("should extract single placement reference", func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "ns1", Name: "placement1"},
 								},
 							},
@@ -349,12 +349,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		It("should extract multiple placement references", func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "ns1", Name: "placement1"},
 									{Namespace: "ns2", Name: "placement2"},
 								},
@@ -368,19 +368,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		It("should deduplicate duplicate placements", func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "ns1", Name: "placement1"},
 								},
 							},
 						},
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "ns1", Name: "placement1"}, // duplicate
 								},
 							},
@@ -393,13 +393,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		It("should return empty slice when no placements", func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type:       "placements",
-								Placements: []rbacv1alpha1.PlacementRef{},
+								Placements: []rbacv1beta1.PlacementRef{},
 							},
 						},
 					},
@@ -410,19 +410,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		It("should handle mixed placements across role assignments", func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "team-a", Name: "prod"},
 								},
 							},
 						},
 						{
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
-								Placements: []rbacv1alpha1.PlacementRef{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Namespace: "team-b", Name: "dev"},
 								},
 							},
@@ -540,20 +540,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		It("Should prevent duplicate role assignment names via CRD validation", func() {
 			By("Attempting to create MulticlusterRoleAssignment with duplicate role assignment names")
-			duplicateMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+			duplicateMRA := &rbacv1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-duplicate-mra",
 					Namespace: mra.Namespace,
 				},
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 					Subject: mra.Spec.Subject,
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
 							Name:        "duplicate-name",
 							ClusterRole: "role1",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Name: placement1Name, Namespace: mra.Namespace},
 								},
 							},
@@ -561,9 +561,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						{
 							Name:        "duplicate-name",
 							ClusterRole: "role2",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Name: placement2Name, Namespace: mra.Namespace},
 								},
 							},
@@ -719,7 +719,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should not duplicate or change existing role assignment statuses", func() {
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
 						Status:  StatusTypeActive,
@@ -765,7 +765,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						ObservedGeneration: 1,
 					},
 				}
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
 						Status:  StatusTypeActive,
@@ -849,7 +849,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle empty role assignments gracefully", func() {
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{}
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{}
 
 				Expect(func() {
 					reconciler.clearStaleStatus(mra)
@@ -859,13 +859,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should remove stale role assignment status entries when role assignment names change", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+				mra.Spec.RoleAssignments = []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "new-role-assignment-1",
 						ClusterRole: "view",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -873,15 +873,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{
 						Name:        roleAssignment2Name,
 						ClusterRole: "edit",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
 					},
 				}
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
 						Status:  StatusTypeActive,
@@ -912,13 +912,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should keep all role assignment status entries when names match spec", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+				mra.Spec.RoleAssignments = []rbacv1beta1.RoleAssignment{
 					{
 						Name:        roleAssignment1Name,
 						ClusterRole: "view",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -926,15 +926,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{
 						Name:        roleAssignment2Name,
 						ClusterRole: "edit",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
 					},
 				}
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
 						Status:  StatusTypeActive,
@@ -970,7 +970,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				}
 
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:   roleAssignment1Name,
 						Status: StatusTypeActive,
@@ -1018,7 +1018,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return Unknown when status cannot be determined", func() {
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{}
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{}
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionUnknown))
@@ -1062,7 +1062,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should preserve existing error status from placement resolution", func() {
-				mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    mra.Spec.RoleAssignments[0].Name,
 						Status:  StatusTypeError,
@@ -1115,10 +1115,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should update role assignment status to failed for missing placements", func() {
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: "missing-placement-1", Namespace: multiclusterRoleAssignmentNamespace},
 				}
-				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: "missing-placement-2", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -1146,10 +1146,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-1", emptyPlacementName, []string{})).To(Succeed())
 
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
 				}
-				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -1164,7 +1164,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle multiple RoleAssignments with mixed success/failure", func() {
-				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: "missing-placement", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -1190,7 +1190,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-1", overlappingPlacement, []string{cluster2Name, cluster3Name})).To(Succeed())
 
-				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: overlappingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -1202,7 +1202,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("resolvePlacementClusters", func() {
 			It("Should resolve clusters from a single PlacementDecision", func() {
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      placement1Name,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1221,7 +1221,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-2", multiDecisionPlacement, []string{"cluster-c", "cluster-d"})).To(Succeed())
 
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      multiDecisionPlacement,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1231,7 +1231,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return error when Placement not found", func() {
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      "non-existent-placement",
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1245,7 +1245,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				noDecisionPlacement := "no-decision-placement"
 				Expect(createTestPlacement(ctx, k8sClient, noDecisionPlacement)).To(Succeed())
 
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      noDecisionPlacement,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1260,7 +1260,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-1", emptyStatusPlacement, []string{})).To(Succeed())
 
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      emptyStatusPlacement,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1278,7 +1278,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-2", dupePlacement, []string{"cluster-y", "cluster-z"})).To(Succeed())
 
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      dupePlacement,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1299,7 +1299,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						"bravo-cluster",
 					})).To(Succeed())
 
-				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolvePlacementClusters(ctx, rbacv1beta1.PlacementRef{
 					Name:      sortedPlacement,
 					Namespace: multiclusterRoleAssignmentNamespace,
 				})
@@ -1315,7 +1315,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("resolveAllPlacementClusters", func() {
 			It("Should resolve clusters from single Placement", func() {
-				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 				})
 				Expect(err).NotTo(HaveOccurred())
@@ -1324,7 +1324,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should resolve clusters from multiple Placements", func() {
-				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 					{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 				})
@@ -1334,7 +1334,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return error when any Placement not found", func() {
-				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 					{Name: "missing-placement", Namespace: multiclusterRoleAssignmentNamespace},
 				})
@@ -1349,7 +1349,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement1)).To(Succeed())
 				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement2)).To(Succeed())
 
-				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: emptyPlacement1, Namespace: multiclusterRoleAssignmentNamespace},
 					{Name: emptyPlacement2, Namespace: multiclusterRoleAssignmentNamespace},
 				})
@@ -1364,13 +1364,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ctx, k8sClient, "decision-1", reverseOrderingPlacement, []string{cluster2Name, cluster1Name})).To(Succeed())
 
 				// Call multiple times to verify consistent ordering
-				clusters1, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters1, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 					{Name: reverseOrderingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 				})
 				Expect(err).NotTo(HaveOccurred())
 
-				clusters2, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1alpha1.PlacementRef{
+				clusters2, err := reconciler.resolveAllPlacementClusters(ctx, []rbacv1beta1.PlacementRef{
 					{Name: reverseOrderingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 					{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 				})
@@ -1521,11 +1521,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("isRoleAssignmentTargetingCluster", func() {
 			It("Should return true when cluster is in the list", func() {
-				roleAssignment := rbacv1alpha1.RoleAssignment{
+				roleAssignment := rbacv1beta1.RoleAssignment{
 					Name: "test-assignment",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 						},
 					},
@@ -1542,11 +1542,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return false when cluster is not in the list", func() {
-				roleAssignment := rbacv1alpha1.RoleAssignment{
+				roleAssignment := rbacv1beta1.RoleAssignment{
 					Name: "test-assignment",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 						},
 					},
@@ -1563,11 +1563,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return false when role assignment is not in map (placement resolution failed)", func() {
-				roleAssignment := rbacv1alpha1.RoleAssignment{
+				roleAssignment := rbacv1beta1.RoleAssignment{
 					Name: "failed-assignment",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "non-existent-placement", Namespace: multiclusterRoleAssignmentNamespace},
 						},
 					},
@@ -1584,11 +1584,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				emptyPlacement := "empty-targeting-placement"
 				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement)).To(Succeed())
 
-				roleAssignment := rbacv1alpha1.RoleAssignment{
+				roleAssignment := rbacv1beta1.RoleAssignment{
 					Name: "empty-assignment",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: emptyPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 						},
 					},
@@ -1608,11 +1608,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-1", thirdPlacement, []string{"cluster-alpha", "cluster-beta"})).To(Succeed())
 
-				roleAssignment := rbacv1alpha1.RoleAssignment{
+				roleAssignment := rbacv1beta1.RoleAssignment{
 					Name: "multi-placement-assignment",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							{Name: thirdPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 						},
@@ -1762,7 +1762,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should handle NotFound gracefully when deleting ClusterPermission (race condition)", func() {
 				// Create MRA that doesn't target cluster2 (will trigger delete)
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -1973,7 +1973,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacementDecision(
 					ctx, k8sClient, "decision-1", "test-placement-nonexistent", []string{nonExistentCluster})).To(Succeed())
 
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: "test-placement-nonexistent", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 				reconciler.initializeRoleAssignmentStatuses(mra)
@@ -2020,7 +2020,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ctx, k8sClient, "decision-1", "test-placement-mixed",
 					[]string{existingCluster, nonExistentCluster})).To(Succeed())
 
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: "test-placement-mixed", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 				reconciler.initializeRoleAssignmentStatuses(mra)
@@ -2079,7 +2079,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should generate different names for different MRAs", func() {
-				otherMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+				otherMRA := &rbacv1beta1.MulticlusterRoleAssignment{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "other-mra",
 						Namespace: "other-namespace",
@@ -2208,7 +2208,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should return empty slice when role assignment does not target cluster", func() {
 				mra.Spec.RoleAssignments[0].Name = "other-cluster-role"
 				mra.Spec.RoleAssignments[0].ClusterRole = "view"
-				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1alpha1.PlacementRef{
+				mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []rbacv1beta1.PlacementRef{
 					{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
@@ -2273,13 +2273,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should generate annotations for multiple role assignments targeting same cluster", func() {
-				mra.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+				mra.Spec.RoleAssignments = []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "admin-role",
 						ClusterRole: "cluster-admin",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -2287,9 +2287,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{
 						Name:        "edit-role",
 						ClusterRole: "edit",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -2728,7 +2728,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		const errorTestMRAName = "error-test-mra"
 		const errorTestNamespaceName = "error-test-namespace"
 
-		var errorTestMRA *rbacv1alpha1.MulticlusterRoleAssignment
+		var errorTestMRA *rbacv1beta1.MulticlusterRoleAssignment
 		var errorTestNamespace *corev1.Namespace
 
 		BeforeEach(func() {
@@ -2739,21 +2739,21 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(k8sClient.Create(ctx, errorTestNamespace)).To(Succeed())
 			}
 
-			errorTestMRA = &rbacv1alpha1.MulticlusterRoleAssignment{
+			errorTestMRA = &rbacv1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       errorTestMRAName,
 					Namespace:  errorTestNamespaceName,
 					Finalizers: []string{FinalizerName},
 				},
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 					Subject: rbacv1.Subject{Kind: "User", Name: "test-user"},
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
 							Name:        "error-test-assignment",
 							ClusterRole: "error-test-role",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 								},
 							},
@@ -2764,7 +2764,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		AfterEach(func() {
-			mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+			mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 			if err := k8sClient.Get(ctx, client.ObjectKey{
 				Name:      errorTestMRAName,
 				Namespace: errorTestNamespaceName,
@@ -2902,13 +2902,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Context("Status Update Failures", func() {
 			It("Should return error when status update fails during reconciliation", func() {
-				errorTestMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{
+				errorTestMRA.Spec.RoleAssignments = []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "assignment-1",
 						ClusterRole: "role1",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 							},
 						},
@@ -3147,7 +3147,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	})
 
 	Context("Finalizer handling in Reconcile", func() {
-		var mra *rbacv1alpha1.MulticlusterRoleAssignment
+		var mra *rbacv1beta1.MulticlusterRoleAssignment
 		var testNamespace *corev1.Namespace
 
 		BeforeEach(func() {
@@ -3161,23 +3161,23 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
 			}
 
-			mra = &rbacv1alpha1.MulticlusterRoleAssignment{
+			mra = &rbacv1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-finalizer-mra",
 					Namespace: "test-namespace",
 				},
-				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 					Subject: rbacv1.Subject{
 						Kind: "User",
 						Name: "test-user",
 					},
-					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+					RoleAssignments: []rbacv1beta1.RoleAssignment{
 						{
 							Name:        "test-assignment",
 							ClusterRole: "test-role",
-							ClusterSelection: rbacv1alpha1.ClusterSelection{
+							ClusterSelection: rbacv1beta1.ClusterSelection{
 								Type: "placements",
-								Placements: []rbacv1alpha1.PlacementRef{
+								Placements: []rbacv1beta1.PlacementRef{
 									{Name: placement1Name, Namespace: multiclusterRoleAssignmentNamespace},
 								},
 							},
@@ -3202,7 +3202,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify finalizer was added
-				updatedMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				updatedMra := &rbacv1beta1.MulticlusterRoleAssignment{}
 				err = k8sClient.Get(ctx, client.ObjectKey{
 					Name:      mra.Name,
 					Namespace: mra.Namespace,
@@ -3217,7 +3217,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
 
 				// Get initial resource version
-				initialMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				initialMra := &rbacv1beta1.MulticlusterRoleAssignment{}
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      mra.Name,
 					Namespace: mra.Namespace,
@@ -3234,7 +3234,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify finalizer is still present but resource wasn't updated due to finalizer
-				updatedMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+				updatedMra := &rbacv1beta1.MulticlusterRoleAssignment{}
 				err = k8sClient.Get(ctx, client.ObjectKey{
 					Name:      mra.Name,
 					Namespace: mra.Namespace,
@@ -3269,7 +3269,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					err := k8sClient.Get(ctx, client.ObjectKey{
 						Name:      mra.Name,
 						Namespace: mra.Namespace,
-					}, &rbacv1alpha1.MulticlusterRoleAssignment{})
+					}, &rbacv1beta1.MulticlusterRoleAssignment{})
 					return apierrors.IsNotFound(err)
 				}, "5s", "100ms").Should(BeTrue(), "Resource should be deleted after finalizer removal")
 			})
@@ -3302,7 +3302,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		AfterEach(func() {
-			testMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+			testMra := &rbacv1beta1.MulticlusterRoleAssignment{}
 			err := k8sClient.Get(ctx, client.ObjectKey{
 				Name:      mra.Name,
 				Namespace: mra.Namespace,
@@ -3328,7 +3328,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1alpha1.AddToScheme,
+		rbacv1beta1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 		corev1.AddToScheme,
@@ -3338,23 +3338,23 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		}
 	}
 
-	testMra1 := &rbacv1alpha1.MulticlusterRoleAssignment{
+	testMra1 := &rbacv1beta1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multiclusterroleassignment-sample1",
 			Namespace: "open-cluster-management",
 		},
-		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+		Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
 				Name: "test-user1",
 			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			RoleAssignments: []rbacv1beta1.RoleAssignment{
 				{
 					Name:        "test-assignment-1",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement1", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3362,9 +3362,9 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name:        "test-assignment-2",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement2", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3373,23 +3373,23 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		},
 	}
 
-	testMra2 := &rbacv1alpha1.MulticlusterRoleAssignment{
+	testMra2 := &rbacv1beta1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multiclusterroleassignment-sample2",
 			Namespace: "open-cluster-management",
 		},
-		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+		Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
 				Name: "test-user2",
 			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			RoleAssignments: []rbacv1beta1.RoleAssignment{
 				{
 					Name:        "test-assignment-1",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement1", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3397,9 +3397,9 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name:        "test-assignment-2",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement2", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3581,7 +3581,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 func TestAggregateClusters(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1alpha1.AddToScheme,
+		rbacv1beta1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		corev1.AddToScheme,
 	} {
@@ -3590,23 +3590,23 @@ func TestAggregateClusters(t *testing.T) {
 		}
 	}
 
-	testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+	testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multiclusterroleassignment-sample",
 			Namespace: "open-cluster-management",
 		},
-		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+		Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
 				Name: "test-user1",
 			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			RoleAssignments: []rbacv1beta1.RoleAssignment{
 				{
 					Name:        "test-assignment-1",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement1", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3614,9 +3614,9 @@ func TestAggregateClusters(t *testing.T) {
 				{
 					Name:        "test-assignment-2",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement2", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3672,7 +3672,7 @@ func TestAggregateClusters(t *testing.T) {
 	t.Run("Test aggregateClusters", func(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(
 			testMra, placement1, placementDecision1, placement2, placementDecision2).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+			WithStatusSubresource(&rbacv1beta1.MulticlusterRoleAssignment{}).
 			Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
@@ -3680,13 +3680,13 @@ func TestAggregateClusters(t *testing.T) {
 			Scheme: testscheme,
 		}
 
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		err := fakeClient.Get(ctx, types.NamespacedName{Name: testMra.Name, Namespace: testMra.Namespace}, mra)
 		if err != nil {
 			t.Fatalf("get MulticlusterRoleAssignment error = %v", err)
 		}
 
-		mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+		mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 			{
 				Name:    "test-assignment-1",
 				Status:  "Active",
@@ -3718,7 +3718,7 @@ func TestUpdateStatus(t *testing.T) {
 
 	testscheme := scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1alpha1.AddToScheme,
+		rbacv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -3726,24 +3726,24 @@ func TestUpdateStatus(t *testing.T) {
 		}
 	}
 
-	testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+	testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "test-update-status",
 			Namespace:       "open-cluster-management",
 			ResourceVersion: "1",
 		},
-		Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+		Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 			Subject: rbacv1.Subject{
 				Kind: "User",
 				Name: "test-user",
 			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignment{
+			RoleAssignments: []rbacv1beta1.RoleAssignment{
 				{
 					Name:        "test-assignment-1",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement1", Namespace: "open-cluster-management"},
 						},
 					},
@@ -3751,16 +3751,16 @@ func TestUpdateStatus(t *testing.T) {
 				{
 					Name:        "test-assignment-2",
 					ClusterRole: "test-role",
-					ClusterSelection: rbacv1alpha1.ClusterSelection{
+					ClusterSelection: rbacv1beta1.ClusterSelection{
 						Type: "placements",
-						Placements: []rbacv1alpha1.PlacementRef{
+						Placements: []rbacv1beta1.PlacementRef{
 							{Name: "placement2", Namespace: "open-cluster-management"},
 						},
 					},
 				},
 			},
 		},
-		Status: rbacv1alpha1.MulticlusterRoleAssignmentStatus{
+		Status: rbacv1beta1.MulticlusterRoleAssignmentStatus{
 			Conditions: []metav1.Condition{
 				{
 					Type:    ConditionTypeApplied,
@@ -3769,7 +3769,7 @@ func TestUpdateStatus(t *testing.T) {
 					Message: MessageClusterPermissionApplied,
 				},
 			},
-			RoleAssignments: []rbacv1alpha1.RoleAssignmentStatus{
+			RoleAssignments: []rbacv1beta1.RoleAssignmentStatus{
 				{
 					Name:    "test-assignment-1",
 					Status:  StatusTypeActive,
@@ -3788,23 +3788,23 @@ func TestUpdateStatus(t *testing.T) {
 
 	t.Run("Should successfully update status and add Ready condition", func(t *testing.T) {
 		// Create a fresh MRA object for this test
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-update-status-simple",
 				Namespace: "open-cluster-management",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment-1",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "placement1", Namespace: "open-cluster-management"},
 							},
 						},
@@ -3816,7 +3816,7 @@ func TestUpdateStatus(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
 			WithObjects(mra).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+			WithStatusSubresource(&rbacv1beta1.MulticlusterRoleAssignment{}).
 			Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
@@ -3825,7 +3825,7 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Get the object from the fake client
-		fetchedMra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		fetchedMra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		objKey := client.ObjectKey{Name: mra.Name, Namespace: mra.Namespace}
 
 		err := fakeClient.Get(context.TODO(), objKey, fetchedMra)
@@ -3878,7 +3878,7 @@ func TestUpdateStatus(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
 			WithObjects(testMraCopy).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+			WithStatusSubresource(&rbacv1beta1.MulticlusterRoleAssignment{}).
 			Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
@@ -3886,7 +3886,7 @@ func TestUpdateStatus(t *testing.T) {
 			Scheme: testscheme,
 		}
 
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		err := fakeClient.Get(context.TODO(), client.ObjectKey{
 			Name: testMraCopy.Name, Namespace: testMraCopy.Namespace}, mra)
 		if err != nil {
@@ -3894,7 +3894,7 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Clear role assignment statuses to test initialization
-		mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{}
+		mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{}
 
 		err = reconciler.updateStatus(context.TODO(), mra)
 		if err != nil {
@@ -3921,7 +3921,7 @@ func TestUpdateStatus(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(testscheme).
 			WithObjects(testMraCopy).
-			WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+			WithStatusSubresource(&rbacv1beta1.MulticlusterRoleAssignment{}).
 			Build()
 
 		reconciler := &MulticlusterRoleAssignmentReconciler{
@@ -3929,7 +3929,7 @@ func TestUpdateStatus(t *testing.T) {
 			Scheme: testscheme,
 		}
 
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		err := fakeClient.Get(context.TODO(), client.ObjectKey{
 			Name: testMraCopy.Name, Namespace: testMraCopy.Namespace}, mra)
 		if err != nil {
@@ -3947,7 +3947,7 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Set all role assignments to Active
-		mra.Status.RoleAssignments = []rbacv1alpha1.RoleAssignmentStatus{
+		mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 			{
 				Name:    "test-assignment-1",
 				Status:  StatusTypeActive,
@@ -3988,7 +3988,7 @@ func TestUpdateStatus(t *testing.T) {
 			Client: fake.NewClientBuilder().
 				WithScheme(testscheme).
 				WithObjects(testMraCopy).
-				WithStatusSubresource(&rbacv1alpha1.MulticlusterRoleAssignment{}).
+				WithStatusSubresource(&rbacv1beta1.MulticlusterRoleAssignment{}).
 				Build(),
 			conflictsToSimulate: 5, // Always conflicts
 		}
@@ -3998,7 +3998,7 @@ func TestUpdateStatus(t *testing.T) {
 			Scheme: testscheme,
 		}
 
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{}
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{}
 		err := mockClient.Get(context.TODO(), client.ObjectKey{
 			Name: testMraCopy.Name, Namespace: testMraCopy.Namespace}, mra)
 		if err != nil {
@@ -4093,7 +4093,7 @@ func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ..
 	if m.ShouldFailUpdate || m.ShouldFail {
 		if m.TargetResource != "" {
 			switch obj.(type) {
-			case *rbacv1alpha1.MulticlusterRoleAssignment:
+			case *rbacv1beta1.MulticlusterRoleAssignment:
 				if m.TargetResource == "multiclusterroleassignments" {
 					return m.UpdateError
 				}
@@ -4206,7 +4206,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	// Use the same scheme setup pattern as the working tests
 	testscheme := scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1alpha1.AddToScheme,
+		rbacv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -4217,24 +4217,24 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	var err error
 
 	t.Run("Should set annotation when annotations is nil", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "test-mra",
 				Namespace:       "open-cluster-management",
 				ResourceVersion: "1",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "placement1", Namespace: "open-cluster-management"},
 							},
 						},
@@ -4257,7 +4257,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
 		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
 		if err != nil {
 			t.Fatalf("Failed to get updated MRA: %v", err)
@@ -4274,7 +4274,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	})
 
 	t.Run("Should update existing annotation", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "test-mra-2",
 				Namespace:       "open-cluster-management",
@@ -4284,18 +4284,18 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 					AllClustersAnnotation: "old-cluster1;old-cluster2",
 				},
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "placement1", Namespace: "open-cluster-management"},
 							},
 						},
@@ -4317,7 +4317,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
 		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
 		if err != nil {
 			t.Fatalf("Failed to get updated MRA: %v", err)
@@ -4335,24 +4335,24 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	})
 
 	t.Run("Should handle empty clusters list", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "test-mra-3",
 				Namespace:       "open-cluster-management",
 				ResourceVersion: "1",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "placement1", Namespace: "open-cluster-management"},
 							},
 						},
@@ -4374,7 +4374,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
 		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
 		if err != nil {
 			t.Fatalf("Failed to get updated MRA: %v", err)
@@ -4387,24 +4387,24 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	})
 
 	t.Run("Should handle single cluster", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "test-mra-4",
 				Namespace:       "open-cluster-management",
 				ResourceVersion: "1",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "placement1", Namespace: "open-cluster-management"},
 							},
 						},
@@ -4426,7 +4426,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 			t.Fatalf("updateAllClustersAnnotation error = %v", err)
 		}
 
-		var updatedMRA rbacv1alpha1.MulticlusterRoleAssignment
+		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
 		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
 		if err != nil {
 			t.Fatalf("Failed to get updated MRA: %v", err)
@@ -4439,7 +4439,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 	})
 
 	t.Run("Should fail when resource not found during refresh", func(t *testing.T) {
-		mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		mra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "non-existent",
 				Namespace: "open-cluster-management",
@@ -4465,7 +4465,7 @@ func TestUpdateAllClustersAnnotation(t *testing.T) {
 func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	var testScheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1alpha1.AddToScheme,
+		rbacv1beta1.AddToScheme,
 		clusterv1beta1.AddToScheme,
 		clusterpermissionv1alpha1.AddToScheme,
 	} {
@@ -4476,23 +4476,23 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 	t.Run("should delete ClusterPermission when both ClusterRoleBindings and RoleBindings are nil", func(t *testing.T) {
 		// Create test MRA that doesn't target this cluster (will result in empty desired slice)
-		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-mra",
 				Namespace: "test-namespace",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "different-placement", Namespace: "test-namespace"},
 							},
 						},
@@ -4544,23 +4544,23 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	})
 
 	t.Run("should delete ClusterPermission when both ClusterRoleBindings and RoleBindings are empty slices", func(t *testing.T) {
-		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-mra",
 				Namespace: "test-namespace",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "different-placement", Namespace: "test-namespace"},
 							},
 						},
@@ -4615,23 +4615,23 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	})
 
 	t.Run("should delete ClusterPermission when one field is nil and the other is empty", func(t *testing.T) {
-		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-mra",
 				Namespace: "test-namespace",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "different-placement", Namespace: "test-namespace"},
 							},
 						},
@@ -4685,23 +4685,23 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	})
 
 	t.Run("should update ClusterPermission when bindings exist", func(t *testing.T) {
-		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-mra",
 				Namespace: "test-namespace",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "test-placement", Namespace: "test-namespace"},
 							},
 						},
@@ -4777,23 +4777,23 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	})
 
 	t.Run("should handle deletion errors gracefully", func(t *testing.T) {
-		testMra := &rbacv1alpha1.MulticlusterRoleAssignment{
+		testMra := &rbacv1beta1.MulticlusterRoleAssignment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-mra",
 				Namespace: "test-namespace",
 			},
-			Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
 					Kind: "User",
 					Name: "test-user",
 				},
-				RoleAssignments: []rbacv1alpha1.RoleAssignment{
+				RoleAssignments: []rbacv1beta1.RoleAssignment{
 					{
 						Name:        "test-assignment",
 						ClusterRole: "test-role",
-						ClusterSelection: rbacv1alpha1.ClusterSelection{
+						ClusterSelection: rbacv1beta1.ClusterSelection{
 							Type: "placements",
-							Placements: []rbacv1alpha1.PlacementRef{
+							Placements: []rbacv1beta1.PlacementRef{
 								{Name: "different-placement", Namespace: "test-namespace"},
 							},
 						},
