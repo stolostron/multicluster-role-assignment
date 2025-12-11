@@ -447,9 +447,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 	clusters := slices.Collect(maps.Keys(clusterSet))
 	slices.Sort(clusters)
 
-	log.Info("Resolved clusters from Placement", "placement", placementRef.Name, "namespace", placementRef.Namespace,
-		"clusterCount", len(clusters), "clusters", clusters)
-
 	return clusters, nil
 }
 
@@ -457,8 +454,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 // names.
 func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 	ctx context.Context, placements []rbacv1alpha1.PlacementRef) ([]string, error) {
-
-	log := logf.FromContext(ctx)
 
 	allClustersMap := make(map[string]bool)
 
@@ -475,8 +470,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 
 	allClusters := slices.Collect(maps.Keys(allClustersMap))
 	slices.Sort(allClusters)
-
-	log.Info("Resolved all placement clusters", "totalClusters", len(allClusters))
 
 	return allClusters, nil
 }
