@@ -1038,7 +1038,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				}
 
-				reconciler.updateRoleAssignmentStatuses(ctx, mra, []string{cluster1Name, cluster2Name}, state)
+				roleAssignmentClusters := map[string][]string{
+					mra.Spec.RoleAssignments[0].Name: {cluster1Name, cluster2Name},
+				}
+
+				reconciler.updateRoleAssignmentStatuses(
+					mra, []string{cluster1Name, cluster2Name}, state, roleAssignmentClusters)
 
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
@@ -1070,7 +1075,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					SuccessClusters: []string{cluster1Name},
 				}
 
-				reconciler.updateRoleAssignmentStatuses(ctx, mra, []string{cluster1Name}, state)
+				// Empty role assignment clusters map
+				roleAssignmentClusters := map[string][]string{}
+
+				reconciler.updateRoleAssignmentStatuses(mra, []string{cluster1Name}, state, roleAssignmentClusters)
 
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
@@ -1090,13 +1098,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	Context("Cluster Aggregation Tests", func() {
 		Describe("aggregateClusters", func() {
 			It("Should aggregate clusters from role assignments", func() {
-				clusters := reconciler.aggregateClusters(ctx, mra)
+				clusters, _ := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
 
 			It("Should update role assignment statuses during aggregation", func() {
-				reconciler.aggregateClusters(ctx, mra)
+				_, _ = reconciler.aggregateClusters(ctx, mra)
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
@@ -1114,7 +1122,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement-2", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters := reconciler.aggregateClusters(ctx, mra)
+				clusters, _ := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(BeEmpty())
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
@@ -1145,7 +1153,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters := reconciler.aggregateClusters(ctx, mra)
+				clusters, _ := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(BeEmpty())
 
 				for _, status := range mra.Status.RoleAssignments {
@@ -1160,7 +1168,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters := reconciler.aggregateClusters(ctx, mra)
+				clusters, _ := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(2))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name))
 
@@ -1186,7 +1194,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: overlappingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters := reconciler.aggregateClusters(ctx, mra)
+				clusters, _ := reconciler.aggregateClusters(ctx, mra)
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
@@ -1514,6 +1522,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("isRoleAssignmentTargetingCluster", func() {
 			It("Should return true when cluster is in the list", func() {
 				roleAssignment := rbacv1alpha1.RoleAssignment{
+					Name: "test-assignment",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type: "placements",
 						Placements: []rbacv1alpha1.PlacementRef{
@@ -1521,12 +1530,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						},
 					},
 				}
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster1Name)).To(BeTrue())
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster2Name)).To(BeTrue())
+
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment": {cluster1Name, cluster2Name},
+				}
+
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster1Name, roleAssignmentClusters)).To(BeTrue())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster2Name, roleAssignmentClusters)).To(BeTrue())
 			})
 
 			It("Should return false when cluster is not in the list", func() {
 				roleAssignment := rbacv1alpha1.RoleAssignment{
+					Name: "test-assignment",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type: "placements",
 						Placements: []rbacv1alpha1.PlacementRef{
@@ -1534,12 +1551,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						},
 					},
 				}
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster3Name)).To(BeFalse())
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, "non-existent")).To(BeFalse())
+
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment": {cluster1Name, cluster2Name},
+				}
+
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster3Name, roleAssignmentClusters)).To(BeFalse())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, "non-existent", roleAssignmentClusters)).To(BeFalse())
 			})
 
-			It("Should return false when Placement resolution fails", func() {
+			It("Should return false when role assignment is not in map (placement resolution failed)", func() {
 				roleAssignment := rbacv1alpha1.RoleAssignment{
+					Name: "failed-assignment",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type: "placements",
 						Placements: []rbacv1alpha1.PlacementRef{
@@ -1547,7 +1572,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						},
 					},
 				}
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster1Name)).To(BeFalse())
+
+				// Empty role assignment clusters map
+				roleAssignmentClusters := map[string][]string{}
+
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster1Name, roleAssignmentClusters)).To(BeFalse())
 			})
 
 			It("Should return false when Placement has no clusters", func() {
@@ -1555,6 +1585,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(createTestPlacement(ctx, k8sClient, emptyPlacement)).To(Succeed())
 
 				roleAssignment := rbacv1alpha1.RoleAssignment{
+					Name: "empty-assignment",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type: "placements",
 						Placements: []rbacv1alpha1.PlacementRef{
@@ -1562,7 +1593,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						},
 					},
 				}
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster1Name)).To(BeFalse())
+
+				roleAssignmentClusters := map[string][]string{
+					"empty-assignment": {},
+				}
+
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster1Name, roleAssignmentClusters)).To(BeFalse())
 			})
 
 			It("Should handle multiple Placements in ClusterSelection", func() {
@@ -1572,6 +1609,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ctx, k8sClient, "decision-1", thirdPlacement, []string{"cluster-alpha", "cluster-beta"})).To(Succeed())
 
 				roleAssignment := rbacv1alpha1.RoleAssignment{
+					Name: "multi-placement-assignment",
 					ClusterSelection: rbacv1alpha1.ClusterSelection{
 						Type: "placements",
 						Placements: []rbacv1alpha1.PlacementRef{
@@ -1581,20 +1619,36 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				}
 
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster1Name)).To(BeTrue())
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster2Name)).To(BeTrue())
+				roleAssignmentClusters := map[string][]string{
+					"multi-placement-assignment": {cluster1Name, cluster2Name, "cluster-alpha", "cluster-beta"},
+				}
 
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, "cluster-alpha")).To(BeTrue())
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, "cluster-beta")).To(BeTrue())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster1Name, roleAssignmentClusters)).To(BeTrue())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster2Name, roleAssignmentClusters)).To(BeTrue())
 
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster3Name)).To(BeFalse())
-				Expect(reconciler.isRoleAssignmentTargetingCluster(ctx, roleAssignment, "non-existent")).To(BeFalse())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, "cluster-alpha", roleAssignmentClusters)).To(BeTrue())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, "cluster-beta", roleAssignmentClusters)).To(BeTrue())
+
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, cluster3Name, roleAssignmentClusters)).To(BeFalse())
+				Expect(reconciler.isRoleAssignmentTargetingCluster(
+					roleAssignment, "non-existent", roleAssignmentClusters)).To(BeFalse())
 			})
 		})
 
 		Describe("ensureClusterPermissionAttempt", func() {
 			It("Should create new ClusterPermission with MRA contributions", func() {
-				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -1630,7 +1684,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
 
-				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -1654,7 +1713,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Spec.RoleAssignments[0].ClusterRole = "edit"
 				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"namespace1", "namespace2"}
 
-				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"namespaced-role":   {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -1686,7 +1750,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 				Expect(k8sClient.Create(ctx, unmanagedCP)).To(Succeed())
 
-				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("not managed by this controller"))
 			})
@@ -1718,7 +1787,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Scheme: k8sClient.Scheme(),
 				}
 
-				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-3"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -1744,7 +1818,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Scheme: k8sClient.Scheme(),
 				}
 
-				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -1787,7 +1866,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Scheme: k8sClient.Scheme(),
 				}
 
-				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updateCalled).To(BeFalse())
 			})
@@ -1827,7 +1911,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Scheme: k8sClient.Scheme(),
 				}
 
-				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name)
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				err := mockReconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updateCalled).To(BeTrue())
 			})
@@ -1835,7 +1924,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("processClusterPermissions", func() {
 			It("Should process ClusterPermissions and set Applied condition", func() {
-				reconciler.processClusterPermissions(ctx, mra, []string{cluster1Name})
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				reconciler.processClusterPermissions(ctx, mra, []string{cluster1Name}, roleAssignmentClusters)
 
 				found := false
 				for _, condition := range mra.Status.Conditions {
@@ -1852,7 +1946,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should mark role assignments as Applied when successful", func() {
 				reconciler.initializeRoleAssignmentStatuses(mra)
 
-				reconciler.processClusterPermissions(ctx, mra, []string{cluster1Name})
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				reconciler.processClusterPermissions(ctx, mra, []string{cluster1Name}, roleAssignmentClusters)
 
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
@@ -1878,7 +1977,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "test-placement-nonexistent", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 				reconciler.initializeRoleAssignmentStatuses(mra)
-				reconciler.processClusterPermissions(ctx, mra, []string{nonExistentCluster})
+
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {nonExistentCluster},
+				}
+
+				reconciler.processClusterPermissions(ctx, mra, []string{nonExistentCluster}, roleAssignmentClusters)
 
 				appliedFound := false
 				for _, condition := range mra.Status.Conditions {
@@ -1920,7 +2024,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "test-placement-mixed", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 				reconciler.initializeRoleAssignmentStatuses(mra)
-				reconciler.processClusterPermissions(ctx, mra, []string{existingCluster, nonExistentCluster})
+
+				roleAssignmentClusters := map[string][]string{
+					"test-assignment-1": {existingCluster, nonExistentCluster},
+				}
+
+				reconciler.processClusterPermissions(ctx, mra, []string{existingCluster, nonExistentCluster}, roleAssignmentClusters)
 
 				appliedFound := false
 				for _, condition := range mra.Status.Conditions {
@@ -2053,7 +2162,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Spec.RoleAssignments[0].ClusterRole = "cluster-admin"
 				mra.Spec.RoleAssignments[0].TargetNamespaces = nil
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"cluster-admin-role": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2":  {"test-cluster-3"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
 				Expect(slice.RoleBindings).To(BeEmpty())
@@ -2072,7 +2186,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Spec.RoleAssignments[0].ClusterRole = "admin"
 				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"namespace1", "namespace2"}
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"namespaced-role1":  {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.ClusterRoleBindings).To(BeEmpty())
 				Expect(slice.RoleBindings).To(HaveLen(2))
@@ -2093,7 +2212,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"other-cluster-role": {"test-cluster-3"},
+					"test-assignment-2":  {"test-cluster-3"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.ClusterRoleBindings).To(BeEmpty())
 				Expect(slice.RoleBindings).To(BeEmpty())
@@ -2105,7 +2229,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Spec.RoleAssignments[0].ClusterRole = "cluster-admin"
 				mra.Spec.RoleAssignments[0].TargetNamespaces = nil
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"cluster-admin-role": {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2":  {"test-cluster-3"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(1))
 
@@ -2122,7 +2251,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Spec.RoleAssignments[0].ClusterRole = "edit"
 				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"ns1", "ns2"}
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"namespaced-role2":  {"test-cluster-1", "test-cluster-2"},
+					"test-assignment-2": {"test-cluster-3"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(2))
 
@@ -2163,7 +2297,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				}
 
-				slice := reconciler.calculateDesiredClusterPermissionSlice(ctx, mra, cluster1Name)
+				roleAssignmentClusters := map[string][]string{
+					"admin-role": {"test-cluster-1", "test-cluster-2"},
+					"edit-role":  {"test-cluster-1", "test-cluster-2"},
+				}
+
+				slice := reconciler.calculateDesiredClusterPermissionSlice(mra, cluster1Name, roleAssignmentClusters)
 
 				Expect(slice.ClusterRoleBindings).To(HaveLen(1))
 				Expect(slice.RoleBindings).To(HaveLen(1))
@@ -3560,7 +3699,7 @@ func TestAggregateClusters(t *testing.T) {
 			t.Fatalf("update Status error = %v", err)
 		}
 
-		clusters := reconciler.aggregateClusters(ctx, mra)
+		clusters, _ := reconciler.aggregateClusters(ctx, mra)
 		if len(clusters) != 2 {
 			t.Fatalf("aggregateClusters returned %d clusters, want 2", len(clusters))
 		}
@@ -4388,15 +4527,15 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		ctx := context.Background()
 
-		// Call ensureClusterPermissionAttempt
-		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster")
+		roleAssignmentClusters := map[string][]string{
+			"test-assignment": {},
+		}
 
-		// Verify no error occurred
+		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster", roleAssignmentClusters)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		// Verify the ClusterPermission was deleted
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
@@ -4459,15 +4598,15 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		ctx := context.Background()
 
-		// Call ensureClusterPermissionAttempt
-		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster")
+		roleAssignmentClusters := map[string][]string{
+			"test-assignment": {},
+		}
 
-		// Verify no error occurred
+		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster", roleAssignmentClusters)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		// Verify the ClusterPermission was deleted
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
@@ -4512,8 +4651,8 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
-				ClusterRoleBindings: nil,                // nil
-				RoleBindings:        &emptyRoleBindings, // empty slice
+				ClusterRoleBindings: nil,
+				RoleBindings:        &emptyRoleBindings,
 			},
 		}
 
@@ -4529,15 +4668,15 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		ctx := context.Background()
 
-		// Call ensureClusterPermissionAttempt
-		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster")
+		roleAssignmentClusters := map[string][]string{
+			"test-assignment": {},
+		}
 
-		// Verify no error occurred
+		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster", roleAssignmentClusters)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		// Verify the ClusterPermission was deleted
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
@@ -4593,7 +4732,6 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			},
 		}
 
-		// Create existing ClusterPermission
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      ClusterPermissionManagedName,
@@ -4618,22 +4756,21 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		ctx := context.Background()
 
-		// Call ensureClusterPermissionAttempt
-		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster")
+		roleAssignmentClusters := map[string][]string{
+			"test-assignment": {"test-cluster"},
+		}
 
-		// Verify no error occurred
+		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster", roleAssignmentClusters)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		// Verify the ClusterPermission was updated (not deleted)
 		var updatedCP clusterpermissionv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &updatedCP)
 		if err != nil {
 			t.Fatalf("Expected ClusterPermission to be updated, got error: %v", err)
 		}
 
-		// Verify it has the expected bindings
 		if updatedCP.Spec.ClusterRoleBindings == nil || len(*updatedCP.Spec.ClusterRoleBindings) == 0 {
 			t.Fatalf("Expected ClusterPermission to have ClusterRoleBindings")
 		}
@@ -4676,7 +4813,6 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
 		}
 
-		// Create a mock client that simulates a deletion error
 		type mockDeleteClient struct {
 			client.Client
 			deleteCallCount int
@@ -4691,7 +4827,6 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			Client: baseClient,
 		}
 
-		// Override Delete method to simulate an error
 		mock.Client = &clientWrapper{
 			Client: baseClient,
 			deleteFn: func(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
@@ -4707,10 +4842,11 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		ctx := context.Background()
 
-		// Call ensureClusterPermissionAttempt - should return the deletion error
-		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster")
+		roleAssignmentClusters := map[string][]string{
+			"test-assignment": {},
+		}
 
-		// Verify the deletion error is returned
+		err := reconciler.ensureClusterPermissionAttempt(ctx, testMra, "test-cluster", roleAssignmentClusters)
 		if err == nil {
 			t.Fatalf("Expected deletion error to be returned")
 		}
@@ -4718,7 +4854,6 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			t.Fatalf("Expected 'simulated deletion error', got: %v", err)
 		}
 
-		// Verify that deletion was attempted
 		if mock.deleteCallCount != 1 {
 			t.Fatalf("Expected 1 deletion attempt, got: %d", mock.deleteCallCount)
 		}

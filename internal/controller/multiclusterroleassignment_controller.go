@@ -289,25 +289,23 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	r.clearStaleStatus(&mra)
 
-	allClustersFromSpec := r.aggregateClusters(ctx, &mra)
+	currentClusters, roleAssignmentClusters := r.aggregateClusters(ctx, &mra)
 
-	// Add missing clusters to allClusters
+	// Create clusters to process by adding previously tracked clusters to ensure cleanup
 	previousClusters := []string{}
 	if mra.Annotations != nil && mra.Annotations[AllClustersAnnotation] != "" {
 		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
 	}
 
-	allClustersTotal := allClustersFromSpec
-
-	missingClusters := utils.FindDifference(previousClusters, allClustersFromSpec)
-	allClustersTotal = append(allClustersTotal, missingClusters...)
+	missingClusters := utils.FindDifference(previousClusters, currentClusters)
+	clustersToProcess := append(append([]string{}, currentClusters...), missingClusters...)
 
 	log.Info("Successfully aggregated target clusters", "multiclusterroleassignment", req.NamespacedName, "clusters",
-		allClustersFromSpec, "generation", mra.Generation)
+		currentClusters, "generation", mra.Generation)
 
-	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, allClustersTotal)
+	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, clustersToProcess, roleAssignmentClusters)
 
-	if err := r.updateAllClustersAnnotation(ctx, &mra, allClustersFromSpec); err != nil {
+	if err := r.updateAllClustersAnnotation(ctx, &mra, currentClusters); err != nil {
 		if apierrors.IsConflict(err) {
 			log.Info("Annotation update conflict, requeuing", "resourceVersion", mra.ResourceVersion)
 			return ctrl.Result{RequeueAfter: StandardRequeueDelay}, nil
@@ -328,7 +326,7 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	if len(clusterPermissionErrors) > 0 {
 		log.Error(fmt.Errorf("ClusterPermission processing failed for %d clusters", len(clusterPermissionErrors)),
 			"ClusterPermission processing completed with errors", "failedClusters", len(clusterPermissionErrors),
-			"totalClusters", len(allClustersFromSpec))
+			"totalClusters", len(clustersToProcess))
 
 		return ctrl.Result{RequeueAfter: ClusterPermissionFailureRequeueDelay}, nil
 	}
@@ -340,13 +338,15 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 }
 
 // aggregateClusters aggregates all cluster names from RoleAssignment specs and returns a deduplicated list of cluster
-// names. Validates clusters exist and updates role assignment statuses.
-func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
-	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) []string {
+// names along with a map of RoleAssignment names to their target clusters. Updates role assignment statuses based on
+// results.
+func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment) (allClusters []string, roleAssignmentClusters map[string][]string) {
 
 	log := logf.FromContext(ctx)
 
-	clustersMap := make(map[string]bool)
+	allClustersMap := make(map[string]bool)
+	roleAssignmentClusters = make(map[string][]string)
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
 		// Only set to aggregating status if not already in error state
@@ -385,8 +385,10 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 			continue
 		}
 
+		roleAssignmentClusters[roleAssignment.Name] = clustersInRA
+
 		for _, cluster := range clustersInRA {
-			clustersMap[cluster] = true
+			allClustersMap[cluster] = true
 		}
 
 		// Only update to pending if not already active - preserve active status if clusters are still valid
@@ -396,10 +398,10 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 		}
 	}
 
-	allClusters := slices.Collect(maps.Keys(clustersMap))
+	allClusters = slices.Collect(maps.Keys(allClustersMap))
 	slices.Sort(allClusters)
 
-	return allClusters
+	return allClusters, roleAssignmentClusters
 }
 
 // resolvePlacementClusters resolves a Placement reference to a list of cluster names by querying PlacementDecision
@@ -445,9 +447,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 	clusters := slices.Collect(maps.Keys(clusterSet))
 	slices.Sort(clusters)
 
-	log.Info("Resolved clusters from Placement", "placement", placementRef.Name, "namespace", placementRef.Namespace,
-		"clusterCount", len(clusters), "clusters", clusters)
-
 	return clusters, nil
 }
 
@@ -455,8 +454,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 // names.
 func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 	ctx context.Context, placements []rbacv1alpha1.PlacementRef) ([]string, error) {
-
-	log := logf.FromContext(ctx)
 
 	allClustersMap := make(map[string]bool)
 
@@ -473,8 +470,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 
 	allClusters := slices.Collect(maps.Keys(allClustersMap))
 	slices.Sort(allClusters)
-
-	log.Info("Resolved all placement clusters", "totalClusters", len(allClusters))
 
 	return allClusters, nil
 }
@@ -668,7 +663,8 @@ func (r *MulticlusterRoleAssignmentReconciler) setCondition(mra *rbacv1alpha1.Mu
 
 // processClusterPermissions processes ClusterPermissions for all target clusters.
 func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
-	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string) map[string]error {
+	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string,
+	roleAssignmentClusters map[string][]string) map[string]error {
 
 	r.setCondition(mra, ConditionTypeApplied, metav1.ConditionUnknown, ReasonApplyInProgress, MessageApplyInProgress)
 
@@ -677,14 +673,14 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 	}
 
 	for _, cluster := range clusters {
-		if err := r.ensureClusterPermission(ctx, mra, cluster); err != nil {
+		if err := r.ensureClusterPermission(ctx, mra, cluster, roleAssignmentClusters); err != nil {
 			state.FailedClusters[cluster] = err
 		} else {
 			state.SuccessClusters = append(state.SuccessClusters, cluster)
 		}
 	}
 
-	r.updateRoleAssignmentStatuses(ctx, mra, clusters, state)
+	r.updateRoleAssignmentStatuses(mra, clusters, state, roleAssignmentClusters)
 
 	successCount := len(state.SuccessClusters)
 	totalClusters := len(clusters)
@@ -702,8 +698,9 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 }
 
 // updateRoleAssignmentStatuses updates role assignment statuses based on the final ClusterPermission processing state.
-func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(ctx context.Context,
-	mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string, state *ClusterPermissionProcessingState) {
+func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, clusters []string, state *ClusterPermissionProcessingState,
+	roleAssignmentClusters map[string][]string) {
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
 		// Check if role assignment already has an error status, like from the previous cluster validation stage. If
@@ -724,7 +721,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(ctx 
 		var successClustersForRA []string
 
 		for _, cluster := range clusters {
-			if r.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster) {
+			if r.isRoleAssignmentTargetingCluster(roleAssignment, cluster, roleAssignmentClusters) {
 				if _, failed := state.FailedClusters[cluster]; failed {
 					failedClustersForRA = append(failedClustersForRA, cluster)
 				} else {
@@ -753,8 +750,8 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(ctx 
 }
 
 // ensureClusterPermission creates or updates the ClusterPermission for a specific cluster.
-func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(
-	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string) error {
+func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string, roleAssignmentClusters map[string][]string) error {
 
 	log := logf.FromContext(ctx)
 
@@ -772,7 +769,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(
 			log.Info("Retrying ClusterPermission operation", "cluster", cluster, "attempt", attemptCount)
 		}
 
-		err := r.ensureClusterPermissionAttempt(ctx, mra, cluster)
+		err := r.ensureClusterPermissionAttempt(ctx, mra, cluster, roleAssignmentClusters)
 
 		if err != nil && apierrors.IsConflict(err) && attemptCount < backoffConfig.Steps {
 			log.Info("ClusterPermission conflict detected, will retry", "cluster", cluster)
@@ -795,8 +792,8 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(
 }
 
 // ensureClusterPermissionAttempt performs a single attempt to create or update a ClusterPermission.
-func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
-	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string) error {
+func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ctx context.Context,
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string, roleAssignmentClusters map[string][]string) error {
 
 	log := logf.FromContext(ctx)
 
@@ -807,7 +804,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 
 	// desiredSliceCP are the bindings and annotations for the ClusterPermission related to THIS cluster derived from
 	// the MulticlusterRoleAssignment
-	desiredSliceCP := r.calculateDesiredClusterPermissionSlice(ctx, mra, cluster)
+	desiredSliceCP := r.calculateDesiredClusterPermissionSlice(mra, cluster, roleAssignmentClusters)
 
 	if existingCP == nil {
 		// Merging empty bindings for "others" because this is a new ClusterPermission
@@ -881,15 +878,14 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(
 	return nil
 }
 
-// isRoleAssignmentTargetingCluster checks if a role assignment targets a specific cluster.
+// isRoleAssignmentTargetingCluster checks if a role assignment targets a specific cluster using the pre-computed role
+// assignment clusters map.
 func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
-	ctx context.Context, roleAssignment rbacv1alpha1.RoleAssignment, cluster string) bool {
+	roleAssignment rbacv1alpha1.RoleAssignment, cluster string, roleAssignmentClusters map[string][]string) bool {
 
-	clusters, err := r.resolveAllPlacementClusters(ctx, roleAssignment.ClusterSelection.Placements)
-	if err != nil {
-		log := logf.FromContext(ctx)
-		log.Error(err, "Failed to resolve placements when checking cluster targeting",
-			"roleAssignment", roleAssignment.Name, "cluster", cluster)
+	clusters, exists := roleAssignmentClusters[roleAssignment.Name]
+	if !exists {
+		// RoleAssignment not existing means it had errors during resolution or no clusters
 		return false
 	}
 
@@ -999,8 +995,9 @@ func (r *MulticlusterRoleAssignmentReconciler) extractOwnedBindingNames(
 
 // calculateDesiredClusterPermissionSlice computes the desired bindings and annotations that this
 // MulticlusterRoleAssignment should contribute to the ClusterPermission for this cluster.
-func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermissionSlice(ctx context.Context,
-	mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string) ClusterPermissionBindingSlice {
+func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermissionSlice(
+	mra *rbacv1alpha1.MulticlusterRoleAssignment, cluster string,
+	roleAssignmentClusters map[string][]string) ClusterPermissionBindingSlice {
 
 	desiredSlice := ClusterPermissionBindingSlice{
 		OwnerAnnotations: make(map[string]string),
@@ -1009,7 +1006,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 	mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
 
 	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !r.isRoleAssignmentTargetingCluster(ctx, roleAssignment, cluster) {
+		if !r.isRoleAssignmentTargetingCluster(roleAssignment, cluster, roleAssignmentClusters) {
 			continue
 		}
 
@@ -1189,43 +1186,47 @@ func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionSpecEmpty(
 
 func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentDeletion(
 	ctx context.Context, mra *rbacv1alpha1.MulticlusterRoleAssignment) error {
+
 	log := logf.FromContext(ctx)
 
 	log.Info("Handling MulticlusterRoleAssignment deletion")
 
-	allClustersInSpec := r.aggregateClusters(ctx, mra)
+	currentClusters, _ := r.aggregateClusters(ctx, mra)
 
-	// Add clusters from annotation in case they were removed from spec before deletion
+	// Include previously tracked clusters to ensure complete cleanup even if role assignments were removed from spec
+	// before deletion
 	previousClusters := []string{}
 	if mra.Annotations != nil && mra.Annotations[AllClustersAnnotation] != "" {
 		previousClusters = strings.Split(mra.Annotations[AllClustersAnnotation], ";")
 	}
 
-	allClustersTotal := allClustersInSpec
-	missingClusters := utils.FindDifference(previousClusters, allClustersInSpec)
-	allClustersTotal = append(allClustersTotal, missingClusters...)
+	missingClusters := utils.FindDifference(previousClusters, currentClusters)
+	clustersToCleanup := append(append([]string{}, currentClusters...), missingClusters...)
 
 	// Create an empty MRA copy to represent the desired state (no bindings)
 	emptyMRA := mra.DeepCopy()
 	emptyMRA.Spec.RoleAssignments = []rbacv1alpha1.RoleAssignment{}
 
+	// Create empty clusters map for deletion (emptyMRA has no RoleAssignments)
+	emptyClusters := make(map[string][]string)
+
 	var cleanupErrors []error
 
-	for _, cluster := range allClustersTotal {
+	for _, cluster := range clustersToCleanup {
 		log.Info("Processing ClusterPermission cleanup for cluster", "cluster", cluster)
 
-		if err := r.ensureClusterPermission(ctx, emptyMRA, cluster); err != nil {
+		if err := r.ensureClusterPermission(ctx, emptyMRA, cluster, emptyClusters); err != nil {
 			log.Error(err, "Failed to cleanup ClusterPermission for cluster", "cluster", cluster)
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("cluster %s: %w", cluster, err))
 		}
 	}
 
 	if len(cleanupErrors) > 0 {
-		log.Error(fmt.Errorf("cleanup failed for %d/%d clusters", len(cleanupErrors), len(allClustersTotal)),
+		log.Error(fmt.Errorf("cleanup failed for %d/%d clusters", len(cleanupErrors), len(clustersToCleanup)),
 			"MulticlusterRoleAssignment deletion completed with errors", "failedClusters", len(cleanupErrors),
-			"totalClusters", len(allClustersTotal))
+			"totalClusters", len(clustersToCleanup))
 		return fmt.Errorf("failed to cleanup %d/%d clusters during deletion: %v",
-			len(cleanupErrors), len(allClustersTotal), cleanupErrors)
+			len(cleanupErrors), len(clustersToCleanup), cleanupErrors)
 	}
 
 	return nil
