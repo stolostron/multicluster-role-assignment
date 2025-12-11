@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -201,6 +202,322 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			}
 			_ = k8sClient.Delete(ctx, cp)
 		}
+	})
+
+	Context("findMRAsForPlacementDecision", func() {
+		// pdReconciler uses manager's client which has field indexes
+		// Must be created in BeforeEach because mgr is not available during tree construction
+		var pdReconciler *MulticlusterRoleAssignmentReconciler
+
+		BeforeEach(func() {
+			pdReconciler = &MulticlusterRoleAssignmentReconciler{
+				Client: mgr.GetClient(),
+				Scheme: scheme.Scheme,
+			}
+		})
+
+		It("should return empty when PlacementDecision has no label", func() {
+			pd := &clusterv1beta1.PlacementDecision{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pd-no-label",
+					Namespace: "default",
+				},
+			}
+
+			requests := pdReconciler.findMRAsForPlacementDecision(ctx, pd)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should return empty when PlacementDecision has empty label", func() {
+			pd := &clusterv1beta1.PlacementDecision{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pd-empty-label",
+					Namespace: "default",
+					Labels: map[string]string{
+						clusterv1beta1.PlacementLabel: "",
+					},
+				},
+			}
+
+			requests := pdReconciler.findMRAsForPlacementDecision(ctx, pd)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should return empty when no MRAs match the placement", func() {
+			pd := &clusterv1beta1.PlacementDecision{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pd-no-match",
+					Namespace: multiclusterRoleAssignmentNamespace,
+					Labels: map[string]string{
+						clusterv1beta1.PlacementLabel: "non-existent-placement",
+					},
+				},
+			}
+
+			requests := pdReconciler.findMRAsForPlacementDecision(ctx, pd)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should return reconcile requests for matching MRAs", func() {
+			// Create an MRA that references a test placement
+			testMRA := &rbacv1alpha1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-mra-for-pd-lookup",
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind:     "User",
+						APIGroup: "rbac.authorization.k8s.io",
+						Name:     "test-user-pd-lookup",
+					},
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							Name:        "pd-lookup-assignment",
+							ClusterRole: "view",
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type: "placements",
+								Placements: []rbacv1alpha1.PlacementRef{
+									{
+										Name:      "lookup-test-placement",
+										Namespace: multiclusterRoleAssignmentNamespace,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(mgr.GetClient().Create(ctx, testMRA)).To(Succeed())
+
+			// Create PlacementDecision with label pointing to that placement
+			pd := &clusterv1beta1.PlacementDecision{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pd-for-lookup",
+					Namespace: multiclusterRoleAssignmentNamespace,
+					Labels: map[string]string{
+						clusterv1beta1.PlacementLabel: "lookup-test-placement",
+					},
+				},
+			}
+
+			// Wait for cache to sync and verify it returns the matching MRA
+			var requests []reconcile.Request
+			Eventually(func() int {
+				requests = pdReconciler.findMRAsForPlacementDecision(ctx, pd)
+				return len(requests)
+			}).Should(Equal(1), "Expected 1 reconcile request for matching MRA")
+
+			Expect(requests[0].Name).To(Equal(testMRA.Name))
+			Expect(requests[0].Namespace).To(Equal(testMRA.Namespace))
+
+			// Cleanup
+			Expect(mgr.GetClient().Delete(ctx, testMRA)).To(Succeed())
+		})
+
+		It("should return nil when passed wrong object type", func() {
+			// Pass a ConfigMap instead of PlacementDecision
+			wrongObj := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "not-a-pd",
+					Namespace: "default",
+				},
+			}
+
+			requests := pdReconciler.findMRAsForPlacementDecision(ctx, wrongObj)
+			Expect(requests).To(BeNil())
+		})
+	})
+
+	Context("extractPlacementKeys", func() {
+		It("should extract single placement reference", func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+								},
+							},
+						},
+					},
+				},
+			}
+			result := extractPlacementKeys(mra)
+			Expect(result).To(ConsistOf("ns1/placement1"))
+		})
+
+		It("should extract multiple placement references", func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+									{Namespace: "ns2", Name: "placement2"},
+								},
+							},
+						},
+					},
+				},
+			}
+			result := extractPlacementKeys(mra)
+			Expect(result).To(ConsistOf("ns1/placement1", "ns2/placement2"))
+		})
+
+		It("should deduplicate duplicate placements", func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+								},
+							},
+						},
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"}, // duplicate
+								},
+							},
+						},
+					},
+				},
+			}
+			result := extractPlacementKeys(mra)
+			Expect(result).To(ConsistOf("ns1/placement1"))
+		})
+
+		It("should return empty slice when no placements", func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Type:       "placements",
+								Placements: []rbacv1alpha1.PlacementRef{},
+							},
+						},
+					},
+				},
+			}
+			result := extractPlacementKeys(mra)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("should handle mixed placements across role assignments", func() {
+			mra := &rbacv1alpha1.MulticlusterRoleAssignment{
+				Spec: rbacv1alpha1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []rbacv1alpha1.RoleAssignment{
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "team-a", Name: "prod"},
+								},
+							},
+						},
+						{
+							ClusterSelection: rbacv1alpha1.ClusterSelection{
+								Placements: []rbacv1alpha1.PlacementRef{
+									{Namespace: "team-b", Name: "dev"},
+								},
+							},
+						},
+					},
+				},
+			}
+			result := extractPlacementKeys(mra)
+			Expect(result).To(ConsistOf("team-a/prod", "team-b/dev"))
+		})
+
+		It("should return nil for nil input", func() {
+			result := extractPlacementKeys(nil)
+			Expect(result).To(BeNil())
+		})
+	})
+
+	Context("PlacementDecision predicate logic", func() {
+		It("should return false when decisions unchanged", func() {
+			oldPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+						{ClusterName: "cluster-b"},
+					},
+				},
+			}
+			newPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+						{ClusterName: "cluster-b"},
+					},
+				},
+			}
+			shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+			Expect(shouldReconcile).To(BeFalse())
+		})
+
+		It("should return true when decisions changed", func() {
+			oldPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+					},
+				},
+			}
+			newPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+						{ClusterName: "cluster-b"},
+					},
+				},
+			}
+			shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+			Expect(shouldReconcile).To(BeTrue())
+		})
+
+		It("should return true when cluster removed", func() {
+			oldPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+						{ClusterName: "cluster-b"},
+					},
+				},
+			}
+			newPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+					},
+				},
+			}
+			shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+			Expect(shouldReconcile).To(BeTrue())
+		})
+
+		It("should return true when going from empty to non-empty", func() {
+			oldPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{},
+				},
+			}
+			newPD := &clusterv1beta1.PlacementDecision{
+				Status: clusterv1beta1.PlacementDecisionStatus{
+					Decisions: []clusterv1beta1.ClusterDecision{
+						{ClusterName: "cluster-a"},
+					},
+				},
+			}
+			shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
+			Expect(shouldReconcile).To(BeTrue())
+		})
 	})
 
 	Context("When reconciling a resource", func() {
