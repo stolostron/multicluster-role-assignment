@@ -1256,47 +1256,6 @@ func (r *MulticlusterRoleAssignmentReconciler) updateAllClustersAnnotation(
 	return nil
 }
 
-// findMRAsForClusterPermission maps a ClusterPermission to the MRAs that own it
-func (r *MulticlusterRoleAssignmentReconciler) findMRAsForClusterPermission(
-	ctx context.Context, obj client.Object) []reconcile.Request {
-
-	log := logf.FromContext(ctx)
-
-	cp, ok := obj.(*clusterpermissionv1alpha1.ClusterPermission)
-	if !ok {
-		log.Error(fmt.Errorf("unexpected object type"), "Expected ClusterPermission", "got", obj)
-		return nil
-	}
-
-	ownerMRAs := make(map[string]bool)
-	if cp.Annotations != nil {
-		for key, value := range cp.Annotations {
-			if strings.HasPrefix(key, OwnerAnnotationPrefix) {
-				ownerMRAs[value] = true
-			}
-		}
-	}
-
-	requests := make([]reconcile.Request, 0, len(ownerMRAs))
-	for mra := range ownerMRAs {
-		namespaceName := strings.Split(mra, "/")
-		if len(namespaceName) != 2 || namespaceName[0] == "" || namespaceName[1] == "" {
-			log.Error(fmt.Errorf("invalid MRA identifier format"),
-				"Invalid MRA identifier in ClusterPermission annotation", "identifier", mra, "expected", "namespace/name")
-			continue
-		}
-
-		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Namespace: namespaceName[0],
-				Name:      namespaceName[1],
-			},
-		})
-	}
-
-	return requests
-}
-
 // findMRAsForPlacementDecision maps a PlacementDecision to the MRAs that reference its Placement
 func (r *MulticlusterRoleAssignmentReconciler) findMRAsForPlacementDecision(
 	ctx context.Context, obj client.Object) []reconcile.Request {
@@ -1312,7 +1271,7 @@ func (r *MulticlusterRoleAssignmentReconciler) findMRAsForPlacementDecision(
 	// Get the Placement name from the PlacementDecision label
 	placementName := pd.Labels[clusterv1beta1.PlacementLabel]
 	if placementName == "" {
-		log.V(1).Info("PlacementDecision has no placement label, skipping", "placementDecision", pd.Name)
+		log.Info("PlacementDecision has no placement label, skipping", "placementDecision", pd.Name)
 		return nil
 	}
 
@@ -1348,7 +1307,7 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
 			&clusterpermissionv1alpha1.ClusterPermission{},
-			handler.EnqueueRequestsFromMapFunc(r.findMRAsForClusterPermission),
+			&clusterPermissionEventHandler{},
 			builder.WithPredicates(
 				predicate.And(
 					predicate.NewPredicateFuncs(r.isClusterPermissionManaged),
