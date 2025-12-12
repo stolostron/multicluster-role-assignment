@@ -34,6 +34,7 @@ Creating `MulticlusterRoleAssignment` resources will create `ClusterPermission` 
 ### Installation
 
 1. **Install the operator**:
+
    ```bash
    kubectl apply -k config/default
    ```
@@ -48,7 +49,7 @@ Creating `MulticlusterRoleAssignment` resources will create `ClusterPermission` 
 Create a `MulticlusterRoleAssignment` to grant a user view access to specific clusters:
 
 ```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: developer-view-access
@@ -59,19 +60,20 @@ spec:
     name: jane.developer
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
-  - name: view-access
-    clusterRole: view
-    targetNamespaces:
-    - development
-    - staging
-    clusterSelection:
-      type: placements
-      placements:
-      - name: dev-clusters
-        namespace: open-cluster-management-global-set
+    - name: view-access
+      clusterRole: view
+      targetNamespaces:
+        - development
+        - staging
+      clusterSelection:
+        type: placements
+        placements:
+          - name: dev-clusters
+            namespace: open-cluster-management-global-set
 ```
 
 This example:
+
 - Grants the user `jane.developer` the `view` cluster role
 - Applies the role to the `development` and `staging` namespaces
 - Targets clusters selected by the `dev-clusters` Placement resource
@@ -84,37 +86,38 @@ The `MulticlusterRoleAssignment` custom resource defines role assignments across
 
 #### Spec Fields
 
-| Field | Type | Description | Required |
-|-------|------|-------------|----------|
-| `subject` | `rbacv1.Subject` | The user or group for the role assignment | Yes |
-| `roleAssignments` | `[]RoleAssignment` | List of role assignments for different clusters | Yes |
+| Field             | Type               | Description                                     | Required |
+| ----------------- | ------------------ | ----------------------------------------------- | -------- |
+| `subject`         | `rbacv1.Subject`   | The user or group for the role assignment       | Yes      |
+| `roleAssignments` | `[]RoleAssignment` | List of role assignments for different clusters | Yes      |
 
 #### RoleAssignment Fields
 
-| Field | Type | Description | Required |
-|-------|------|-------------|----------|
-| `name` | `string` | Name of the role assignment | Yes |
-| `clusterRole` | `string` | Name of the cluster role to assign | Yes |
-| `targetNamespaces` | `[]string` | Namespaces to apply the role (all if empty) | No |
-| `clusterSelection` | `ClusterSelection` | Cluster selection criteria | Yes |
+| Field              | Type               | Description                                 | Required |
+| ------------------ | ------------------ | ------------------------------------------- | -------- |
+| `name`             | `string`           | Name of the role assignment                 | Yes      |
+| `clusterRole`      | `string`           | Name of the cluster role to assign          | Yes      |
+| `targetNamespaces` | `[]string`         | Namespaces to apply the role (all if empty) | No       |
+| `clusterSelection` | `ClusterSelection` | Cluster selection criteria                  | Yes      |
 
 #### ClusterSelection Fields
 
-| Field | Type | Description | Required |
-|-------|------|-------------|----------|
-| `type` | `string` | Type of cluster selection (currently only `placements`) | Yes |
-| `placements` | `[]PlacementRef` | List of Placement resources to use for cluster selection | Yes |
+| Field        | Type             | Description                                              | Required |
+| ------------ | ---------------- | -------------------------------------------------------- | -------- |
+| `type`       | `string`         | Type of cluster selection (currently only `placements`)  | Yes      |
+| `placements` | `[]PlacementRef` | List of Placement resources to use for cluster selection | Yes      |
 
 #### PlacementRef Fields
 
-| Field | Type | Description | Required |
-|-------|------|-------------|----------|
-| `name` | `string` | Name of the Placement resource | Yes |
-| `namespace` | `string` | Namespace of the Placement resource | Yes |
+| Field       | Type     | Description                         | Required |
+| ----------- | -------- | ----------------------------------- | -------- |
+| `name`      | `string` | Name of the Placement resource      | Yes      |
+| `namespace` | `string` | Namespace of the Placement resource | Yes      |
 
 #### Status
 
 The operator reports the status of each role assignment, including:
+
 - Overall conditions for the `MulticlusterRoleAssignment`
 - Individual status for each role assignment (Pending, Active, Error)
 - Detailed messages for troubleshooting
@@ -124,7 +127,7 @@ The operator reports the status of each role assignment, including:
 ### Multiple Role Assignments
 
 ```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: admin-multi-role
@@ -135,24 +138,24 @@ spec:
     name: admin-user
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
-  - name: prod-admin
-    clusterRole: admin
-    targetNamespaces:
-    - production
-    clusterSelection:
-      type: placements
-      placements:
-      - name: prod-clusters
-        namespace: open-cluster-management-global-set
-  - name: dev-edit
-    clusterRole: edit
-    targetNamespaces:
-    - development
-    clusterSelection:
-      type: placements
-      placements:
-      - name: dev-clusters
-        namespace: open-cluster-management-global-set
+    - name: prod-admin
+      clusterRole: admin
+      targetNamespaces:
+        - production
+      clusterSelection:
+        type: placements
+        placements:
+          - name: prod-clusters
+            namespace: open-cluster-management-global-set
+    - name: dev-edit
+      clusterRole: edit
+      targetNamespaces:
+        - development
+      clusterSelection:
+        type: placements
+        placements:
+          - name: dev-clusters
+            namespace: open-cluster-management-global-set
 ```
 
 ## Development
@@ -166,17 +169,20 @@ spec:
 ### Local Development
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/stolostron/multicluster-role-assignment.git
    cd multicluster-role-assignment
    ```
 
 2. **Install dependencies**:
+
    ```bash
    go mod download
    ```
 
 3. **Run tests**:
+
    ```bash
    make test
    ```
@@ -191,11 +197,13 @@ spec:
 E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) to create an isolated test environment.
 
 1. **Set up Kind cluster**:
+
    ```bash
    make setup-test-e2e
    ```
 
 2. **Run e2e tests**:
+
    ```bash
    make test-e2e
    ```
@@ -208,11 +216,13 @@ E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#install
 ### Building and Deployment
 
 1. **Build the operator image**:
+
    ```bash
    make docker-build IMG=<your-registry>/multicluster-role-assignment:latest
    ```
 
 2. **Push the image**:
+
    ```bash
    make docker-push IMG=<your-registry>/multicluster-role-assignment:latest
    ```
@@ -260,12 +270,14 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 ### Common Issues
 
 1. **Role assignments not appearing on target clusters**:
+
    - Verify the referenced Placement resources exist in the correct namespace
    - Check that PlacementDecisions have been created with selected clusters
    - Verify the target clusters are registered as ManagedClusters
    - Check the operator logs for connection issues
 
 2. **Permission denied errors**:
+
    - Verify the operator has the necessary RBAC permissions
    - Check that the target cluster roles exist
    - Ensure the subject (user/group/SA) is valid
