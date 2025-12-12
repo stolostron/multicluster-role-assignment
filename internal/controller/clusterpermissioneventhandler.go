@@ -150,13 +150,8 @@ func compareBindings[T any](
 	for key, newBinding := range newBindings {
 		oldBinding, exists := oldBindings[key]
 
-		if !exists {
-			// Binding added - look up owner in new CP
-			if owner := getOwnerFromAnnotation(newCP, getBindingName(newBinding)); owner != "" {
-				affectedMRAs[owner] = true
-			}
-		} else if !equality.Semantic.DeepEqual(oldBinding, newBinding) {
-			// Binding modified - look up owner in new CP
+		// Binding added or modified - look up owner in new CP
+		if !exists || !equality.Semantic.DeepEqual(oldBinding, newBinding) {
 			if owner := getOwnerFromAnnotation(newCP, getBindingName(newBinding)); owner != "" {
 				affectedMRAs[owner] = true
 			}
