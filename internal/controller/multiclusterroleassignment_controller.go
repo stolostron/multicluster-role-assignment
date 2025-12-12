@@ -1307,7 +1307,7 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
 			&clusterpermissionv1alpha1.ClusterPermission{},
-			&clusterPermissionEventHandler{client: mgr.GetClient()},
+			&clusterPermissionEventHandler{},
 			builder.WithPredicates(
 				predicate.And(
 					predicate.NewPredicateFuncs(r.isClusterPermissionManaged),

@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -126,8 +125,7 @@ func TestFindAffectedMRAs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := &clusterPermissionEventHandler{}
-			mras := handler.findAffectedMRAs(tt.oldCP, tt.newCP)
+			mras := findAffectedMRAs(tt.oldCP, tt.newCP)
 
 			if len(mras) != len(tt.expectedMRAs) {
 				t.Errorf("got %d affected MRAs, want %d\nGot: %v\nWant: %v",
@@ -201,7 +199,7 @@ func TestEventHandlers_Update(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			queue := &fakeWorkqueue{}
-			handler := &clusterPermissionEventHandler{client: nil}
+			handler := &clusterPermissionEventHandler{}
 
 			handler.Update(context.Background(), event.TypedUpdateEvent[client.Object]{
 				ObjectOld: tt.oldCP, ObjectNew: tt.newCP,
@@ -216,7 +214,7 @@ func TestEventHandlers_Update(t *testing.T) {
 
 func TestEventHandlers_Create(t *testing.T) {
 	queue := &fakeWorkqueue{}
-	handler := &clusterPermissionEventHandler{client: nil}
+	handler := &clusterPermissionEventHandler{}
 
 	testCP := createCP(
 		createBinding("viewer", "", "default/mra1", "default-user", "view"),
@@ -238,7 +236,7 @@ func TestEventHandlers_Create(t *testing.T) {
 
 func TestEventHandlers_Delete(t *testing.T) {
 	queue := &fakeWorkqueue{}
-	handler := &clusterPermissionEventHandler{client: nil}
+	handler := &clusterPermissionEventHandler{}
 
 	testCP := createCP(
 		createBinding("viewer", "", "default/mra1", "default-user", "view"),
@@ -258,15 +256,14 @@ func TestEventHandlers_Delete(t *testing.T) {
 	}
 }
 
-func TestEdgeCases(t *testing.T) {
+func TestGeneral(t *testing.T) {
 	t.Run("invalid MRA identifier format - validation", func(t *testing.T) {
 		queue := &fakeWorkqueue{}
-		handler := &clusterPermissionEventHandler{}
 
 		invalid := []string{"mra1", "/mra1", "ns/", "", "default/mra/x"}
 
 		for _, id := range invalid {
-			handler.enqueueMRA(id, queue, logr.Discard())
+			enqueueMRA(context.Background(), id, queue)
 			if len(queue.items) != 0 {
 				t.Errorf("should not enqueue invalid identifier %q, but got %d items", id, len(queue.items))
 				queue.items = nil
@@ -294,11 +291,10 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		handler := &clusterPermissionEventHandler{}
-		crbMap := handler.buildClusterRoleBindingMap(testCP)
-		rbMap := handler.buildRoleBindingMap(testCP)
+		crbMap := buildClusterRoleBindingMap(testCP)
+		rbMap := buildRoleBindingMap(testCP)
 
-		if !handler.hasOrphanedBindings(testCP, crbMap, rbMap) {
+		if !hasOrphanedBindings(testCP, crbMap, rbMap) {
 			t.Error("should detect orphaned ClusterRoleBinding")
 		}
 	})
@@ -324,11 +320,10 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		handler := &clusterPermissionEventHandler{}
-		crbMap := handler.buildClusterRoleBindingMap(testCP)
-		rbMap := handler.buildRoleBindingMap(testCP)
+		crbMap := buildClusterRoleBindingMap(testCP)
+		rbMap := buildRoleBindingMap(testCP)
 
-		if !handler.hasOrphanedBindings(testCP, crbMap, rbMap) {
+		if !hasOrphanedBindings(testCP, crbMap, rbMap) {
 			t.Error("should detect orphaned RoleBinding")
 		}
 	})
