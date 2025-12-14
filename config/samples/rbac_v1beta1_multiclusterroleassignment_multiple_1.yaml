@@ -9,37 +9,37 @@ spec:
     name: test-user-multiple-1
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
-    - name: view-assignment-namespaced-clusters-1-2
-      clusterRole: view
-      targetNamespaces:
-        - default
-        - kube-system
-      clusterSelection:
-        type: placements
-        placements:
-          - name: placement-cluster-01-02
-            namespace: open-cluster-management-global-set
-    - name: edit-assignment-cluster-3
-      clusterRole: edit
-      clusterSelection:
-        type: placements
-        placements:
-          - name: placement-cluster-03
-            namespace: open-cluster-management-global-set
-    - name: admin-assignment-cluster-1
-      clusterRole: admin
-      clusterSelection:
-        type: placements
-        placements:
-          - name: placement-cluster-01
-            namespace: open-cluster-management-global-set
-    - name: monitoring-assignment-namespaced-all-clusters
-      clusterRole: system:mon
-      targetNamespaces:
-        - monitoring
-        - observability
-      clusterSelection:
-        type: placements
-        placements:
-          - name: placement-cluster-01-02-03
-            namespace: open-cluster-management-global-set
+  - name: view-assignment-namespaced-clusters-1-2
+    clusterRole: view
+    targetNamespaces:
+    - default
+    - kube-system
+    clusterSelection:
+      type: placements
+      placements:
+      - name: placement-cluster-01-02
+        namespace: open-cluster-management-global-set
+  - name: edit-assignment-cluster-3
+    clusterRole: edit
+    clusterSelection:
+      type: placements
+      placements:
+      - name: placement-cluster-03
+        namespace: open-cluster-management-global-set
+  - name: admin-assignment-cluster-1
+    clusterRole: admin
+    clusterSelection:
+      type: placements
+      placements:
+      - name: placement-cluster-01
+        namespace: open-cluster-management-global-set
+  - name: monitoring-assignment-namespaced-all-clusters
+    clusterRole: system:mon
+    targetNamespaces:
+    - monitoring
+    - observability
+    clusterSelection:
+      type: placements
+      placements:
+      - name: placement-cluster-01-02-03
+        namespace: open-cluster-management-global-set

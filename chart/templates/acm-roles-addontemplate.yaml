@@ -16,87 +16,87 @@ spec:
             name: kubevirt.io-acm-managed:admin
           rules:
             - apiGroups:
-                - k8s.cni.cncf.io
+              - k8s.cni.cncf.io
               resources:
-                - network-attachment-definitions
+              - network-attachment-definitions
               verbs:
-                - get
-                - list
+              - get
+              - list
             - apiGroups:
-                - ""
+              - ""
               resources:
-                - secrets
+              - secrets
               verbs:
-                - list
-                - delete
-                - create
+              - list
+              - delete
+              - create
             - apiGroups:
-                - ""
+              - ""
               resources:
-                - configmaps
-                - events
-                - namespaces
-                - nodes
-                - nodes/proxy
-                - nodes/exec
-                - persistentvolumeclaims
-                - persistentvolumes
-                - pods
-                - pods/exec
-                - pods/log
-                - pods/metrics
-                - services
-                - serviceaccounts
+              - configmaps
+              - events
+              - namespaces
+              - nodes
+              - nodes/proxy
+              - nodes/exec
+              - persistentvolumeclaims
+              - persistentvolumes
+              - pods
+              - pods/exec
+              - pods/log
+              - pods/metrics
+              - services
+              - serviceaccounts
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - events.k8s.io
+              - events.k8s.io
               resources:
-                - events
+              - events
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - cdi.kubevirt.io
+              - cdi.kubevirt.io
               resources:
-                - datavolumes
-                - datasources
-                - dataimportcrons
+              - datavolumes
+              - datasources
+              - dataimportcrons
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - migrations.kubevirt.io
+              - migrations.kubevirt.io
               resources:
-                - migrationpolicies
+              - migrationpolicies
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - metrics.k8s.io
+              - metrics.k8s.io
               resources:
-                - pods
+              - pods
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - verbs:
                 - get
                 - watch
@@ -107,67 +107,67 @@ spec:
               resourceNames:
                 - k8s
             - apiGroups:
-                - hco.kubevirt.io
+              - hco.kubevirt.io
               resources:
-                - hyperconvergeds
+              - hyperconvergeds
               verbs:
-                - get
-                - list
-                - watch
-                - create
-                - update
-                - patch
-                - delete
+              - get
+              - list
+              - watch
+              - create
+              - update
+              - patch
+              - delete
             - apiGroups:
-                - batch
+              - batch
               resources:
-                - jobs
+              - jobs
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - snapshot.storage.k8s.io
+              - snapshot.storage.k8s.io
               resources:
-                - "*"
+              - "*"
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - project.openshift.io
+              - project.openshift.io
               resources:
-                - projects
+              - projects
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - template.openshift.io
+              - template.openshift.io
               resources:
-                - templates
+              - templates
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
             - apiGroups:
-                - config.openshift.io
+              - config.openshift.io
               verbs:
                 - get
                 - watch
@@ -191,43 +191,43 @@ spec:
             name: kubevirt.io-acm-hub:admin
           rules:
             - apiGroups:
-                - clusterview.open-cluster-management.io
+              - clusterview.open-cluster-management.io
               resources:
-                - managedclusters
+              - managedclusters
               verbs:
-                - list
-                - get
-                - watch
+              - list
+              - get
+              - watch
             - apiGroups:
-                - cluster.open-cluster-management.io
+              - cluster.open-cluster-management.io
               resources:
-                - managedclusters
+              - managedclusters
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - clusterview.open-cluster-management.io
+              - clusterview.open-cluster-management.io
               resources:
-                - kubevirtprojects
+              - kubevirtprojects
               verbs:
-                - list
+              - list
             - apiGroups:
-                - forklift.konveyor.io
+              - forklift.konveyor.io
               resources:
-                - migrations
-                - providers
-                - plans
-                - networkmaps
-                - storagemaps
+              - migrations
+              - providers
+              - plans
+              - networkmaps
+              - storagemaps
               verbs:
-                - get
-                - list
-                - watch
-                - delete
-                - create
-                - update
-                - patch
+              - get
+              - list
+              - watch
+              - delete
+              - create
+              - update
+              - patch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
@@ -237,121 +237,121 @@ spec:
             name: kubevirt.io-acm-managed:view
           rules:
             - apiGroups:
-                - k8s.cni.cncf.io
+              - k8s.cni.cncf.io
               resources:
-                - network-attachment-definitions
+              - network-attachment-definitions
               verbs:
-                - get
-                - list
+              - get
+              - list
             - apiGroups:
-                - ""
+              - ""
               resources:
-                - configmaps
-                - events
-                - namespaces
-                - nodes
-                - persistentvolumeclaims
-                - persistentvolumes
-                - pods
-                - pods/metrics
-                - pods/log
-                - services
-                - serviceaccounts
+              - configmaps
+              - events
+              - namespaces
+              - nodes
+              - persistentvolumeclaims
+              - persistentvolumes
+              - pods
+              - pods/metrics
+              - pods/log
+              - services
+              - serviceaccounts
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - ""
+              - ""
               resources:
-                - secrets
+              - secrets
               verbs:
-                - list
+              - list
             - apiGroups:
-                - events.k8s.io
+              - events.k8s.io
               resources:
-                - events
+              - events
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - cdi.kubevirt.io
+              - cdi.kubevirt.io
               resources:
-                - datavolumes
-                - datasources
-                - dataimportcrons
+              - datavolumes
+              - datasources
+              - dataimportcrons
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - migrations.kubevirt.io
+              - migrations.kubevirt.io
               resources:
-                - migrationpolicies
+              - migrationpolicies
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - metrics.k8s.io
+              - metrics.k8s.io
               resources:
-                - pods
+              - pods
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - hco.kubevirt.io
+              - hco.kubevirt.io
               resources:
-                - hyperconvergeds
+              - hyperconvergeds
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - monitoring.coreos.com
+              - monitoring.coreos.com
               verbs:
-                - get
-                - watch
+              - get
+              - watch
               resources:
                 - prometheuses/api
               resourceNames:
                 - k8s
             - apiGroups:
-                - batch
+              - batch
               resources:
-                - jobs
+              - jobs
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - snapshot.storage.k8s.io
+              - snapshot.storage.k8s.io
               resources:
-                - "*"
+              - "*"
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - project.openshift.io
+              - project.openshift.io
               resources:
-                - projects
+              - projects
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - template.openshift.io
+              - template.openshift.io
               resources:
-                - templates
+              - templates
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - config.openshift.io
+              - config.openshift.io
               verbs:
                 - get
                 - watch
@@ -375,36 +375,36 @@ spec:
             name: kubevirt.io-acm-hub:view
           rules:
             - apiGroups:
-                - clusterview.open-cluster-management.io
+              - clusterview.open-cluster-management.io
               resources:
-                - managedclusters
+              - managedclusters
               verbs:
-                - list
-                - get
-                - watch
+              - list
+              - get
+              - watch
             - apiGroups:
-                - cluster.open-cluster-management.io
+              - cluster.open-cluster-management.io
               resources:
-                - managedclusters
+              - managedclusters
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
             - apiGroups:
-                - clusterview.open-cluster-management.io
+              - clusterview.open-cluster-management.io
               resources:
-                - kubevirtprojects
+              - kubevirtprojects
               verbs:
-                - list
+              - list
             - apiGroups:
-                - forklift.konveyor.io
+              - forklift.konveyor.io
               resources:
-                - migrations
-                - providers
-                - plans
-                - networkmaps
-                - storagemaps
+              - migrations
+              - providers
+              - plans
+              - networkmaps
+              - storagemaps
               verbs:
-                - get
-                - list
-                - watch
+              - get
+              - list
+              - watch
