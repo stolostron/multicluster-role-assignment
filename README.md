@@ -48,7 +48,7 @@ Creating `MulticlusterRoleAssignment` resources will create `ClusterPermission` 
 Create a `MulticlusterRoleAssignment` to grant a user view access to specific clusters:
 
 ```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: developer-view-access
@@ -124,7 +124,7 @@ The operator reports the status of each role assignment, including:
 ### Multiple Role Assignments
 
 ```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: admin-multi-role

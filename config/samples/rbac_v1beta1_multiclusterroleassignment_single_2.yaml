@@ -1,4 +1,4 @@
-apiVersion: rbac.open-cluster-management.io/v1alpha1
+apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
   name: test-multicluster-role-assignment-single-rolebinding

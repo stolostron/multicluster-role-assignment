@@ -1,4 +1,7 @@
 ## Append samples of your project ##
 resources:
-- rbac_v1alpha1_multiclusterroleassignment.yaml
+- rbac_v1beta1_multiclusterroleassignment_single_1.yaml
+- rbac_v1beta1_multiclusterroleassignment_single_2.yaml
+- rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml
+- rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
