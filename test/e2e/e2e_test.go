@@ -55,7 +55,7 @@ const openClusterManagementGlobalSetNamespace = "open-cluster-management-global-
 
 // clusterPermissionOwnerAnnotationPrefix is the owner binding annotation for ClusterPermission binding ownership
 // tracking
-const clusterPermissionOwnerAnnotationPrefix = "owner.rbac.open-cluster-management.io/"
+const clusterPermissionOwnerAnnotationPrefix = "owner/"
 
 // testMulticlusterRoleAssignmentSingleCRBName is the name of the test MulticlusterRoleAssignment with a single cluster
 // role binding single assignment

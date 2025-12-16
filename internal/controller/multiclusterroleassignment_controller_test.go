@@ -2068,8 +2068,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should return empty list when no owned bindings exist", func() {
 				cp.Annotations = map[string]string{
-					"owner.rbac.open-cluster-management.io/binding1": "other-namespace/other-mra",
-					"unrelated-annotation":                           "value",
+					"owner/binding1":       "other-namespace/other-mra",
+					"unrelated-annotation": "value",
 				}
 
 				ownedBindings := reconciler.extractOwnedBindingNames(cp, mra)
