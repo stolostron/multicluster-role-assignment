@@ -40,12 +40,7 @@ type clusterPermissionEventHandler struct{}
 func (h *clusterPermissionEventHandler) Create(ctx context.Context, e event.TypedCreateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	log := logf.FromContext(ctx)
 	cp := e.Object.(*clusterpermissionv1alpha1.ClusterPermission)
-
-	log.Info("ClusterPermission created, reconciling all owner MulticlusterRoleAssignments",
-		"clusterPermission", cp.Name, "namespace", cp.Namespace)
-
 	enqueueAllOwners(ctx, cp, q)
 }
 
@@ -53,7 +48,6 @@ func (h *clusterPermissionEventHandler) Create(ctx context.Context, e event.Type
 func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	log := logf.FromContext(ctx)
 	oldCP := e.ObjectOld.(*clusterpermissionv1alpha1.ClusterPermission)
 	newCP := e.ObjectNew.(*clusterpermissionv1alpha1.ClusterPermission)
 
@@ -62,10 +56,6 @@ func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.Type
 	if len(affectedMRAs) == 0 {
 		return
 	}
-
-	log.Info("ClusterPermission bindings changed, reconciling affected MulticlusterRoleAssignments only",
-		"clusterPermission", newCP.Name, "namespace", newCP.Namespace, "affectedMRAs", len(affectedMRAs),
-		"totalOwners", len(extractAllOwners(newCP)))
 
 	for mraID := range affectedMRAs {
 		enqueueMRA(ctx, mraID, q)
@@ -76,12 +66,7 @@ func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.Type
 func (h *clusterPermissionEventHandler) Delete(ctx context.Context, e event.TypedDeleteEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	log := logf.FromContext(ctx)
 	cp := e.Object.(*clusterpermissionv1alpha1.ClusterPermission)
-
-	log.Info("ClusterPermission deleted, reconciling all owner MulticlusterRoleAssignment", "clusterPermission", cp.Name,
-		"namespace", cp.Namespace)
-
 	enqueueAllOwners(ctx, cp, q)
 }
 
