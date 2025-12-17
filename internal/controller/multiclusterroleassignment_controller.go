@@ -128,7 +128,7 @@ const (
 	ClusterRoleKind                 = "ClusterRole"
 
 	// Owner binding annotation for ClusterPermission binding ownership tracking
-	OwnerAnnotationPrefix = "owner.rbac.open-cluster-management.io/"
+	OwnerAnnotationPrefix = "owner/"
 )
 
 // Reconciliation constants
@@ -141,10 +141,6 @@ const (
 	FinalizerName = "finalizer.rbac.open-cluster-management.io/multiclusterroleassignment"
 	// AllClustersAnnotation is the annotation key for the all clusters separated by semicolon
 	AllClustersAnnotation = "clusters.rbac.open-cluster-management.io"
-)
-
-// Field indexing constants
-const (
 	// PlacementIndexField is the field path used for indexing MRAs by Placement references
 	PlacementIndexField = "spec.roleAssignments.clusterSelection.placements"
 )
