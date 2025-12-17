@@ -621,6 +621,86 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 			}
 		})
+
+		It("Should cleanup ClusterPermissions when cluster removed from all assignments", func() {
+			By("Running first reconcile to create ClusterPermissions in all clusters")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: mraNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying AppliedClusters contains all three clusters")
+			Eventually(func() []string {
+				updatedMRA := &rbacv1beta1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, mraNamespacedName, updatedMRA)
+				if err != nil {
+					return nil
+				}
+				return updatedMRA.Status.AppliedClusters
+			}, "5s", "100ms").Should(ConsistOf(cluster1Name, cluster2Name, cluster3Name))
+
+			By("Verifying ClusterPermissions were created in all clusters")
+			for _, clusterName := range []string{cluster1Name, cluster2Name, cluster3Name} {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: clusterName,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Updating PlacementDecision to remove cluster2 (keeping only cluster1)")
+			pd := &clusterv1beta1.PlacementDecision{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      placement1Name + "-decision-1",
+				Namespace: multiclusterRoleAssignmentNamespace,
+			}, pd)
+			Expect(err).NotTo(HaveOccurred())
+
+			pd.Status = clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: cluster1Name},
+				},
+			}
+			err = k8sClient.Status().Update(ctx, pd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Running second reconcile to trigger cleanup of cluster2")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: mraNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying AppliedClusters was updated to only contain cluster1 and cluster3")
+			Eventually(func() []string {
+				updatedMRA := &rbacv1beta1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, mraNamespacedName, updatedMRA)
+				if err != nil {
+					return nil
+				}
+				return updatedMRA.Status.AppliedClusters
+			}, "5s", "100ms").Should(ConsistOf(cluster1Name, cluster3Name))
+
+			By("Verifying ClusterPermissions still exist in cluster1 and cluster3")
+			for _, clusterName := range []string{cluster1Name, cluster3Name} {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: clusterName,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Verifying ClusterPermission was deleted from cluster2")
+			Eventually(func() bool {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: cluster2Name,
+				}, cp)
+				return apierrors.IsNotFound(err)
+			}, "5s", "100ms").Should(BeTrue())
+		})
 	})
 
 	Context("Status Management", func() {
