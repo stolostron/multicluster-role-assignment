@@ -7,7 +7,7 @@ require (
 	github.com/onsi/gomega v1.38.3
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.34.3
-	k8s.io/client-go v0.34.2
+	k8s.io/client-go v0.34.3
 	open-cluster-management.io/api v1.1.0
 	open-cluster-management.io/cluster-permission v0.16.2
 	sigs.k8s.io/controller-runtime v0.22.4
