@@ -621,6 +621,86 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}
 			}
 		})
+
+		It("Should cleanup ClusterPermissions when cluster removed from all assignments", func() {
+			By("Running first reconcile to create ClusterPermissions in all clusters")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: mraNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying AppliedClusters contains all three clusters")
+			Eventually(func() []string {
+				updatedMRA := &rbacv1beta1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, mraNamespacedName, updatedMRA)
+				if err != nil {
+					return nil
+				}
+				return updatedMRA.Status.AppliedClusters
+			}, "5s", "100ms").Should(ConsistOf(cluster1Name, cluster2Name, cluster3Name))
+
+			By("Verifying ClusterPermissions were created in all clusters")
+			for _, clusterName := range []string{cluster1Name, cluster2Name, cluster3Name} {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: clusterName,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Updating PlacementDecision to remove cluster2 (keeping only cluster1)")
+			pd := &clusterv1beta1.PlacementDecision{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      placement1Name + "-decision-1",
+				Namespace: multiclusterRoleAssignmentNamespace,
+			}, pd)
+			Expect(err).NotTo(HaveOccurred())
+
+			pd.Status = clusterv1beta1.PlacementDecisionStatus{
+				Decisions: []clusterv1beta1.ClusterDecision{
+					{ClusterName: cluster1Name},
+				},
+			}
+			err = k8sClient.Status().Update(ctx, pd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Running second reconcile to trigger cleanup of cluster2")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: mraNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying AppliedClusters was updated to only contain cluster1 and cluster3")
+			Eventually(func() []string {
+				updatedMRA := &rbacv1beta1.MulticlusterRoleAssignment{}
+				err := k8sClient.Get(ctx, mraNamespacedName, updatedMRA)
+				if err != nil {
+					return nil
+				}
+				return updatedMRA.Status.AppliedClusters
+			}, "5s", "100ms").Should(ConsistOf(cluster1Name, cluster3Name))
+
+			By("Verifying ClusterPermissions still exist in cluster1 and cluster3")
+			for _, clusterName := range []string{cluster1Name, cluster3Name} {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: clusterName,
+				}, cp)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Verifying ClusterPermission was deleted from cluster2")
+			Eventually(func() bool {
+				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      ClusterPermissionManagedName,
+					Namespace: cluster2Name,
+				}, cp)
+				return apierrors.IsNotFound(err)
+			}, "5s", "100ms").Should(BeTrue())
+		})
 	})
 
 	Context("Status Management", func() {
@@ -2917,10 +2997,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(errorTestMRA.Status.RoleAssignments[0].Message).To(ContainSubstring("placement not found"))
 			})
 
-			It("Should handle annotation parsing for previous clusters", func() {
-				errorTestMRA.Annotations = map[string]string{
-					AllClustersAnnotation: "cluster-a;cluster-b;cluster-c",
-				}
+			It("Should handle status.appliedClusters for previous clusters", func() {
+				errorTestMRA.Status.AppliedClusters = []string{"cluster-a", "cluster-b", "cluster-c"}
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{
@@ -2930,54 +3008,6 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("Should handle annotation update conflict and requeue", func() {
-				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
-
-				mockClient := &MockErrorClient{
-					Client:           k8sClient,
-					UpdateError:      apierrors.NewConflict(schema.GroupResource{}, "test", fmt.Errorf("conflict")),
-					ShouldFailUpdate: true,
-					TargetResource:   "multiclusterroleassignments",
-				}
-				errorReconciler := &MulticlusterRoleAssignmentReconciler{
-					Client: mockClient,
-					Scheme: k8sClient.Scheme(),
-				}
-
-				result, err := errorReconciler.Reconcile(ctx, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      errorTestMRA.Name,
-						Namespace: errorTestMRA.Namespace,
-					},
-				})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
-			})
-
-			It("Should return error when annotation update fails with non-conflict error", func() {
-				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
-
-				mockClient := &MockErrorClient{
-					Client:           k8sClient,
-					UpdateError:      fmt.Errorf("annotation update failed"),
-					ShouldFailUpdate: true,
-					TargetResource:   "multiclusterroleassignments",
-				}
-				errorReconciler := &MulticlusterRoleAssignmentReconciler{
-					Client: mockClient,
-					Scheme: k8sClient.Scheme(),
-				}
-
-				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      errorTestMRA.Name,
-						Namespace: errorTestMRA.Namespace,
-					},
-				})
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("annotation update failed"))
 			})
 
 			It("Should requeue after cluster permission failures", func() {
@@ -4121,266 +4151,6 @@ func findConditionByType(conditions []metav1.Condition, conditionType string) *m
 		}
 	}
 	return nil
-}
-
-func TestUpdateAllClustersAnnotation(t *testing.T) {
-	// Use the same scheme setup pattern as the working tests
-	testscheme := scheme.Scheme
-	for _, addToScheme := range []func(*runtime.Scheme) error{
-		rbacv1beta1.AddToScheme,
-		clusterpermissionv1alpha1.AddToScheme,
-	} {
-		if err := addToScheme(testscheme); err != nil {
-			t.Fatalf("AddToScheme error = %v", err)
-		}
-	}
-
-	var err error
-
-	t.Run("Should set annotation when annotations is nil", func(t *testing.T) {
-		mra := &rbacv1beta1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-mra",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-			},
-			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
-				Subject: rbacv1.Subject{
-					Kind: "User",
-					Name: "test-user",
-				},
-				RoleAssignments: []rbacv1beta1.RoleAssignment{
-					{
-						Name:        "test-assignment",
-						ClusterRole: "test-role",
-						ClusterSelection: rbacv1beta1.ClusterSelection{
-							Type: "placements",
-							Placements: []rbacv1beta1.PlacementRef{
-								{Name: "placement1", Namespace: "open-cluster-management"},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		// mra.Annotations is nil initially
-		allClusters := []string{"cluster1", "cluster2", "cluster3"}
-
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err != nil {
-			t.Fatalf("updateAllClustersAnnotation error = %v", err)
-		}
-
-		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
-		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
-		if err != nil {
-			t.Fatalf("Failed to get updated MRA: %v", err)
-		}
-
-		if updatedMRA.Annotations == nil {
-			t.Fatalf("Annotations should not be nil after update")
-		}
-
-		expectedAnnotation := "cluster1;cluster2;cluster3"
-		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
-		}
-	})
-
-	t.Run("Should update existing annotation", func(t *testing.T) {
-		mra := &rbacv1beta1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-mra-2",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-				Annotations: map[string]string{
-					"existing-annotation": "existing-value",
-					AllClustersAnnotation: "old-cluster1;old-cluster2",
-				},
-			},
-			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
-				Subject: rbacv1.Subject{
-					Kind: "User",
-					Name: "test-user",
-				},
-				RoleAssignments: []rbacv1beta1.RoleAssignment{
-					{
-						Name:        "test-assignment",
-						ClusterRole: "test-role",
-						ClusterSelection: rbacv1beta1.ClusterSelection{
-							Type: "placements",
-							Placements: []rbacv1beta1.PlacementRef{
-								{Name: "placement1", Namespace: "open-cluster-management"},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		allClusters := []string{"new-cluster1", "new-cluster2"}
-
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err != nil {
-			t.Fatalf("updateAllClustersAnnotation error = %v", err)
-		}
-
-		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
-		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
-		if err != nil {
-			t.Fatalf("Failed to get updated MRA: %v", err)
-		}
-
-		expectedAnnotation := "new-cluster1;new-cluster2"
-		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
-		}
-
-		// Verify other annotations are preserved
-		if updatedMRA.Annotations["existing-annotation"] != "existing-value" {
-			t.Fatalf("Existing annotation should be preserved")
-		}
-	})
-
-	t.Run("Should handle empty clusters list", func(t *testing.T) {
-		mra := &rbacv1beta1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-mra-3",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-			},
-			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
-				Subject: rbacv1.Subject{
-					Kind: "User",
-					Name: "test-user",
-				},
-				RoleAssignments: []rbacv1beta1.RoleAssignment{
-					{
-						Name:        "test-assignment",
-						ClusterRole: "test-role",
-						ClusterSelection: rbacv1beta1.ClusterSelection{
-							Type: "placements",
-							Placements: []rbacv1beta1.PlacementRef{
-								{Name: "placement1", Namespace: "open-cluster-management"},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		allClusters := []string{} // Empty clusters list
-
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err != nil {
-			t.Fatalf("updateAllClustersAnnotation error = %v", err)
-		}
-
-		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
-		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
-		if err != nil {
-			t.Fatalf("Failed to get updated MRA: %v", err)
-		}
-
-		expectedAnnotation := ""
-		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected empty annotation, got '%s'", updatedMRA.Annotations[AllClustersAnnotation])
-		}
-	})
-
-	t.Run("Should handle single cluster", func(t *testing.T) {
-		mra := &rbacv1beta1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "test-mra-4",
-				Namespace:       "open-cluster-management",
-				ResourceVersion: "1",
-			},
-			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
-				Subject: rbacv1.Subject{
-					Kind: "User",
-					Name: "test-user",
-				},
-				RoleAssignments: []rbacv1beta1.RoleAssignment{
-					{
-						Name:        "test-assignment",
-						ClusterRole: "test-role",
-						ClusterSelection: rbacv1beta1.ClusterSelection{
-							Type: "placements",
-							Placements: []rbacv1beta1.PlacementRef{
-								{Name: "placement1", Namespace: "open-cluster-management"},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		allClusters := []string{"single-cluster"} // Single cluster
-
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(mra).Build()
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err != nil {
-			t.Fatalf("updateAllClustersAnnotation error = %v", err)
-		}
-
-		var updatedMRA rbacv1beta1.MulticlusterRoleAssignment
-		err = fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(mra), &updatedMRA)
-		if err != nil {
-			t.Fatalf("Failed to get updated MRA: %v", err)
-		}
-
-		expectedAnnotation := "single-cluster"
-		if updatedMRA.Annotations[AllClustersAnnotation] != expectedAnnotation {
-			t.Fatalf("Expected annotation '%s', got '%s'", expectedAnnotation, updatedMRA.Annotations[AllClustersAnnotation])
-		}
-	})
-
-	t.Run("Should fail when resource not found during refresh", func(t *testing.T) {
-		mra := &rbacv1beta1.MulticlusterRoleAssignment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "non-existent",
-				Namespace: "open-cluster-management",
-			},
-		}
-
-		allClusters := []string{"cluster1"}
-
-		// Create client without the MRA object, so Get will fail
-		fakeClient := fake.NewClientBuilder().WithScheme(testscheme).Build()
-		reconciler := &MulticlusterRoleAssignmentReconciler{
-			Client: fakeClient,
-			Scheme: testscheme,
-		}
-
-		err = reconciler.updateAllClustersAnnotation(context.TODO(), mra, allClusters)
-		if err == nil {
-			t.Fatalf("Expected error when resource not found during refresh, got nil")
-		}
-	})
 }
 
 func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {

@@ -487,7 +487,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation matches targeted clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -572,7 +572,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation matches targeted clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -655,7 +655,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation matches targeted clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -811,7 +811,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation matches targeted clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -932,7 +932,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation matches targeted clusters including newmanagedcluster04")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 
@@ -991,7 +991,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation", func() {
 					By("verifying all clusters annotation no longer includes newmanagedcluster04")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -1207,7 +1207,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should have correct all clusters annotations for all MRAs", func() {
 					By("verifying all clusters annotations match targeted clusters for all MRAs")
 					for _, mra := range mras {
-						validateMRAAllClustersAnnotation(mra)
+						validateMRAAppliedClusters(mra)
 					}
 				})
 			})
@@ -1513,7 +1513,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should have correct all clusters annotations for all comprehensively modified MRAs", func() {
 					By("verifying all clusters annotations match targeted clusters for all comprehensively modified MRAs")
 					for _, mra := range mras {
-						validateMRAAllClustersAnnotation(mra)
+						validateMRAAppliedClusters(mra)
 					}
 				})
 			})
@@ -2086,7 +2086,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should have correct all clusters annotation after rapid patching", func() {
 					By("verifying all clusters annotation matches targeted clusters after rapid patching")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -2270,7 +2270,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should have correct all clusters annotations for remaining MRAs", func() {
 					By("verifying all clusters annotations match targeted clusters for remaining MRAs")
 					for i := 1; i < len(mras); i++ {
-						validateMRAAllClustersAnnotation(mras[i])
+						validateMRAAppliedClusters(mras[i])
 					}
 				})
 			})
@@ -2400,7 +2400,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
 
 					By("verifying clusters annotation includes both clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 
@@ -2446,7 +2446,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
 
 					By("verifying clusters annotation reflects remaining cluster")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 
@@ -2588,7 +2588,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
 
 					By("verifying clusters annotation includes both clusters")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 
@@ -2773,7 +2773,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "test-role-assignment")
 
 					By("verifying clusters annotation is deduplicated")
-					validateMRAAllClustersAnnotation(mra)
+					validateMRAAppliedClusters(mra)
 				})
 			})
 		})
@@ -3290,39 +3290,29 @@ func cleanupTestResources(mraName string, clusterNames []string) {
 	}
 }
 
-// validateMRAAllClustersAnnotation validates that the MulticlusterRoleAssignment contains the correct all clusters
-// annotation that matches the clusters targeted in its role assignments.
-func validateMRAAllClustersAnnotation(mra rbacv1beta1.MulticlusterRoleAssignment) {
-	const allClustersAnnotation = "clusters.rbac.open-cluster-management.io"
-
+// validateMRAAppliedClusters validates that the MulticlusterRoleAssignment appliedClusters status field contains the
+// correct clusters that match the clusters targeted in its role assignments.
+func validateMRAAppliedClusters(mra rbacv1beta1.MulticlusterRoleAssignment) {
 	expectedClusters := getTargetedClustersFromMRA(mra)
 	Expect(expectedClusters).NotTo(BeEmpty(),
 		fmt.Sprintf("MRA %s/%s has no target clusters - this should not happen", mra.Namespace, mra.Name))
 
-	if mra.Annotations == nil {
-		Expect(mra.Annotations).NotTo(BeNil(),
-			fmt.Sprintf(
-				"Expected all clusters annotation for MRA %s/%s, but annotations are nil", mra.Namespace, mra.Name))
-	}
+	actualClusters := mra.Status.AppliedClusters
+	Expect(actualClusters).NotTo(BeNil(),
+		fmt.Sprintf("Expected status.appliedClusters for MRA %s/%s, but field is nil", mra.Namespace, mra.Name))
 
-	actualAnnotationValue, exists := mra.Annotations[allClustersAnnotation]
-
-	Expect(exists).To(BeTrue(),
-		fmt.Sprintf(
-			"Expected all clusters annotation for MRA %s/%s, but annotation not found", mra.Namespace, mra.Name))
-
-	Expect(actualAnnotationValue).NotTo(BeEmpty(),
-		fmt.Sprintf("All clusters annotation for MRA %s/%s exists but is empty - this should not happen", mra.Namespace,
-			mra.Name))
-
-	actualClusters := strings.Split(actualAnnotationValue, ";")
+	Expect(actualClusters).NotTo(BeEmpty(),
+		fmt.Sprintf("Status.appliedClusters for MRA %s/%s exists but is empty", mra.Namespace, mra.Name))
 
 	slices.Sort(expectedClusters)
-	slices.Sort(actualClusters)
 
-	Expect(actualClusters).To(Equal(expectedClusters), fmt.Sprintf(
-		"Expected all clusters annotation '%s' for MRA %s/%s, but got '%s'", strings.Join(expectedClusters, ";"),
-		mra.Namespace, mra.Name, actualAnnotationValue))
+	actualClustersSorted := make([]string, len(actualClusters))
+	copy(actualClustersSorted, actualClusters)
+	slices.Sort(actualClustersSorted)
+
+	Expect(actualClustersSorted).To(Equal(expectedClusters), fmt.Sprintf(
+		"Expected status.appliedClusters %v for MRA %s/%s, but got %v",
+		expectedClusters, mra.Namespace, mra.Name, actualClustersSorted))
 }
 
 // getClustersFromPlacements queries PlacementDecisions for the given Placements and returns the selected clusters.
