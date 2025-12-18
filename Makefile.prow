@@ -1,6 +1,10 @@
 -include /opt/build-harness/Makefile.prow
 -include Makefile
 
+# Extract Go version from go.mod and set GOTOOLCHAIN to avoid covdata tool issues
+GO_MOD_VERSION := $(shell awk '/^go / {print $$2}' go.mod)
+export GOTOOLCHAIN := go$(GO_MOD_VERSION)+auto
+
 .PHONY: push-prow
 push-prow: build-prow
 	docker push ${REPO_URL}/multicluster-role-assignment:${VERSION}
