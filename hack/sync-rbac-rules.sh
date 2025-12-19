@@ -3,7 +3,7 @@ set -e
 
 # Check if yq is available
 if ! command -v yq &> /dev/null; then
-    echo "ERROR: yq not found. Install with: go install github.com/mikefarah/yq/v4@latest"
+    echo "ERROR: yq not found. Install with: go install github.com/mikefarah/yq/v4@latest" >&2
     exit 1
 fi
 
