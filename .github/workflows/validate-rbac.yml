@@ -1,0 +1,43 @@
+name: Validate RBAC Sync
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install yq
+        run: go install github.com/mikefarah/yq/v4@latest
+
+      - name: Run make manifests
+        run: make manifests
+
+      - name: Check for RBAC drift
+        run: |
+          if ! git diff --exit-code charts/fine-grained-rbac/templates/multicluster-role-assignment-clusterrole.yaml; then
+            echo ""
+            echo "RBAC rules are out of sync with installer chart!"
+            echo ""
+            echo "The ClusterRole was modified by 'make manifests':"
+            git diff charts/fine-grained-rbac/templates/multicluster-role-assignment-clusterrole.yaml
+            echo ""
+            echo "This means the installer chart RBAC rules don't match the kubebuilder-generated RBAC."
+            echo ""
+            echo "To fix this:"
+            echo "  1. Run 'make manifests' locally"
+            echo "  2. Review the changes: git diff charts/fine-grained-rbac/templates"
+            echo "  3. Commit the updated installer chart files"
+            echo ""
+            exit 1
+          fi
+          echo "RBAC rules are in sync between config/rbac and installer chart"
