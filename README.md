@@ -160,6 +160,7 @@ spec:
 ### Prerequisites
 
 - Go 1.24+
+- [yq](https://github.com/mikefarah/yq) v4+ - `go install github.com/mikefarah/yq/v4@latest`
 - Kubernetes cluster for testing
 - [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for e2e tests)
 
@@ -234,8 +235,14 @@ E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#install
 - `make install` - Install CRDs to the cluster
 - `make deploy` - Deploy the operator to the cluster
 - `make undeploy` - Remove the operator from the cluster
-- `make manifests` - Generate CRD and RBAC manifests
+- `make manifests` - Generate CRD and RBAC manifests (auto-syncs to installer chart)
 - `make generate` - Generate code (DeepCopy methods)
+
+### RBAC Sync
+
+RBAC rules are automatically synced from kubebuilder-generated files to the installer chart when running `make manifests`. When you add/modify kubebuilder RBAC markers in controller code, run `make manifests` and commit both `config/rbac/` and `charts/fine-grained-rbac/templates/` changes. CI will fail if they're out of sync.
+
+**Requires**: `yq` v4+ - Install with `go install github.com/mikefarah/yq/v4@latest`
 
 ## Contributing
 
