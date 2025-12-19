@@ -22,21 +22,29 @@ jobs:
       - name: Run make manifests
         run: make manifests
 
+      - name: Sync RBAC to installer chart (verify script ran)
+        run: ./hack/sync-rbac-rules.sh
+
       - name: Check for RBAC drift
         run: |
-          if ! git diff --exit-code charts/fine-grained-rbac/templates/multicluster-role-assignment-clusterrole.yaml; then
+          if ! git diff --exit-code charts/fine-grained-rbac/templates/; then
             echo ""
             echo "RBAC rules are out of sync with installer chart!"
             echo ""
-            echo "The ClusterRole was modified by 'make manifests':"
-            git diff charts/fine-grained-rbac/templates/multicluster-role-assignment-clusterrole.yaml
+            echo "The following files were modified:"
+            git diff --name-only charts/fine-grained-rbac/templates/
             echo ""
-            echo "This means the installer chart RBAC rules don't match the kubebuilder-generated RBAC."
+            git diff charts/fine-grained-rbac/templates/
+            echo ""
+            echo "This means the installer chart doesn't match the kubebuilder-generated RBAC."
             echo ""
             echo "To fix this:"
             echo "  1. Run 'make manifests' locally"
             echo "  2. Review the changes: git diff charts/fine-grained-rbac/templates"
             echo "  3. Commit the updated installer chart files"
+            echo ""
+            echo "NOTE: If the sync script (hack/sync-rbac-rules.sh) was removed from the"
+            echo "'manifests' target in the Makefile, you may also need to run it manually."
             echo ""
             exit 1
           fi
