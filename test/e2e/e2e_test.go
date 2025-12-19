@@ -412,8 +412,6 @@ var _ = Describe("Manager", Ordered, func() {
 			))
 		})
 
-		// +kubebuilder:scaffold:e2e-webhooks-checks
-
 		Context("should create single ClusterPermission with single ClusterRoleBinding when "+
 			"MulticlusterRoleAssignment is created", func() {
 
