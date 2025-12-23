@@ -91,10 +91,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		By("Initializing the ClusterPermission")
 		cp = &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: cluster2Name,
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
@@ -114,7 +114,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       multiclusterRoleAssignmentName,
 				Namespace:  multiclusterRoleAssignmentNamespace,
-				Finalizers: []string{FinalizerName},
+				Finalizers: []string{finalizerName},
 			},
 			Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 				Subject: rbacv1.Subject{
@@ -196,7 +196,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		for _, clusterName := range clusterNames {
 			cp := &clusterpermissionv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
 				},
 			}
@@ -533,8 +533,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 			for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-				Expect(roleAssignmentStatus.Status).To(Equal(StatusTypeActive))
-				Expect(roleAssignmentStatus.Reason).To(Equal(ReasonClusterPermissionApplied))
+				Expect(roleAssignmentStatus.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
+				Expect(roleAssignmentStatus.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionApplied)))
 			}
 		})
 
@@ -590,11 +590,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			By("Checking that ClusterPermission was created")
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: cluster1Name,
 			}, cp)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cp.Labels[ClusterPermissionManagedByLabel]).To(Equal(ClusterPermissionManagedByValue))
+			Expect(cp.Labels[clusterPermissionManagedByLabel]).To(Equal(clusterPermissionManagedByValue))
 
 			By("Checking status conditions")
 			appliedFound := false
@@ -602,10 +602,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			for _, condition := range mra.Status.Conditions {
 				switch condition.Type {
-				case ConditionTypeApplied:
+				case string(rbacv1beta1.ConditionTypeApplied):
 					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 					appliedFound = true
-				case ConditionTypeReady:
+				case string(rbacv1beta1.ConditionTypeReady):
 					Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 					readyFound = true
 				}
@@ -617,7 +617,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			By("Checking role assignment statuses")
 			for _, status := range mra.Status.RoleAssignments {
 				if status.Name == mra.Spec.RoleAssignments[0].Name {
-					Expect(status.Status).To(Equal(StatusTypeActive))
+					Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
 				}
 			}
 		})
@@ -643,7 +643,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			for _, clusterName := range []string{cluster1Name, cluster2Name, cluster3Name} {
 				cp := &clusterpermissionv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -685,7 +685,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			for _, clusterName := range []string{cluster1Name, cluster3Name} {
 				cp := &clusterpermissionv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -695,7 +695,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Eventually(func() bool {
 				cp := &clusterpermissionv1alpha1.ClusterPermission{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: cluster2Name,
 				}, cp)
 				return apierrors.IsNotFound(err)
@@ -706,40 +706,40 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	Context("Status Management", func() {
 		Describe("setCondition", func() {
 			It("Should add new condition when not present", func() {
-				reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+				reconciler.setCondition(mra, string(rbacv1beta1.ConditionTypeReady), metav1.ConditionTrue, string(rbacv1beta1.ReasonAllApplied),
 					"All assignments applied")
 
 				Expect(mra.Status.Conditions).To(HaveLen(1))
 				condition := mra.Status.Conditions[0]
-				Expect(condition.Type).To(Equal(ConditionTypeReady))
+				Expect(condition.Type).To(Equal(string(rbacv1beta1.ConditionTypeReady)))
 				Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-				Expect(condition.Reason).To(Equal(ReasonAllApplied))
+				Expect(condition.Reason).To(Equal(string(rbacv1beta1.ReasonAllApplied)))
 				Expect(condition.Message).To(Equal("All assignments applied"))
 				Expect(condition.ObservedGeneration).To(Equal(mra.Generation))
 			})
 
 			It("Should update existing condition when status changes", func() {
-				reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+				reconciler.setCondition(mra, string(rbacv1beta1.ConditionTypeReady), metav1.ConditionTrue, string(rbacv1beta1.ReasonAllApplied),
 					"All assignments applied")
-				reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionFalse, ReasonPartialFailure,
+				reconciler.setCondition(mra, string(rbacv1beta1.ConditionTypeReady), metav1.ConditionFalse, string(rbacv1beta1.ReasonPartialFailure),
 					"Some assignments failed")
 
 				Expect(mra.Status.Conditions).To(HaveLen(1))
 				condition := mra.Status.Conditions[0]
-				Expect(condition.Type).To(Equal(ConditionTypeReady))
+				Expect(condition.Type).To(Equal(string(rbacv1beta1.ConditionTypeReady)))
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-				Expect(condition.Reason).To(Equal(ReasonPartialFailure))
+				Expect(condition.Reason).To(Equal(string(rbacv1beta1.ReasonPartialFailure)))
 				Expect(condition.Message).To(Equal("Some assignments failed"))
 			})
 
 			It("Should only update ObservedGeneration when condition content is same", func() {
-				reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+				reconciler.setCondition(mra, string(rbacv1beta1.ConditionTypeReady), metav1.ConditionTrue, string(rbacv1beta1.ReasonAllApplied),
 					"All assignments applied")
 				originalTime := mra.Status.Conditions[0].LastTransitionTime
 
 				newGeneration := int64(2)
 				mra.Generation = newGeneration
-				reconciler.setCondition(mra, ConditionTypeReady, metav1.ConditionTrue, ReasonAllApplied,
+				reconciler.setCondition(mra, string(rbacv1beta1.ConditionTypeReady), metav1.ConditionTrue, string(rbacv1beta1.ReasonAllApplied),
 					"All assignments applied")
 
 				Expect(mra.Status.Conditions).To(HaveLen(1))
@@ -751,13 +751,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("setRoleAssignmentStatus", func() {
 			It("Should add new role assignment status when not present", func() {
-				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReason",
+				reconciler.setRoleAssignmentStatus(mra, "assignment1", string(rbacv1beta1.StatusTypeActive), "TestReason",
 					"Successfully applied")
 
 				Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 				status := mra.Status.RoleAssignments[0]
 				Expect(status.Name).To(Equal("assignment1"))
-				Expect(status.Status).To(Equal(StatusTypeActive))
+				Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
 				Expect(status.Reason).To(Equal("TestReason"))
 				Expect(status.Message).To(Equal("Successfully applied"))
 				Expect(status.CreatedAt.Time).NotTo(BeZero())
@@ -765,7 +765,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should update existing role assignment status", func() {
 				var createdTime string
-				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypePending, "TestReasonPending",
+				reconciler.setRoleAssignmentStatus(mra, "assignment1", string(rbacv1beta1.StatusTypePending), "TestReasonPending",
 					"Initializing")
 
 				status := mra.Status.RoleAssignments[0]
@@ -773,13 +773,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				time.Sleep(100 * time.Microsecond)
 				createdTime = status.CreatedAt.String()
 
-				reconciler.setRoleAssignmentStatus(mra, "assignment1", StatusTypeActive, "TestReasonActive",
+				reconciler.setRoleAssignmentStatus(mra, "assignment1", string(rbacv1beta1.StatusTypeActive), "TestReasonActive",
 					"Successfully applied")
 
 				Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 				status = mra.Status.RoleAssignments[0]
 				Expect(status.Name).To(Equal("assignment1"))
-				Expect(status.Status).To(Equal(StatusTypeActive))
+				Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
 				Expect(status.Reason).To(Equal("TestReasonActive"))
 				Expect(status.Message).To(Equal("Successfully applied"))
 				Expect(status.CreatedAt.String()).To(Equal(createdTime), "CreatedAt should not be updated")
@@ -793,8 +793,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypePending))
-					Expect(roleAssignmentStatus.Message).To(Equal(MessageInitializing))
+					Expect(roleAssignmentStatus.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+					Expect(roleAssignmentStatus.Message).To(Equal(messageInitializing))
 				}
 			})
 
@@ -802,7 +802,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
-						Status:  StatusTypeActive,
+						Status:  string(rbacv1beta1.StatusTypeActive),
 						Message: "Already applied",
 					},
 				}
@@ -816,11 +816,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 					switch status.Name {
 					case roleAssignment1Name:
-						Expect(status.Status).To(Equal(StatusTypeActive))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
 						Expect(status.Message).To(Equal("Already applied"))
 					case roleAssignment2Name:
-						Expect(status.Status).To(Equal(StatusTypePending))
-						Expect(status.Message).To(Equal(MessageInitializing))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+						Expect(status.Message).To(Equal(messageInitializing))
 					}
 				}
 			})
@@ -831,32 +831,32 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Generation = 2
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:               ConditionTypeApplied,
+						Type:               string(rbacv1beta1.ConditionTypeApplied),
 						Status:             metav1.ConditionTrue,
-						Reason:             ReasonClusterPermissionApplied,
-						Message:            MessageClusterPermissionApplied,
+						Reason:             string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message:            messageClusterPermissionApplied,
 						ObservedGeneration: 1,
 					},
 					{
-						Type:               ConditionTypeReady,
+						Type:               string(rbacv1beta1.ConditionTypeReady),
 						Status:             metav1.ConditionTrue,
-						Reason:             ReasonAllApplied,
-						Message:            MessageRoleAssignmentsAppliedSuccessfully,
+						Reason:             string(rbacv1beta1.ReasonAllApplied),
+						Message:            messageRoleAssignmentsAppliedSuccessfully,
 						ObservedGeneration: 1,
 					},
 				}
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
-						Status:  StatusTypeActive,
-						Reason:  ReasonClusterPermissionApplied,
-						Message: MessageClusterPermissionApplied,
+						Status:  string(rbacv1beta1.StatusTypeActive),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message: messageClusterPermissionApplied,
 					},
 					{
 						Name:    roleAssignment2Name,
-						Status:  StatusTypeActive,
-						Reason:  ReasonClusterPermissionApplied,
-						Message: MessageClusterPermissionApplied,
+						Status:  string(rbacv1beta1.StatusTypeActive),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message: messageClusterPermissionApplied,
 					},
 				}
 			})
@@ -866,7 +866,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				var appliedCondition *metav1.Condition
 				for i, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeApplied {
+					if condition.Type == string(rbacv1beta1.ConditionTypeApplied) {
 						appliedCondition = &mra.Status.Conditions[i]
 						break
 					}
@@ -874,8 +874,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(appliedCondition).NotTo(BeNil())
 				Expect(appliedCondition.Status).To(Equal(metav1.ConditionUnknown))
-				Expect(appliedCondition.Reason).To(Equal(ReasonApplyInProgress))
-				Expect(appliedCondition.Message).To(Equal(MessageSpecChangedReEvaluating))
+				Expect(appliedCondition.Reason).To(Equal(string(rbacv1beta1.ReasonApplyInProgress)))
+				Expect(appliedCondition.Message).To(Equal(messageSpecChangedReEvaluating))
 				Expect(appliedCondition.ObservedGeneration).To(Equal(mra.Generation))
 			})
 
@@ -886,7 +886,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				var newReadyCondition *metav1.Condition
 				for i, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeReady {
+					if condition.Type == string(rbacv1beta1.ConditionTypeReady) {
 						newReadyCondition = &mra.Status.Conditions[i]
 						break
 					}
@@ -903,19 +903,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypePending))
-					Expect(roleAssignmentStatus.Reason).To(Equal(ReasonInitializing))
-					Expect(roleAssignmentStatus.Message).To(Equal(MessageInitializing))
+					Expect(roleAssignmentStatus.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+					Expect(roleAssignmentStatus.Reason).To(Equal(string(rbacv1beta1.ReasonInitializing)))
+					Expect(roleAssignmentStatus.Message).To(Equal(messageInitializing))
 				}
 			})
 
 			It("Should handle missing Applied condition gracefully", func() {
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:               ConditionTypeReady,
+						Type:               string(rbacv1beta1.ConditionTypeReady),
 						Status:             metav1.ConditionTrue,
-						Reason:             ReasonAllApplied,
-						Message:            MessageRoleAssignmentsAppliedSuccessfully,
+						Reason:             string(rbacv1beta1.ReasonAllApplied),
+						Message:            messageRoleAssignmentsAppliedSuccessfully,
 						ObservedGeneration: 1,
 					},
 				}
@@ -925,7 +925,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				}).NotTo(Panic())
 
 				Expect(mra.Status.Conditions).To(HaveLen(1))
-				Expect(mra.Status.Conditions[0].Type).To(Equal(ConditionTypeReady))
+				Expect(mra.Status.Conditions[0].Type).To(Equal(string(rbacv1beta1.ConditionTypeReady)))
 			})
 
 			It("Should handle empty role assignments gracefully", func() {
@@ -964,21 +964,21 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
-						Status:  StatusTypeActive,
-						Reason:  ReasonClusterPermissionApplied,
-						Message: MessageClusterPermissionApplied,
+						Status:  string(rbacv1beta1.StatusTypeActive),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message: messageClusterPermissionApplied,
 					},
 					{
 						Name:    roleAssignment2Name,
-						Status:  StatusTypeActive,
-						Reason:  ReasonClusterPermissionApplied,
-						Message: MessageClusterPermissionApplied,
+						Status:  string(rbacv1beta1.StatusTypeActive),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message: messageClusterPermissionApplied,
 					},
 					{
 						Name:    "stale-role-assignment",
-						Status:  StatusTypeError,
-						Reason:  ReasonClusterPermissionFailed,
-						Message: MessageClusterPermissionFailed,
+						Status:  string(rbacv1beta1.StatusTypeError),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionFailed),
+						Message: messageClusterPermissionFailed,
 					},
 				}
 
@@ -986,9 +986,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(mra.Status.RoleAssignments).To(HaveLen(1))
 				Expect(mra.Status.RoleAssignments[0].Name).To(Equal(roleAssignment2Name))
-				Expect(mra.Status.RoleAssignments[0].Status).To(Equal(StatusTypePending))
-				Expect(mra.Status.RoleAssignments[0].Reason).To(Equal(ReasonInitializing))
-				Expect(mra.Status.RoleAssignments[0].Message).To(Equal(MessageInitializing))
+				Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+				Expect(mra.Status.RoleAssignments[0].Reason).To(Equal(string(rbacv1beta1.ReasonInitializing)))
+				Expect(mra.Status.RoleAssignments[0].Message).To(Equal(messageInitializing))
 			})
 
 			It("Should keep all role assignment status entries when names match spec", func() {
@@ -1017,15 +1017,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    roleAssignment1Name,
-						Status:  StatusTypeActive,
-						Reason:  ReasonClusterPermissionApplied,
-						Message: MessageClusterPermissionApplied,
+						Status:  string(rbacv1beta1.StatusTypeActive),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+						Message: messageClusterPermissionApplied,
 					},
 					{
 						Name:    roleAssignment2Name,
-						Status:  StatusTypeError,
-						Reason:  ReasonClusterPermissionFailed,
-						Message: MessageClusterPermissionFailed,
+						Status:  string(rbacv1beta1.StatusTypeError),
+						Reason:  string(rbacv1beta1.ReasonClusterPermissionFailed),
+						Message: messageClusterPermissionFailed,
 					},
 				}
 
@@ -1034,9 +1034,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, ra := range mra.Status.RoleAssignments {
-					Expect(ra.Status).To(Equal(StatusTypePending))
-					Expect(ra.Reason).To(Equal(ReasonInitializing))
-					Expect(ra.Message).To(Equal(MessageInitializing))
+					Expect(ra.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+					Expect(ra.Reason).To(Equal(string(rbacv1beta1.ReasonInitializing)))
+					Expect(ra.Message).To(Equal(messageInitializing))
 				}
 			})
 		})
@@ -1045,7 +1045,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			BeforeEach(func() {
 				mra.Status.Conditions = []metav1.Condition{
 					{
-						Type:   ConditionTypeApplied,
+						Type:   string(rbacv1beta1.ConditionTypeApplied),
 						Status: metav1.ConditionTrue,
 					},
 				}
@@ -1053,11 +1053,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:   roleAssignment1Name,
-						Status: StatusTypeActive,
+						Status: string(rbacv1beta1.StatusTypeActive),
 					},
 					{
 						Name:   roleAssignment2Name,
-						Status: StatusTypeActive,
+						Status: string(rbacv1beta1.StatusTypeActive),
 					},
 				}
 			})
@@ -1067,34 +1067,34 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
-				Expect(reason).To(Equal(ReasonApplyFailed))
-				Expect(message).To(Equal(MessageClusterPermissionFailed))
+				Expect(reason).To(Equal(string(rbacv1beta1.ReasonApplyFailed)))
+				Expect(message).To(Equal(messageClusterPermissionFailed))
 			})
 
 			It("Should return False when any role assignment failed", func() {
-				mra.Status.RoleAssignments[1].Status = StatusTypeError
+				mra.Status.RoleAssignments[1].Status = string(rbacv1beta1.StatusTypeError)
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
-				Expect(reason).To(Equal(ReasonPartialFailure))
-				Expect(message).To(Equal(fmt.Sprintf("1 out of 2 %s", MessageRoleAssignmentsFailed)))
+				Expect(reason).To(Equal(string(rbacv1beta1.ReasonPartialFailure)))
+				Expect(message).To(Equal(fmt.Sprintf("1 out of 2 %s", messageRoleAssignmentsFailed)))
 			})
 
 			It("Should return Pending when some role assignments are pending", func() {
-				mra.Status.RoleAssignments[1].Status = StatusTypePending
+				mra.Status.RoleAssignments[1].Status = string(rbacv1beta1.StatusTypePending)
 				mra.Status.Conditions = mra.Status.Conditions[:1] // Keep only Validated condition
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
-				Expect(reason).To(Equal(ReasonInProgress))
-				Expect(message).To(Equal(fmt.Sprintf("1 out of 2 %s", MessageRoleAssignmentsPending)))
+				Expect(reason).To(Equal(string(rbacv1beta1.ReasonInProgress)))
+				Expect(message).To(Equal(fmt.Sprintf("1 out of 2 %s", messageRoleAssignmentsPending)))
 			})
 
 			It("Should return True when all role assignments are applied", func() {
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionTrue))
-				Expect(reason).To(Equal(ReasonAllApplied))
-				Expect(message).To(Equal(fmt.Sprintf("2 out of 2 %s", MessageRoleAssignmentsAppliedSuccessfully)))
+				Expect(reason).To(Equal(string(rbacv1beta1.ReasonAllApplied)))
+				Expect(message).To(Equal(fmt.Sprintf("2 out of 2 %s", messageRoleAssignmentsAppliedSuccessfully)))
 			})
 
 			It("Should return Unknown when status cannot be determined", func() {
@@ -1102,8 +1102,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionUnknown))
-				Expect(reason).To(Equal(ReasonUnknown))
-				Expect(message).To(Equal(MessageStatusCannotBeDetermined))
+				Expect(reason).To(Equal(string(rbacv1beta1.ReasonUnknown)))
+				Expect(message).To(Equal(messageStatusCannotBeDetermined))
 			})
 		})
 
@@ -1128,12 +1128,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionFailed)))
 						Expect(status.Message).To(Equal(fmt.Sprintf(
 							"Failed on 2/2 clusters: %s for cluster %s: %s; %s for cluster %s: %s",
-							MessageClusterPermissionFailed, cluster1Name, "connection timeout",
-							MessageClusterPermissionFailed, cluster2Name, "permission denied")))
+							messageClusterPermissionFailed, cluster1Name, "connection timeout",
+							messageClusterPermissionFailed, cluster2Name, "permission denied")))
 						found = true
 						break
 					}
@@ -1145,9 +1145,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 					{
 						Name:    mra.Spec.RoleAssignments[0].Name,
-						Status:  StatusTypeError,
-						Reason:  ReasonPlacementNotFound,
-						Message: fmt.Sprintf("%s: placement default/missing-placement not found", MessagePlacementNotFound),
+						Status:  string(rbacv1beta1.StatusTypeError),
+						Reason:  string(rbacv1beta1.ReasonPlacementNotFound),
+						Message: fmt.Sprintf("%s: placement default/missing-placement not found", messagePlacementNotFound),
 					},
 				}
 
@@ -1163,9 +1163,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonPlacementNotFound))
-						Expect(status.Message).To(ContainSubstring(MessagePlacementNotFound))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonPlacementNotFound)))
+						Expect(status.Message).To(ContainSubstring(messagePlacementNotFound))
 						found = true
 						break
 					}
@@ -1188,9 +1188,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypePending))
-					Expect(roleAssignmentStatus.Reason).To(Equal(ReasonClustersValid))
-					Expect(roleAssignmentStatus.Message).To(Equal(MessageClustersValid))
+					Expect(roleAssignmentStatus.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+					Expect(roleAssignmentStatus.Reason).To(Equal(string(rbacv1beta1.ReasonClustersValid)))
+					Expect(roleAssignmentStatus.Message).To(Equal(messageClustersValid))
 				}
 			})
 
@@ -1207,9 +1207,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
-					Expect(roleAssignmentStatus.Status).To(Equal(StatusTypeError))
-					Expect(roleAssignmentStatus.Reason).To(Equal(ReasonPlacementNotFound))
-					Expect(roleAssignmentStatus.Message).To(ContainSubstring(MessagePlacementNotFound))
+					Expect(roleAssignmentStatus.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+					Expect(roleAssignmentStatus.Reason).To(Equal(string(rbacv1beta1.ReasonPlacementNotFound)))
+					Expect(roleAssignmentStatus.Message).To(ContainSubstring(messagePlacementNotFound))
 					switch roleAssignmentStatus.Name {
 					case roleAssignment1Name:
 						Expect(roleAssignmentStatus.Message).To(ContainSubstring("missing-placement-1"))
@@ -1237,9 +1237,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(clusters).To(BeEmpty())
 
 				for _, status := range mra.Status.RoleAssignments {
-					Expect(status.Status).To(Equal(StatusTypePending))
-					Expect(status.Reason).To(Equal(ReasonNoClustersResolved))
-					Expect(status.Message).To(Equal(MessageNoClustersResolved))
+					Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+					Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonNoClustersResolved)))
+					Expect(status.Message).To(Equal(messageNoClustersResolved))
 				}
 			})
 
@@ -1255,11 +1255,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				for _, status := range mra.Status.RoleAssignments {
 					switch status.Name {
 					case roleAssignment1Name:
-						Expect(status.Status).To(Equal(StatusTypePending))
-						Expect(status.Reason).To(Equal(ReasonClustersValid))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypePending)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonClustersValid)))
 					case roleAssignment2Name:
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonPlacementNotFound))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonPlacementNotFound)))
 					}
 				}
 			})
@@ -1480,7 +1480,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("ClusterPermission found but not managed by this controller"))
 				Expect(err.Error()).To(ContainSubstring(cluster2Name))
-				Expect(err.Error()).To(ContainSubstring(ClusterPermissionManagedName))
+				Expect(err.Error()).To(ContainSubstring(clusterPermissionManagedName))
 				Expect(cp).To(BeNil())
 			})
 
@@ -1490,7 +1490,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp, err := reconciler.getClusterPermission(ctx, cluster2Name)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cp).NotTo(BeNil())
-				Expect(cp.Name).To(Equal(ClusterPermissionManagedName))
+				Expect(cp.Name).To(Equal(clusterPermissionManagedName))
 				Expect(cp.Namespace).To(Equal(cluster2Name))
 			})
 		})
@@ -1510,7 +1510,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should return false when management label has wrong value", func() {
 				cp.Labels = map[string]string{
-					ClusterPermissionManagedByLabel: "wrong-value",
+					clusterPermissionManagedByLabel: "wrong-value",
 				}
 				Expect(reconciler.isClusterPermissionManaged(cp)).To(BeFalse())
 			})
@@ -1653,11 +1653,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cp.Labels[ClusterPermissionManagedByLabel]).To(Equal(ClusterPermissionManagedByValue))
+				Expect(cp.Labels[clusterPermissionManagedByLabel]).To(Equal(clusterPermissionManagedByValue))
 
 				Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
 				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(1))
@@ -1670,13 +1670,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should update existing ClusterPermission while preserving other MRA contributions", func() {
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
 				}
 				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
 					{
 						Name: "other-binding",
 						RoleRef: &rbacv1.RoleRef{
-							Kind:     ClusterRoleKind,
+							Kind:     clusterRoleKind,
 							Name:     "other-role",
 							APIGroup: rbacv1.GroupName,
 						},
@@ -1694,7 +1694,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -1702,7 +1702,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
 				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(2))
 
-				Expect(cp.Annotations[OwnerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
+				Expect(cp.Annotations[ownerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
 				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
 				expectedKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
 				Expect(cp.Annotations[expectedKey]).To(Equal(fmt.Sprintf(
@@ -1723,7 +1723,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      ClusterPermissionManagedName,
+					Name:      clusterPermissionManagedName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -1745,7 +1745,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should fail when unmanaged ClusterPermission exists", func() {
 				unmanagedCP := &clusterpermissionv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      ClusterPermissionManagedName,
+						Name:      clusterPermissionManagedName,
 						Namespace: cluster2Name,
 					},
 				}
@@ -1770,7 +1770,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				// Create existing ClusterPermission in cluster2
 				cp.Namespace = cluster2Name
 				cp.Labels = map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
 				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
 
@@ -1779,7 +1779,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					DeleteError: apierrors.NewNotFound(schema.GroupResource{
 						Group:    "rbac.open-cluster-management.io",
 						Resource: "clusterpermissions"},
-						ClusterPermissionManagedName),
+						clusterPermissionManagedName),
 					ShouldFailDelete: true,
 					TargetResource:   "clusterpermissions",
 				}
@@ -1801,7 +1801,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				// Create existing ClusterPermission in cluster2
 				cp.Namespace = cluster2Name
 				cp.Labels = map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
 				Expect(k8sClient.Create(ctx, cp)).To(Succeed())
 
@@ -1810,7 +1810,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					UpdateError: apierrors.NewNotFound(schema.GroupResource{
 						Group:    "rbac.open-cluster-management.io",
 						Resource: "clusterpermissions"},
-						ClusterPermissionManagedName),
+						clusterPermissionManagedName),
 					ShouldFailUpdate: true,
 					TargetResource:   "clusterpermissions",
 				}
@@ -1833,7 +1833,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
 				cp.Namespace = cluster2Name
 				cp.Labels = map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
 				cp.Annotations = map[string]string{
 					reconciler.generateOwnerAnnotationKey(expectedBindingName): reconciler.generateMulticlusterRoleAssignmentIdentifier(mra),
@@ -1843,7 +1843,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						{
 							Name: expectedBindingName,
 							RoleRef: &rbacv1.RoleRef{
-								Kind:     ClusterRoleKind,
+								Kind:     clusterRoleKind,
 								Name:     "test-role",
 								APIGroup: rbacv1.GroupName,
 							},
@@ -1881,14 +1881,14 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				// Create existing ClusterPermission with DIFFERENT spec
 				cp.Namespace = cluster2Name
 				cp.Labels = map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
 				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
 					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
 						{
 							Name: "different-binding",
 							RoleRef: &rbacv1.RoleRef{
-								Kind:     ClusterRoleKind,
+								Kind:     clusterRoleKind,
 								Name:     "different-role",
 								APIGroup: rbacv1.GroupName,
 							},
@@ -1934,9 +1934,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				found := false
 				for _, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeApplied {
+					if condition.Type == string(rbacv1beta1.ConditionTypeApplied) {
 						Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-						Expect(condition.Reason).To(Equal(ReasonClusterPermissionApplied))
+						Expect(condition.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionApplied)))
 						found = true
 						break
 					}
@@ -1957,9 +1957,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				found := false
 				for _, status := range mra.Status.RoleAssignments {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeActive))
-						Expect(status.Reason).To(Equal(ReasonClusterPermissionApplied))
-						Expect(status.Message).To(Equal(MessageClusterPermissionApplied))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeActive)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionApplied)))
+						Expect(status.Message).To(Equal(messageClusterPermissionApplied))
 						found = true
 						break
 					}
@@ -1987,10 +1987,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				appliedFound := false
 				for _, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeApplied {
+					if condition.Type == string(rbacv1beta1.ConditionTypeApplied) {
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-						Expect(condition.Reason).To(Equal(ReasonClusterPermissionFailed))
-						Expect(condition.Message).To(ContainSubstring(MessageClusterPermissionFailed))
+						Expect(condition.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionFailed)))
+						Expect(condition.Message).To(ContainSubstring(messageClusterPermissionFailed))
 						appliedFound = true
 						break
 					}
@@ -2000,9 +2000,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				roleAssignmentFound := false
 				for _, status := range mra.Status.RoleAssignments {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
-						Expect(status.Message).To(ContainSubstring(MessageClusterPermissionFailed))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionFailed)))
+						Expect(status.Message).To(ContainSubstring(messageClusterPermissionFailed))
 						Expect(status.Message).To(ContainSubstring(nonExistentCluster))
 						roleAssignmentFound = true
 						break
@@ -2034,11 +2034,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				appliedFound := false
 				for _, condition := range mra.Status.Conditions {
-					if condition.Type == ConditionTypeApplied {
+					if condition.Type == string(rbacv1beta1.ConditionTypeApplied) {
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-						Expect(condition.Reason).To(Equal(ReasonClusterPermissionFailed))
+						Expect(condition.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionFailed)))
 						Expect(condition.Message).To(ContainSubstring("1 out of 2 clusters"))
-						Expect(condition.Message).To(ContainSubstring(MessageClusterPermissionFailed))
+						Expect(condition.Message).To(ContainSubstring(messageClusterPermissionFailed))
 						appliedFound = true
 						break
 					}
@@ -2048,9 +2048,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				roleAssignmentFound := false
 				for _, status := range mra.Status.RoleAssignments {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
-						Expect(status.Status).To(Equal(StatusTypeError))
-						Expect(status.Reason).To(Equal(ReasonClusterPermissionFailed))
-						Expect(status.Message).To(ContainSubstring(MessageClusterPermissionFailed))
+						Expect(status.Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(rbacv1beta1.ReasonClusterPermissionFailed)))
+						Expect(status.Message).To(ContainSubstring(messageClusterPermissionFailed))
 						Expect(status.Message).To(ContainSubstring(nonExistentCluster))
 						roleAssignmentFound = true
 						break
@@ -2110,7 +2110,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should generate correct annotation key with prefix", func() {
 				bindingName := "mra-abcd1234efgh"
 				key := reconciler.generateOwnerAnnotationKey(bindingName)
-				expected := OwnerAnnotationPrefix + bindingName
+				expected := ownerAnnotationPrefix + bindingName
 				Expect(key).To(Equal(expected))
 			})
 		})
@@ -2126,10 +2126,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("extractOwnedBindingNames", func() {
 			It("Should extract owned binding names from annotations", func() {
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "binding1": fmt.Sprintf(
+					ownerAnnotationPrefix + "binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					OwnerAnnotationPrefix + "binding2": "other-namespace/other-mra",
-					OwnerAnnotationPrefix + "binding3": fmt.Sprintf(
+					ownerAnnotationPrefix + "binding2": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "binding3": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
 					"unrelated-annotation": "value",
 				}
@@ -2240,7 +2240,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(slice.OwnerAnnotations).To(HaveLen(1))
 
 				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role", "cluster-admin")
-				expectedAnnotationKey := OwnerAnnotationPrefix + expectedBindingName
+				expectedAnnotationKey := ownerAnnotationPrefix + expectedBindingName
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
@@ -2266,8 +2266,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
-				expectedKey1 := OwnerAnnotationPrefix + bindingName1
-				expectedKey2 := OwnerAnnotationPrefix + bindingName2
+				expectedKey1 := ownerAnnotationPrefix + bindingName1
+				expectedKey2 := ownerAnnotationPrefix + bindingName2
 
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey1, expectedMRAIdentifier))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey2, expectedMRAIdentifier))
@@ -2315,8 +2315,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				adminBindingName := reconciler.generateBindingName(mra, "admin-role", "cluster-admin")
 				editBindingName := reconciler.generateBindingName(mra, "edit-role", "edit", "development")
 
-				expectedAdminKey := OwnerAnnotationPrefix + adminBindingName
-				expectedEditKey := OwnerAnnotationPrefix + editBindingName
+				expectedAdminKey := ownerAnnotationPrefix + adminBindingName
+				expectedEditKey := ownerAnnotationPrefix + editBindingName
 
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedAdminKey, expectedMRAIdentifier))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedEditKey, expectedMRAIdentifier))
@@ -2326,12 +2326,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("extractOthersClusterPermissionSlice", func() {
 			It("Should extract bindings not owned by current MRA", func() {
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "cluster-role-binding1": fmt.Sprintf(
+					ownerAnnotationPrefix + "cluster-role-binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					OwnerAnnotationPrefix + "cluster-role-binding2": "other-namespace/other-mra",
-					OwnerAnnotationPrefix + "role-binding1": fmt.Sprintf(
+					ownerAnnotationPrefix + "cluster-role-binding2": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "role-binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					OwnerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
 					"unrelated-annotation":                  "value",
 				}
 				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
@@ -2372,7 +2372,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should exclude orphaned bindings with no ownership annotations", func() {
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
 					"unrelated-annotation":                    "value",
 				}
 				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
@@ -2396,11 +2396,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				currentMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
-					OwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
-					OwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra1",
-					OwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra2",
-					OwnerAnnotationPrefix + "other-binding3":   "other-namespace/other-mra3",
+					ownerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					ownerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					ownerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra1",
+					ownerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra2",
+					ownerAnnotationPrefix + "other-binding3":   "other-namespace/other-mra3",
 					"unrelated-annotation":                     "should-be-preserved",
 					"another-unrelated":                        "also-preserved",
 				}
@@ -2418,28 +2418,28 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(5))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					OwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra1"))
+					ownerAnnotationPrefix+"other-binding1", "other-namespace/other-mra1"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					OwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra2"))
+					ownerAnnotationPrefix+"other-binding2", "other-namespace/other-mra2"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					OwnerAnnotationPrefix+"other-binding3", "other-namespace/other-mra3"))
+					ownerAnnotationPrefix+"other-binding3", "other-namespace/other-mra3"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("unrelated-annotation", "should-be-preserved"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("another-unrelated", "also-preserved"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding2"))
 			})
 
 			It("Should exclude orphaned annotations that have no corresponding bindings", func() {
 				currentMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 				cp.Annotations = map[string]string{
-					OwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
-					OwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
-					OwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra",
-					OwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra",
-					OwnerAnnotationPrefix + "missing-binding1": "other-namespace/other-mra",
-					OwnerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
+					ownerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					ownerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					ownerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra",
+					ownerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra",
+					ownerAnnotationPrefix + "missing-binding1": "other-namespace/other-mra",
+					ownerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
 					"non-owner-annotation":                     "preserved",
 				}
 				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
@@ -2460,16 +2460,16 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(3))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					OwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra"))
+					ownerAnnotationPrefix+"other-binding1", "other-namespace/other-mra"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					OwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra"))
+					ownerAnnotationPrefix+"other-binding2", "other-namespace/other-mra"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("non-owner-annotation", "preserved"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "missing-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "missing-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "missing-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "missing-binding2"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(OwnerAnnotationPrefix + "current-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding2"))
 			})
 		})
 
@@ -2622,25 +2622,25 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should merge annotations from both slices", func() {
 				others := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						OwnerAnnotationPrefix + "binding1": "other/mra1",
-						OwnerAnnotationPrefix + "binding2": "other/mra2",
+						ownerAnnotationPrefix + "binding1": "other/mra1",
+						ownerAnnotationPrefix + "binding2": "other/mra2",
 						"unrelated-annotation":             "value",
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						OwnerAnnotationPrefix + "binding3": "current/mra",
-						OwnerAnnotationPrefix + "binding4": "current/mra",
+						ownerAnnotationPrefix + "binding3": "current/mra",
+						ownerAnnotationPrefix + "binding4": "current/mra",
 					},
 				}
 
 				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
 
 				Expect(annotations).To(HaveLen(5))
-				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("other/mra1"))
-				Expect(annotations[OwnerAnnotationPrefix+"binding2"]).To(Equal("other/mra2"))
-				Expect(annotations[OwnerAnnotationPrefix+"binding3"]).To(Equal("current/mra"))
-				Expect(annotations[OwnerAnnotationPrefix+"binding4"]).To(Equal("current/mra"))
+				Expect(annotations[ownerAnnotationPrefix+"binding1"]).To(Equal("other/mra1"))
+				Expect(annotations[ownerAnnotationPrefix+"binding2"]).To(Equal("other/mra2"))
+				Expect(annotations[ownerAnnotationPrefix+"binding3"]).To(Equal("current/mra"))
+				Expect(annotations[ownerAnnotationPrefix+"binding4"]).To(Equal("current/mra"))
 				Expect(annotations["unrelated-annotation"]).To(Equal("value"))
 			})
 
@@ -2656,19 +2656,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should overwrite duplicate keys with desired values", func() {
 				others := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						OwnerAnnotationPrefix + "binding1": "other/mra",
+						ownerAnnotationPrefix + "binding1": "other/mra",
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						OwnerAnnotationPrefix + "binding1": "current/mra",
+						ownerAnnotationPrefix + "binding1": "current/mra",
 					},
 				}
 
 				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
 
 				Expect(annotations).To(HaveLen(1))
-				Expect(annotations[OwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
+				Expect(annotations[ownerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
 		})
 
@@ -2696,7 +2696,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{
 						Name: "test-binding",
 						RoleRef: &rbacv1.RoleRef{
-							Kind:     ClusterRoleKind,
+							Kind:     clusterRoleKind,
 							Name:     "test-role",
 							APIGroup: rbacv1.GroupName,
 						},
@@ -2744,7 +2744,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       errorTestMRAName,
 					Namespace:  errorTestNamespaceName,
-					Finalizers: []string{FinalizerName},
+					Finalizers: []string{finalizerName},
 				},
 				Spec: rbacv1beta1.MulticlusterRoleAssignmentSpec{
 					Subject: rbacv1.Subject{Kind: "User", Name: "test-user"},
@@ -2830,7 +2830,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+				Expect(result.RequeueAfter).To(Equal(standardRequeueDelay))
 			})
 
 			It("Should handle finalizer remove conflict and requeue", func() {
@@ -2853,7 +2853,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+				Expect(result.RequeueAfter).To(Equal(standardRequeueDelay))
 			})
 
 			It("Should return error when finalizer update fails with non-conflict error", func() {
@@ -2885,8 +2885,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should skip reconcile when all conditions are current for generation", func() {
 				errorTestMRA.Generation = 1
 				errorTestMRA.Status.Conditions = []metav1.Condition{
-					{Type: ConditionTypeApplied, Status: metav1.ConditionTrue, ObservedGeneration: 1},
-					{Type: ConditionTypeReady, Status: metav1.ConditionTrue, ObservedGeneration: 1},
+					{Type: string(rbacv1beta1.ConditionTypeApplied), Status: metav1.ConditionTrue, ObservedGeneration: 1},
+					{Type: string(rbacv1beta1.ConditionTypeReady), Status: metav1.ConditionTrue, ObservedGeneration: 1},
 				}
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
@@ -2958,7 +2958,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(StandardRequeueDelay))
+				Expect(result.RequeueAfter).To(Equal(standardRequeueDelay))
 			})
 		})
 
@@ -2992,8 +2992,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(errorTestMRA.Status.RoleAssignments).To(HaveLen(1))
-				Expect(errorTestMRA.Status.RoleAssignments[0].Status).To(Equal(StatusTypeError))
-				Expect(errorTestMRA.Status.RoleAssignments[0].Reason).To(Equal(ReasonPlacementNotFound))
+				Expect(errorTestMRA.Status.RoleAssignments[0].Status).To(Equal(string(rbacv1beta1.StatusTypeError)))
+				Expect(errorTestMRA.Status.RoleAssignments[0].Reason).To(Equal(string(rbacv1beta1.ReasonPlacementNotFound)))
 				Expect(errorTestMRA.Status.RoleAssignments[0].Message).To(ContainSubstring("placement not found"))
 			})
 
@@ -3030,20 +3030,20 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(ClusterPermissionFailureRequeueDelay))
+				Expect(result.RequeueAfter).To(Equal(clusterPermissionFailureRequeueDelay))
 			})
 
 			It("Should handle deletion cleanup failure", func() {
 				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      ClusterPermissionManagedName,
+						Name:      clusterPermissionManagedName,
 						Namespace: cluster1Name,
 						Labels: map[string]string{
-							ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 						},
 						Annotations: map[string]string{
-							OwnerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
-							OwnerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
+							ownerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
+							ownerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
 						},
 					},
 					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -3051,7 +3051,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 							{
 								Name: "other-binding",
 								RoleRef: &rbacv1.RoleRef{
-									Kind:     ClusterRoleKind,
+									Kind:     clusterRoleKind,
 									Name:     "other-role",
 									APIGroup: rbacv1.GroupName,
 								},
@@ -3060,7 +3060,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 							{
 								Name: "error-test-mra-binding",
 								RoleRef: &rbacv1.RoleRef{
-									Kind:     ClusterRoleKind,
+									Kind:     clusterRoleKind,
 									Name:     "error-test-role",
 									APIGroup: rbacv1.GroupName,
 								},
@@ -3159,12 +3159,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Namespace: mra.Namespace,
 				}, updatedMra)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updatedMra.Finalizers).To(ContainElement(FinalizerName))
+				Expect(updatedMra.Finalizers).To(ContainElement(finalizerName))
 			})
 
 			It("Should not add finalizer if already present", func() {
 				// Create MRA with finalizer already present
-				mra.Finalizers = []string{FinalizerName}
+				mra.Finalizers = []string{finalizerName}
 				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
 
 				// Get initial resource version
@@ -3191,14 +3191,14 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Namespace: mra.Namespace,
 				}, updatedMra)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updatedMra.Finalizers).To(ContainElement(FinalizerName))
+				Expect(updatedMra.Finalizers).To(ContainElement(finalizerName))
 			})
 		})
 
 		Describe("Removing finalizer during deletion", func() {
 			BeforeEach(func() {
 				// Create MRA with finalizer
-				mra.Finalizers = []string{FinalizerName}
+				mra.Finalizers = []string{finalizerName}
 				Expect(k8sClient.Create(ctx, mra)).To(Succeed())
 			})
 
@@ -3371,13 +3371,13 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster1",
 			Annotations: map[string]string{
-				OwnerAnnotationPrefix +
+				ownerAnnotationPrefix +
 					bindingNameMra2Assignment1: "open-cluster-management/multiclusterroleassignment-sample2",
-				OwnerAnnotationPrefix +
+				ownerAnnotationPrefix +
 					bindingNameMra1Assignment1: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
-				ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 			},
 		},
 		Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -3385,7 +3385,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name: bindingNameMra1Assignment1,
 					RoleRef: &rbacv1.RoleRef{
-						Kind:     ClusterRoleKind,
+						Kind:     clusterRoleKind,
 						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
@@ -3394,7 +3394,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name: bindingNameMra2Assignment1,
 					RoleRef: &rbacv1.RoleRef{
-						Kind:     ClusterRoleKind,
+						Kind:     clusterRoleKind,
 						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
@@ -3409,13 +3409,13 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster2",
 			Annotations: map[string]string{
-				OwnerAnnotationPrefix +
+				ownerAnnotationPrefix +
 					bindingNameMra2Assignment2: "open-cluster-management/multiclusterroleassignment-sample2",
-				OwnerAnnotationPrefix +
+				ownerAnnotationPrefix +
 					bindingNameMra1Assignment2: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
-				ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 			},
 		},
 		Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -3423,7 +3423,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name: bindingNameMra1Assignment2,
 					RoleRef: &rbacv1.RoleRef{
-						Kind:     ClusterRoleKind,
+						Kind:     clusterRoleKind,
 						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
@@ -3432,7 +3432,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				{
 					Name: bindingNameMra2Assignment2,
 					RoleRef: &rbacv1.RoleRef{
-						Kind:     ClusterRoleKind,
+						Kind:     clusterRoleKind,
 						Name:     "test-role",
 						APIGroup: rbacv1.GroupName,
 					},
@@ -3714,24 +3714,24 @@ func TestUpdateStatus(t *testing.T) {
 		Status: rbacv1beta1.MulticlusterRoleAssignmentStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:    ConditionTypeApplied,
+					Type:    string(rbacv1beta1.ConditionTypeApplied),
 					Status:  metav1.ConditionTrue,
-					Reason:  ReasonClusterPermissionApplied,
-					Message: MessageClusterPermissionApplied,
+					Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+					Message: messageClusterPermissionApplied,
 				},
 			},
 			RoleAssignments: []rbacv1beta1.RoleAssignmentStatus{
 				{
 					Name:    "test-assignment-1",
-					Status:  StatusTypeActive,
-					Reason:  ReasonClusterPermissionApplied,
-					Message: MessageClusterPermissionApplied,
+					Status:  string(rbacv1beta1.StatusTypeActive),
+					Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+					Message: messageClusterPermissionApplied,
 				},
 				{
 					Name:    "test-assignment-2",
-					Status:  StatusTypeActive,
-					Reason:  ReasonClusterPermissionApplied,
-					Message: MessageClusterPermissionApplied,
+					Status:  string(rbacv1beta1.StatusTypeActive),
+					Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+					Message: messageClusterPermissionApplied,
 				},
 			},
 		},
@@ -3787,9 +3787,9 @@ func TestUpdateStatus(t *testing.T) {
 		// Modify status to test update
 		fetchedMra.Status.Conditions = []metav1.Condition{
 			{
-				Type:    ConditionTypeApplied,
+				Type:    string(rbacv1beta1.ConditionTypeApplied),
 				Status:  metav1.ConditionFalse,
-				Reason:  ReasonClusterPermissionFailed,
+				Reason:  string(rbacv1beta1.ReasonClusterPermissionFailed),
 				Message: "Custom application error",
 			},
 		}
@@ -3802,7 +3802,7 @@ func TestUpdateStatus(t *testing.T) {
 		// Verify Ready condition was added by updateStatus
 		foundReady := false
 		for _, condition := range fetchedMra.Status.Conditions {
-			if condition.Type == ConditionTypeReady {
+			if condition.Type == string(rbacv1beta1.ConditionTypeReady) {
 				foundReady = true
 				break
 			}
@@ -3812,7 +3812,7 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Verify custom condition was preserved
-		appliedCondition := findConditionByType(fetchedMra.Status.Conditions, ConditionTypeApplied)
+		appliedCondition := findConditionByType(fetchedMra.Status.Conditions, string(rbacv1beta1.ConditionTypeApplied))
 		if appliedCondition == nil {
 			t.Fatalf("Applied condition not found")
 		}
@@ -3858,10 +3858,10 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		for _, status := range mra.Status.RoleAssignments {
-			if status.Status != StatusTypePending {
+			if status.Status != string(rbacv1beta1.StatusTypePending) {
 				t.Fatalf("Expected role assignment status to be Pending, got %s", status.Status)
 			}
-			if status.Reason != ReasonInitializing {
+			if status.Reason != string(rbacv1beta1.ReasonInitializing) {
 				t.Fatalf("Expected role assignment reason to be Initializing, got %s", status.Reason)
 			}
 		}
@@ -3890,10 +3890,10 @@ func TestUpdateStatus(t *testing.T) {
 		// Set conditions that should result in Ready=True
 		mra.Status.Conditions = []metav1.Condition{
 			{
-				Type:    ConditionTypeApplied,
+				Type:    string(rbacv1beta1.ConditionTypeApplied),
 				Status:  metav1.ConditionTrue,
-				Reason:  ReasonClusterPermissionApplied,
-				Message: MessageClusterPermissionApplied,
+				Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+				Message: messageClusterPermissionApplied,
 			},
 		}
 
@@ -3901,15 +3901,15 @@ func TestUpdateStatus(t *testing.T) {
 		mra.Status.RoleAssignments = []rbacv1beta1.RoleAssignmentStatus{
 			{
 				Name:    "test-assignment-1",
-				Status:  StatusTypeActive,
-				Reason:  ReasonClusterPermissionApplied,
-				Message: MessageClusterPermissionApplied,
+				Status:  string(rbacv1beta1.StatusTypeActive),
+				Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+				Message: messageClusterPermissionApplied,
 			},
 			{
 				Name:    "test-assignment-2",
-				Status:  StatusTypeActive,
-				Reason:  ReasonClusterPermissionApplied,
-				Message: MessageClusterPermissionApplied,
+				Status:  string(rbacv1beta1.StatusTypeActive),
+				Reason:  string(rbacv1beta1.ReasonClusterPermissionApplied),
+				Message: messageClusterPermissionApplied,
 			},
 		}
 
@@ -3919,14 +3919,14 @@ func TestUpdateStatus(t *testing.T) {
 		}
 
 		// Verify Ready condition was set to True
-		readyCondition := findConditionByType(mra.Status.Conditions, ConditionTypeReady)
+		readyCondition := findConditionByType(mra.Status.Conditions, string(rbacv1beta1.ConditionTypeReady))
 		if readyCondition == nil {
 			t.Fatalf("Ready condition not found")
 		}
 		if readyCondition.Status != metav1.ConditionTrue {
 			t.Fatalf("Expected Ready condition status to be True, got %s", readyCondition.Status)
 		}
-		if readyCondition.Reason != ReasonAllApplied {
+		if readyCondition.Reason != string(rbacv1beta1.ReasonAllApplied) {
 			t.Fatalf("Expected Ready condition reason to be AllApplied, got %s", readyCondition.Reason)
 		}
 	})
@@ -4195,10 +4195,10 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		// Create existing ClusterPermission with no bindings
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -4228,7 +4228,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -4265,10 +4265,10 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -4299,7 +4299,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -4335,10 +4335,10 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
@@ -4369,7 +4369,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP clusterpermissionv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -4425,10 +4425,10 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
@@ -4457,7 +4457,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var updatedCP clusterpermissionv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: ClusterPermissionManagedName, Namespace: "test-cluster"}, &updatedCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &updatedCP)
 		if err != nil {
 			t.Fatalf("Expected ClusterPermission to be updated, got error: %v", err)
 		}
@@ -4495,10 +4495,10 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ClusterPermissionManagedName,
+				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
-					ClusterPermissionManagedByLabel: ClusterPermissionManagedByValue,
+					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
 			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},

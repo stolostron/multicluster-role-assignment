@@ -158,7 +158,7 @@ func getOwnerFromAnnotation(cp *clusterpermissionv1alpha1.ClusterPermission, bin
 	if cp.Annotations == nil {
 		return ""
 	}
-	ownerKey := OwnerAnnotationPrefix + bindingName
+	ownerKey := ownerAnnotationPrefix + bindingName
 
 	return cp.Annotations[ownerKey]
 }
@@ -188,7 +188,7 @@ func extractAllOwners(cp *clusterpermissionv1alpha1.ClusterPermission) map[strin
 	owners := make(map[string]bool)
 	if cp.Annotations != nil {
 		for key, value := range cp.Annotations {
-			if strings.HasPrefix(key, OwnerAnnotationPrefix) {
+			if strings.HasPrefix(key, ownerAnnotationPrefix) {
 				owners[value] = true
 			}
 		}
