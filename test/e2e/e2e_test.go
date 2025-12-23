@@ -3131,16 +3131,16 @@ func validateClusterPermissionBindings(clusterPermission cpv1alpha1.ClusterPermi
 
 // validateMRASuccessConditions validates the expected success conditions for a MulticlusterRoleAssignment.
 func validateMRASuccessConditions(mra mrav1beta1.MulticlusterRoleAssignment) {
-	readyCondition := findCondition(mra.Status.Conditions, "Ready")
+	readyCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeReady))
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(readyCondition.Reason).To(Equal("AllApplied"))
+	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAllApplied)))
 	Expect(readyCondition.Message).To(ContainSubstring("role assignments applied successfully"))
 
-	appliedCondition := findCondition(mra.Status.Conditions, "Applied")
+	appliedCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeApplied))
 	Expect(appliedCondition).NotTo(BeNil())
 	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(appliedCondition.Reason).To(Equal("ClusterPermissionApplied"))
+	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonClusterPermissionApplied)))
 	Expect(appliedCondition.Message).To(Equal("ClusterPermission applied successfully"))
 }
 
@@ -3167,8 +3167,8 @@ func mapRoleAssignmentsByName(mra mrav1beta1.MulticlusterRoleAssignment) map[str
 func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]mrav1beta1.RoleAssignmentStatus, name string) {
 	assignment := roleAssignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
-	Expect(assignment.Status).To(Equal("Active"))
-	Expect(assignment.Reason).To(Equal("ClusterPermissionApplied"))
+	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonRAClusterPermissionApplied)))
 	Expect(assignment.Message).To(Equal("ClusterPermission applied successfully"))
 	// Ensure CreatedAt is set (non-zero time)
 	Expect(assignment.CreatedAt.IsZero()).To(BeFalse())
@@ -3181,8 +3181,8 @@ func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]mra
 
 	assignment := roleAssignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
-	Expect(assignment.Status).To(Equal("Pending"))
-	Expect(assignment.Reason).To(Equal("NoClustersResolved"))
+	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypePending)))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonNoClustersResolved)))
 	Expect(assignment.Message).To(Equal("No clusters matched the placement criteria"))
 }
 
@@ -3192,8 +3192,8 @@ func validateRoleAssignmentPlacementNotFoundStatus(roleassignmentsByName map[str
 
 	assignment := roleassignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
-	Expect(assignment.Status).To(Equal("Error"))
-	Expect(assignment.Reason).To(Equal("PlacementNotFound"))
+	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonPlacementNotFound)))
 	Expect(assignment.Message).To(ContainSubstring("Referenced placement not found"))
 }
 
