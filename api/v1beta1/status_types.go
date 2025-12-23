@@ -112,4 +112,12 @@ const (
 
 	// ReasonPlacementNotFound indicates a referenced placement resource was not found.
 	ReasonPlacementNotFound RoleAssignmentStatusReason = "PlacementNotFound"
+
+	// ReasonRAClusterPermissionApplied indicates ClusterPermissions were applied successfully for this role assignment.
+	// todo: these were shared with conditions; reconsider/delete
+	ReasonRAClusterPermissionApplied RoleAssignmentStatusReason = "ClusterPermissionApplied"
+
+	// ReasonRAClusterPermissionFailed indicates ClusterPermission application failed for this role assignment.
+	// todo: these were shared with conditions; reconsider/delete
+	ReasonRAClusterPermissionFailed RoleAssignmentStatusReason = "ClusterPermissionFailed"
 )
