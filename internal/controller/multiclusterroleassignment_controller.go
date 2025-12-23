@@ -48,7 +48,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
-	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
+	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -149,8 +149,8 @@ type ClusterPermissionProcessingState struct {
 // ClusterPermissionBindingSlice represents a collection of bindings and annotations that can be related to a
 // ClusterPermission.
 type ClusterPermissionBindingSlice struct {
-	ClusterRoleBindings []clusterpermissionv1alpha1.ClusterRoleBinding
-	RoleBindings        []clusterpermissionv1alpha1.RoleBinding
+	ClusterRoleBindings []cpv1alpha1.ClusterRoleBinding
+	RoleBindings        []cpv1alpha1.RoleBinding
 	OwnerAnnotations    map[string]string
 }
 
@@ -413,11 +413,11 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 // getClusterPermission fetches the managed ClusterPermission for a specific cluster namespace. Returns nil if not
 // found or if it doesn't have the management label.
 func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
-	ctx context.Context, clusterNamespace string) (*clusterpermissionv1alpha1.ClusterPermission, error) {
+	ctx context.Context, clusterNamespace string) (*cpv1alpha1.ClusterPermission, error) {
 
 	log := logf.FromContext(ctx)
 
-	var clusterPermission clusterpermissionv1alpha1.ClusterPermission
+	var clusterPermission cpv1alpha1.ClusterPermission
 	err := r.Get(ctx, client.ObjectKey{
 		Name:      clusterPermissionManagedName,
 		Namespace: clusterNamespace,
@@ -757,7 +757,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 
 		log.Info("Creating new ClusterPermission", "name", clusterPermissionManagedName, "namespace", cluster)
 
-		cp := &clusterpermissionv1alpha1.ClusterPermission{
+		cp := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: cluster,
@@ -915,7 +915,7 @@ func (r *MulticlusterRoleAssignmentReconciler) generateMulticlusterRoleAssignmen
 // extractOwnedBindingNames returns the list of ClusterPermission binding names owned by this MulticlusterRoleAssignment
 // according to the current owner binding annotations.
 func (r *MulticlusterRoleAssignmentReconciler) extractOwnedBindingNames(
-	cp *clusterpermissionv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment) []string {
+	cp *cpv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment) []string {
 
 	if cp.Annotations == nil {
 		return nil
@@ -955,7 +955,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 			ownerKey := r.generateOwnerAnnotationKey(bindingName)
 			desiredSlice.OwnerAnnotations[ownerKey] = mraIdentifier
 
-			clusterRoleBinding := clusterpermissionv1alpha1.ClusterRoleBinding{
+			clusterRoleBinding := cpv1alpha1.ClusterRoleBinding{
 				Name: bindingName,
 				RoleRef: &rbacv1.RoleRef{
 					Kind:     clusterRoleKind,
@@ -971,10 +971,10 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 				namespacedOwnerKey := r.generateOwnerAnnotationKey(bindingName)
 				desiredSlice.OwnerAnnotations[namespacedOwnerKey] = mraIdentifier
 
-				roleBinding := clusterpermissionv1alpha1.RoleBinding{
+				roleBinding := cpv1alpha1.RoleBinding{
 					Name:      bindingName,
 					Namespace: namespace,
-					RoleRef: clusterpermissionv1alpha1.RoleRef{
+					RoleRef: cpv1alpha1.RoleRef{
 						Kind:     clusterRoleKind,
 						Name:     roleAssignment.ClusterRole,
 						APIGroup: rbacv1.GroupName,
@@ -993,8 +993,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 // MulticlusterRoleAssignment from this ClusterPermission. This represents the "others" part that should be preserved
 // when updating the ClusterPermission. Orphaned bindings with no ownership annotations are excluded to keep the
 // ClusterPermission clean.
-func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSlice(
-	cp *clusterpermissionv1alpha1.ClusterPermission,
+func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSlice(cp *cpv1alpha1.ClusterPermission,
 	mra *mrav1beta1.MulticlusterRoleAssignment) ClusterPermissionBindingSlice {
 
 	othersSlice := ClusterPermissionBindingSlice{
@@ -1079,9 +1078,9 @@ func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSli
 // "desired" slice (this MulticlusterRoleAssignment's bindings) to create the complete desired spec for the
 // ClusterPermission.
 func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionSpecs(
-	others, desired ClusterPermissionBindingSlice) clusterpermissionv1alpha1.ClusterPermissionSpec {
+	others, desired ClusterPermissionBindingSlice) cpv1alpha1.ClusterPermissionSpec {
 
-	cpSpec := clusterpermissionv1alpha1.ClusterPermissionSpec{}
+	cpSpec := cpv1alpha1.ClusterPermissionSpec{}
 
 	allClusterRoleBindings := append(others.ClusterRoleBindings, desired.ClusterRoleBindings...)
 
@@ -1119,7 +1118,8 @@ func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionAnnotations
 
 // isClusterPermissionSpecEmpty returns true if the ClusterPermissionSpec has no bindings.
 func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionSpecEmpty(
-	spec clusterpermissionv1alpha1.ClusterPermissionSpec) bool {
+	spec cpv1alpha1.ClusterPermissionSpec) bool {
+
 	return (spec.ClusterRoleBindings == nil || len(*spec.ClusterRoleBindings) == 0) &&
 		(spec.RoleBindings == nil || len(*spec.RoleBindings) == 0)
 }
@@ -1222,7 +1222,7 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 		For(&mrav1beta1.MulticlusterRoleAssignment{},
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
-			&clusterpermissionv1alpha1.ClusterPermission{},
+			&cpv1alpha1.ClusterPermission{},
 			&clusterPermissionEventHandler{},
 			builder.WithPredicates(
 				predicate.And(

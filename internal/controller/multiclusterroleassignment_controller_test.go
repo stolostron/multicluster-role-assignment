@@ -41,7 +41,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
-	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
+	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
 const multiclusterRoleAssignmentNamespace = "open-cluster-management-global-set"
@@ -56,7 +56,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	}
 
 	var mra *mrav1beta1.MulticlusterRoleAssignment
-	var cp *clusterpermissionv1alpha1.ClusterPermission
+	var cp *cpv1alpha1.ClusterPermission
 
 	const roleAssignment1Name = "test-assignment-1"
 	const roleAssignment2Name = "test-assignment-2"
@@ -89,7 +89,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 	BeforeEach(func() {
 		By("Initializing the ClusterPermission")
-		cp = &clusterpermissionv1alpha1.ClusterPermission{
+		cp = &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: cluster2Name,
@@ -97,7 +97,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
+			Spec: cpv1alpha1.ClusterPermissionSpec{},
 		}
 
 		By("Creating shared test Placements and PlacementDecisions")
@@ -194,7 +194,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		By("Deleting all ClusterPermissions")
 		clusterNames := []string{cluster1Name, cluster2Name, cluster3Name}
 		for _, clusterName := range clusterNames {
-			cp := &clusterpermissionv1alpha1.ClusterPermission{
+			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
@@ -641,7 +641,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			By("Verifying ClusterPermissions were created in all clusters")
 			for _, clusterName := range []string{cluster1Name, cluster2Name, cluster3Name} {
-				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				cp := &cpv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
 					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
@@ -683,7 +683,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			By("Verifying ClusterPermissions still exist in cluster1 and cluster3")
 			for _, clusterName := range []string{cluster1Name, cluster3Name} {
-				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				cp := &cpv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
 					Name:      clusterPermissionManagedName,
 					Namespace: clusterName,
@@ -693,7 +693,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			By("Verifying ClusterPermission was deleted from cluster2")
 			Eventually(func() bool {
-				cp := &clusterpermissionv1alpha1.ClusterPermission{}
+				cp := &cpv1alpha1.ClusterPermission{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      clusterPermissionManagedName,
 					Namespace: cluster2Name,
@@ -1672,7 +1672,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Annotations = map[string]string{
 					ownerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
 				}
-				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{
 						Name: "other-binding",
 						RoleRef: &rbacv1.RoleRef{
@@ -1743,7 +1743,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should fail when unmanaged ClusterPermission exists", func() {
-				unmanagedCP := &clusterpermissionv1alpha1.ClusterPermission{
+				unmanagedCP := &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      clusterPermissionManagedName,
 						Namespace: cluster2Name,
@@ -1838,8 +1838,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Annotations = map[string]string{
 					reconciler.generateOwnerAnnotationKey(expectedBindingName): reconciler.generateMulticlusterRoleAssignmentIdentifier(mra),
 				}
-				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec = cpv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
 						{
 							Name: expectedBindingName,
 							RoleRef: &rbacv1.RoleRef{
@@ -1883,8 +1883,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Labels = map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
-				cp.Spec = clusterpermissionv1alpha1.ClusterPermissionSpec{
-					ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec = cpv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
 						{
 							Name: "different-binding",
 							RoleRef: &rbacv1.RoleRef{
@@ -2334,12 +2334,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ownerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
 					"unrelated-annotation":                  "value",
 				}
-				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "cluster-role-binding1"}, // Owned by current MRA
 					{Name: "cluster-role-binding2"}, // Owned by other MRA
 					{Name: "cluster-role-binding4"}, // Not in annotations (orphan, should get removed)
 				}
-				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+				cp.Spec.RoleBindings = &[]cpv1alpha1.RoleBinding{
 					{Name: "role-binding1", Namespace: "ns1"}, // Owned by current MRA
 					{Name: "role-binding2", Namespace: "ns2"}, // Owned by other MRA
 				}
@@ -2375,12 +2375,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ownerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
 					"unrelated-annotation":                    "value",
 				}
-				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "tracked-binding"},   // Has ownership annotation
 					{Name: "orphaned-binding1"}, // No ownership annotation
 					{Name: "orphaned-binding2"}, // No ownership annotation
 				}
-				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+				cp.Spec.RoleBindings = &[]cpv1alpha1.RoleBinding{
 					{Name: "orphaned-role-binding"}, // No ownership annotation
 				}
 
@@ -2404,12 +2404,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					"unrelated-annotation":                     "should-be-preserved",
 					"another-unrelated":                        "also-preserved",
 				}
-				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "current-binding1"},
 					{Name: "other-binding1"},
 					{Name: "other-binding2"},
 				}
-				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+				cp.Spec.RoleBindings = &[]cpv1alpha1.RoleBinding{
 					{Name: "current-binding2", Namespace: "ns1"},
 					{Name: "other-binding3", Namespace: "ns2"},
 				}
@@ -2442,11 +2442,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					ownerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
 					"non-owner-annotation":                     "preserved",
 				}
-				cp.Spec.ClusterRoleBindings = &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "current-binding1"},
 					{Name: "other-binding1"},
 				}
-				cp.Spec.RoleBindings = &[]clusterpermissionv1alpha1.RoleBinding{
+				cp.Spec.RoleBindings = &[]cpv1alpha1.RoleBinding{
 					{Name: "current-binding2", Namespace: "ns1"},
 					{Name: "other-binding2", Namespace: "ns2"},
 				}
@@ -2476,13 +2476,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("mergeClusterPermissionSpecs", func() {
 			It("Should merge ClusterRoleBindings from both slices", func() {
 				others := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "other-binding1"},
 						{Name: "other-binding2"},
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "desired-binding1"},
 					},
 				}
@@ -2501,12 +2501,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should merge RoleBindings from both slices", func() {
 				others := ClusterPermissionBindingSlice{
-					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+					RoleBindings: []cpv1alpha1.RoleBinding{
 						{Name: "other-role-binding1"},
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
-					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+					RoleBindings: []cpv1alpha1.RoleBinding{
 						{Name: "desired-role-binding1"},
 						{Name: "desired-role-binding2"},
 					},
@@ -2530,19 +2530,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should merge both ClusterRoleBindings and RoleBindings together", func() {
 				others := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "other-cluster-binding1"},
 						{Name: "other-cluster-binding2"},
 					},
-					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+					RoleBindings: []cpv1alpha1.RoleBinding{
 						{Name: "other-role-binding1", Namespace: "ns1"},
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "desired-cluster-binding1"},
 					},
-					RoleBindings: []clusterpermissionv1alpha1.RoleBinding{
+					RoleBindings: []cpv1alpha1.RoleBinding{
 						{Name: "desired-role-binding1", Namespace: "ns2"},
 						{Name: "desired-role-binding2", Namespace: "ns3"},
 					},
@@ -2572,13 +2572,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should sort bindings by name for deterministic ordering", func() {
 				others := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "z-binding"},
 						{Name: "a-binding"},
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "m-binding"},
 					},
 				}
@@ -2596,12 +2596,12 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should produce consistent results regardless of merge order", func() {
 				slice1 := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "binding-a"},
 					},
 				}
 				slice2 := ClusterPermissionBindingSlice{
-					ClusterRoleBindings: []clusterpermissionv1alpha1.ClusterRoleBinding{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBinding{
 						{Name: "binding-b"},
 					},
 				}
@@ -2674,7 +2674,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 		Describe("isClusterPermissionSpecEmpty", func() {
 			It("Should return true when both are nil", func() {
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+				spec := cpv1alpha1.ClusterPermissionSpec{
 					ClusterRoleBindings: nil,
 					RoleBindings:        nil,
 				}
@@ -2682,9 +2682,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return true when both are empty slices", func() {
-				emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
-				emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+				emptyClusterRoleBindings := []cpv1alpha1.ClusterRoleBinding{}
+				emptyRoleBindings := []cpv1alpha1.RoleBinding{}
+				spec := cpv1alpha1.ClusterPermissionSpec{
 					ClusterRoleBindings: &emptyClusterRoleBindings,
 					RoleBindings:        &emptyRoleBindings,
 				}
@@ -2692,7 +2692,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return false when ClusterRoleBindings has items", func() {
-				clusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{
+				clusterRoleBindings := []cpv1alpha1.ClusterRoleBinding{
 					{
 						Name: "test-binding",
 						RoleRef: &rbacv1.RoleRef{
@@ -2702,7 +2702,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						},
 					},
 				}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+				spec := cpv1alpha1.ClusterPermissionSpec{
 					ClusterRoleBindings: &clusterRoleBindings,
 					RoleBindings:        nil,
 				}
@@ -2710,13 +2710,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should return false when RoleBindings has items", func() {
-				roleBindings := []clusterpermissionv1alpha1.RoleBinding{
+				roleBindings := []cpv1alpha1.RoleBinding{
 					{
 						Name:      "test-role-binding",
 						Namespace: "test-namespace",
 					},
 				}
-				spec := clusterpermissionv1alpha1.ClusterPermissionSpec{
+				spec := cpv1alpha1.ClusterPermissionSpec{
 					ClusterRoleBindings: nil,
 					RoleBindings:        &roleBindings,
 				}
@@ -3034,7 +3034,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should handle deletion cleanup failure", func() {
-				existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+				existingCP := &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      clusterPermissionManagedName,
 						Namespace: cluster1Name,
@@ -3046,8 +3046,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 							ownerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
 						},
 					},
-					Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
-						ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+					Spec: cpv1alpha1.ClusterPermissionSpec{
+						ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
 							{
 								Name: "other-binding",
 								RoleRef: &rbacv1.RoleRef{
@@ -3281,7 +3281,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
 		clusterv1beta1.AddToScheme,
-		clusterpermissionv1alpha1.AddToScheme,
+		cpv1alpha1.AddToScheme,
 		corev1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -3366,7 +3366,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	bindingNameMra2Assignment1 := reconciler.generateBindingName(testMra2, "test-assignment-1", "test-role")
 	bindingNameMra2Assignment2 := reconciler.generateBindingName(testMra2, "test-assignment-2", "test-role")
 
-	testCp1 := &clusterpermissionv1alpha1.ClusterPermission{
+	testCp1 := &cpv1alpha1.ClusterPermission{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster1",
@@ -3380,8 +3380,8 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 			},
 		},
-		Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
-			ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+		Spec: cpv1alpha1.ClusterPermissionSpec{
+			ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
 				{
 					Name: bindingNameMra1Assignment1,
 					RoleRef: &rbacv1.RoleRef{
@@ -3404,7 +3404,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 		},
 	}
 
-	testCp2 := &clusterpermissionv1alpha1.ClusterPermission{
+	testCp2 := &cpv1alpha1.ClusterPermission{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster2",
@@ -3418,8 +3418,8 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 			},
 		},
-		Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
-			ClusterRoleBindings: &[]clusterpermissionv1alpha1.ClusterRoleBinding{
+		Spec: cpv1alpha1.ClusterPermissionSpec{
+			ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
 				{
 					Name: bindingNameMra1Assignment2,
 					RoleRef: &rbacv1.RoleRef{
@@ -3670,7 +3670,7 @@ func TestUpdateStatus(t *testing.T) {
 	testscheme := scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
-		clusterpermissionv1alpha1.AddToScheme,
+		cpv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
 			t.Fatalf("AddToScheme error = %v", err)
@@ -4048,7 +4048,7 @@ func (m *MockErrorClient) Update(ctx context.Context, obj client.Object, opts ..
 				if m.TargetResource == "multiclusterroleassignments" {
 					return m.UpdateError
 				}
-			case *clusterpermissionv1alpha1.ClusterPermission:
+			case *cpv1alpha1.ClusterPermission:
 				if m.TargetResource == "clusterpermissions" {
 					return m.UpdateError
 				}
@@ -4071,7 +4071,7 @@ func (m *MockErrorClient) Delete(ctx context.Context, obj client.Object, opts ..
 	if m.ShouldFailDelete || m.ShouldFail {
 		if m.TargetResource != "" {
 			switch obj.(type) {
-			case *clusterpermissionv1alpha1.ClusterPermission:
+			case *cpv1alpha1.ClusterPermission:
 				if m.TargetResource == "clusterpermissions" {
 					return m.DeleteError
 				}
@@ -4158,7 +4158,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
 		clusterv1beta1.AddToScheme,
-		clusterpermissionv1alpha1.AddToScheme,
+		cpv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testScheme); err != nil {
 			t.Fatalf("AddToScheme error = %v", err)
@@ -4193,7 +4193,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		// Create existing ClusterPermission with no bindings
-		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
@@ -4201,7 +4201,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
+			Spec: cpv1alpha1.ClusterPermissionSpec{
 				// Both fields are nil (default)
 			},
 		}
@@ -4227,7 +4227,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		var remainingCP clusterpermissionv1alpha1.ClusterPermission
+		var remainingCP cpv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
@@ -4261,9 +4261,9 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		// Create existing ClusterPermission with empty slices
-		emptyClusterRoleBindings := []clusterpermissionv1alpha1.ClusterRoleBinding{}
-		emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
-		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+		emptyClusterRoleBindings := []cpv1alpha1.ClusterRoleBinding{}
+		emptyRoleBindings := []cpv1alpha1.RoleBinding{}
+		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
@@ -4271,7 +4271,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
+			Spec: cpv1alpha1.ClusterPermissionSpec{
 				ClusterRoleBindings: &emptyClusterRoleBindings,
 				RoleBindings:        &emptyRoleBindings,
 			},
@@ -4298,7 +4298,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		var remainingCP clusterpermissionv1alpha1.ClusterPermission
+		var remainingCP cpv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
@@ -4332,8 +4332,8 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		// Create existing ClusterPermission with one nil and one empty slice
-		emptyRoleBindings := []clusterpermissionv1alpha1.RoleBinding{}
-		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+		emptyRoleBindings := []cpv1alpha1.RoleBinding{}
+		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
@@ -4341,7 +4341,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{
+			Spec: cpv1alpha1.ClusterPermissionSpec{
 				ClusterRoleBindings: nil,
 				RoleBindings:        &emptyRoleBindings,
 			},
@@ -4368,7 +4368,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		var remainingCP clusterpermissionv1alpha1.ClusterPermission
+		var remainingCP cpv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
@@ -4423,7 +4423,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			},
 		}
 
-		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
@@ -4431,7 +4431,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
+			Spec: cpv1alpha1.ClusterPermissionSpec{},
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -4456,7 +4456,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		var updatedCP clusterpermissionv1alpha1.ClusterPermission
+		var updatedCP cpv1alpha1.ClusterPermission
 		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &updatedCP)
 		if err != nil {
 			t.Fatalf("Expected ClusterPermission to be updated, got error: %v", err)
@@ -4493,7 +4493,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 			},
 		}
 
-		existingCP := &clusterpermissionv1alpha1.ClusterPermission{
+		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
 				Namespace: "test-cluster",
@@ -4501,7 +4501,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
 			},
-			Spec: clusterpermissionv1alpha1.ClusterPermissionSpec{},
+			Spec: cpv1alpha1.ClusterPermissionSpec{},
 		}
 
 		type mockDeleteClient struct {
