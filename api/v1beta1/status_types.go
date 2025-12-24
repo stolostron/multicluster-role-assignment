@@ -22,17 +22,18 @@ type ConditionType string
 // Condition types for MulticlusterRoleAssignment status. These represent the overall state of the
 // MulticlusterRoleAssignment resource.
 const (
-	// ConditionTypeApplied indicates whether ClusterPermission resources have been successfully created/updated across
-	// all target clusters.
+	// ConditionTypeApplied indicates whether the controller successfully completed applying role assignments to all
+	// target clusters. This reflects the controller's apply operation. For overall role assignment health, check the
+	// Ready condition.
 	//
 	// Status values:
-	//   - True: All ClusterPermissions applied successfully
-	//   - False: Some or all ClusterPermissions failed to apply
-	//   - Unknown: Unable to determine application status
+	//   - True: Controller successfully applied to all target clusters
+	//   - False: Controller failed to apply to some or all target clusters
+	//   - Unknown: Application status cannot be determined or is in progress
 	ConditionTypeApplied ConditionType = "Applied"
 
 	// ConditionTypeReady is the top-level condition indicating overall operational status. This condition is computed
-	// based on other conditions and RoleAssignment statuses.
+	// based on the Applied condition and individual RoleAssignment statuses.
 	//
 	// Status values:
 	//   - True: Resource is ready and all role assignments are active
@@ -46,32 +47,31 @@ type ConditionReason string
 
 // Reasons for ConditionTypeApplied. These explain why the Applied condition has a particular status.
 const (
-	// ReasonClusterPermissionApplied indicates ClusterPermissions were applied successfully.
-	ReasonClusterPermissionApplied ConditionReason = "ClusterPermissionApplied"
+	// ReasonAppliedSuccessfully indicates role assignments were successfully applied to all target clusters.
+	ReasonAppliedSuccessfully ConditionReason = "AppliedSuccessfully"
 
-	// ReasonClusterPermissionFailed indicates ClusterPermission application failed.
-	ReasonClusterPermissionFailed ConditionReason = "ClusterPermissionFailed"
+	// ReasonApplyFailed indicates role assignment application failed.
+	ReasonApplyFailed ConditionReason = "ApplyFailed"
 
-	// ReasonApplyInProgress indicates ClusterPermission application is in progress.
+	// ReasonApplyInProgress indicates role assignment application is currently in progress.
 	ReasonApplyInProgress ConditionReason = "ApplyInProgress"
 )
 
-// Reasons for ConditionTypeReady. These explain why the Ready condition has a particular status.
+// Reasons for ConditionTypeReady. These explain why the Ready condition has a particular status. Ready condition
+// reasons focus on RoleAssignment-level health, not cluster operations.
 const (
-	// ReasonPartialFailure indicates some role assignments failed.
-	ReasonPartialFailure ConditionReason = "PartialFailure"
+	// ReasonAllAssignmentsReady indicates all role assignments are active and healthy.
+	ReasonAllAssignmentsReady ConditionReason = "AllAssignmentsReady"
 
-	// ReasonInProgress indicates role assignments are still being processed.
-	ReasonInProgress ConditionReason = "InProgress"
+	// ReasonAssignmentsPending indicates some role assignments are still being processed.
+	ReasonAssignmentsPending ConditionReason = "AssignmentsPending"
 
-	// ReasonAllApplied indicates all role assignments are active.
-	ReasonAllApplied ConditionReason = "AllApplied"
+	// ReasonAssignmentsPartialFailure indicates some role assignments are in error state.
+	ReasonAssignmentsPartialFailure ConditionReason = "AssignmentsPartialFailure"
 
-	// ReasonApplyFailed indicates the apply operation failed.
-	ReasonApplyFailed ConditionReason = "ApplyFailed"
-
-	// ReasonUnknown indicates the status cannot be determined.
-	ReasonUnknown ConditionReason = "Unknown"
+	// ReasonProvisioningFailed indicates role assignments could not be provisioned. This occurs when the controller
+	// fails to apply the desired state to target clusters (Applied condition is False).
+	ReasonProvisioningFailed ConditionReason = "ProvisioningFailed"
 )
 
 // RoleAssignmentStatusType represents the status of a RoleAssignment.
@@ -83,7 +83,7 @@ const (
 	// StatusTypePending indicates the role assignment is being initialized or processed.
 	StatusTypePending RoleAssignmentStatusType = "Pending"
 
-	// StatusTypeActive indicates the role assignment has been successfully applied.
+	// StatusTypeActive indicates the role assignment has been successfully applied to all target clusters.
 	StatusTypeActive RoleAssignmentStatusType = "Active"
 
 	// StatusTypeError indicates the role assignment encountered an error.
@@ -95,29 +95,21 @@ type RoleAssignmentStatusReason string
 
 // Reasons for RoleAssignment status. These explain why a particular RoleAssignment has its current status.
 const (
-	// ReasonInitializing indicates the role assignment is being initialized.
-	ReasonInitializing RoleAssignmentStatusReason = "Initializing"
+	// ReasonProcessing indicates the role assignment is being processed.
+	ReasonProcessing RoleAssignmentStatusReason = "Processing"
 
-	// ReasonAggregatingClusters indicates clusters are being resolved from placements.
-	ReasonAggregatingClusters RoleAssignmentStatusReason = "AggregatingClusters"
+	// ReasonInvalidReference indicates a referenced resource does not exist.
+	ReasonInvalidReference RoleAssignmentStatusReason = "InvalidReference"
 
-	// ReasonClustersValid indicates all target clusters have been validated.
-	ReasonClustersValid RoleAssignmentStatusReason = "ClustersValid"
+	// ReasonNoMatchingClusters indicates the placement exists but matches zero clusters.
+	ReasonNoMatchingClusters RoleAssignmentStatusReason = "NoMatchingClusters"
 
-	// ReasonPlacementResolutionFailed indicates cluster resolution from placements failed.
-	ReasonPlacementResolutionFailed RoleAssignmentStatusReason = "PlacementResolutionFailed"
+	// ReasonDependencyNotReady indicates an external dependency is not ready.
+	ReasonDependencyNotReady RoleAssignmentStatusReason = "DependencyNotReady"
 
-	// ReasonNoClustersResolved indicates no clusters matched the placement criteria.
-	ReasonNoClustersResolved RoleAssignmentStatusReason = "NoClustersResolved"
+	// ReasonSuccessfullyApplied indicates the role assignment was successfully applied to all target clusters.
+	ReasonSuccessfullyApplied RoleAssignmentStatusReason = "SuccessfullyApplied"
 
-	// ReasonPlacementNotFound indicates a referenced placement resource was not found.
-	ReasonPlacementNotFound RoleAssignmentStatusReason = "PlacementNotFound"
-
-	// ReasonRAClusterPermissionApplied indicates ClusterPermissions were applied successfully for this role assignment.
-	// todo: these were shared with conditions; reconsider/delete
-	ReasonRAClusterPermissionApplied RoleAssignmentStatusReason = "ClusterPermissionApplied"
-
-	// ReasonRAClusterPermissionFailed indicates ClusterPermission application failed for this role assignment.
-	// todo: these were shared with conditions; reconsider/delete
-	ReasonRAClusterPermissionFailed RoleAssignmentStatusReason = "ClusterPermissionFailed"
+	// ReasonApplicationFailed indicates the role assignment application failed.
+	ReasonApplicationFailed RoleAssignmentStatusReason = "ApplicationFailed"
 )
