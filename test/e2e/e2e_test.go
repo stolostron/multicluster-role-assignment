@@ -3134,14 +3134,14 @@ func validateMRASuccessConditions(mra mrav1beta1.MulticlusterRoleAssignment) {
 	readyCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeReady))
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAllApplied)))
-	Expect(readyCondition.Message).To(ContainSubstring("role assignments applied successfully"))
+	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAllAssignmentsReady)))
+	Expect(readyCondition.Message).To(ContainSubstring("role assignments ready"))
 
 	appliedCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeApplied))
 	Expect(appliedCondition).NotTo(BeNil())
 	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonClusterPermissionApplied)))
-	Expect(appliedCondition.Message).To(Equal("ClusterPermission applied successfully"))
+	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonAppliedSuccessfully)))
+	Expect(appliedCondition.Message).To(ContainSubstring("ClusterPermissions applied successfully"))
 }
 
 // findCondition finds a condition by type in a slice of conditions.
@@ -3168,8 +3168,8 @@ func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]mrav1b
 	assignment := roleAssignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
 	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
-	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonRAClusterPermissionApplied)))
-	Expect(assignment.Message).To(Equal("ClusterPermission applied successfully"))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonSuccessfullyApplied)))
+	Expect(assignment.Message).To(ContainSubstring("Applied to"))
 	// Ensure CreatedAt is set (non-zero time)
 	Expect(assignment.CreatedAt.IsZero()).To(BeFalse())
 }
@@ -3182,8 +3182,8 @@ func validateRoleAssignmentNoClustersStatus(roleAssignmentsByName map[string]mra
 	assignment := roleAssignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
 	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypePending)))
-	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonNoClustersResolved)))
-	Expect(assignment.Message).To(Equal("No clusters matched the placement criteria"))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonNoMatchingClusters)))
+	Expect(assignment.Message).To(Equal("No clusters match Placement selectors"))
 }
 
 // validateRoleAssignmentPlacementNotFoundStatus validates that a role assignment has placement not found status.
@@ -3193,8 +3193,8 @@ func validateRoleAssignmentPlacementNotFoundStatus(roleassignmentsByName map[str
 	assignment := roleassignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
 	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
-	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonPlacementNotFound)))
-	Expect(assignment.Message).To(ContainSubstring("Referenced placement not found"))
+	Expect(assignment.Reason).To(Equal(string(mrav1beta1.ReasonInvalidReference)))
+	Expect(assignment.Message).To(ContainSubstring("Placement not found"))
 }
 
 // applyK8sManifest applies a Kubernetes manifest file using kubectl.
