@@ -92,8 +92,7 @@ type MulticlusterRoleAssignmentStatus struct {
 	// +optional
 	RoleAssignments []RoleAssignmentStatus `json:"roleAssignments,omitempty"`
 
-	// AppliedClusters contains all clusters where ClusterPermissions have been applied by this
-	// MulticlusterRoleAssignment.
+	// AppliedClusters contains all (total) clusters where role assignments have been applied to.
 	// +optional
 	AppliedClusters []string `json:"appliedClusters,omitempty"`
 }
