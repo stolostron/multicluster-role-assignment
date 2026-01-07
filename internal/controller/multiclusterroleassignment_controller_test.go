@@ -3380,6 +3380,32 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				})
 				Expect(err).NotTo(HaveOccurred())
 			})
+
+			It("Should return error when aggregateClusters fails with transient error during deletion", func() {
+				Expect(k8sClient.Delete(ctx, mra)).To(Succeed())
+
+				errMsg := "API server connection timeout"
+				mockClient := &MockErrorClient{
+					Client:         k8sClient,
+					GetError:       errors.New(errMsg),
+					ShouldFailGet:  true,
+					TargetResource: "placements",
+				}
+				mockReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := mockReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      mra.Name,
+						Namespace: mra.Namespace,
+					},
+				})
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(errMsg))
+			})
 		})
 
 		AfterEach(func() {
