@@ -3164,7 +3164,9 @@ func mapRoleAssignmentsByName(mra mrav1beta1.MulticlusterRoleAssignment) map[str
 }
 
 // validateRoleAssignmentSuccessStatus validates that a role assignment has the expected success statuses.
-func validateRoleAssignmentSuccessStatus(roleAssignmentsByName map[string]mrav1beta1.RoleAssignmentStatus, name string) {
+func validateRoleAssignmentSuccessStatus(
+	roleAssignmentsByName map[string]mrav1beta1.RoleAssignmentStatus, name string) {
+
 	assignment := roleAssignmentsByName[name]
 	Expect(assignment.Name).To(Equal(name))
 	Expect(assignment.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
