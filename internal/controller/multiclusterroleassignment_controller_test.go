@@ -1176,13 +1176,15 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	Context("Cluster Aggregation Tests", func() {
 		Describe("aggregateClusters", func() {
 			It("Should aggregate clusters from role assignments", func() {
-				clusters, _ := reconciler.aggregateClusters(ctx, mra)
+				clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
 
 			It("Should update role assignment statuses during aggregation", func() {
-				_, _ = reconciler.aggregateClusters(ctx, mra)
+				_, _, err := reconciler.aggregateClusters(ctx, mra)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
 				for _, roleAssignmentStatus := range mra.Status.RoleAssignments {
@@ -1203,7 +1205,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement-2", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, _ := reconciler.aggregateClusters(ctx, mra)
+				clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+				// NotFound errors don't return error
+				Expect(err).ToNot(HaveOccurred())
 				Expect(clusters).To(BeEmpty())
 				Expect(mra.Status.RoleAssignments).To(HaveLen(2))
 
@@ -1234,7 +1238,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: emptyPlacementName, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, _ := reconciler.aggregateClusters(ctx, mra)
+				clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(clusters).To(BeEmpty())
 
 				for _, status := range mra.Status.RoleAssignments {
@@ -1249,7 +1254,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: "missing-placement", Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, _ := reconciler.aggregateClusters(ctx, mra)
+				clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+				// NotFound errors don't return error
+				Expect(err).ToNot(HaveOccurred())
 				Expect(clusters).To(HaveLen(2))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name))
 
@@ -1275,7 +1282,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					{Name: overlappingPlacement, Namespace: multiclusterRoleAssignmentNamespace},
 				}
 
-				clusters, _ := reconciler.aggregateClusters(ctx, mra)
+				clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
@@ -2973,12 +2981,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		})
 
 		Context("Cluster Operations Errors", func() {
-			It("Should handle aggregateClusters failure with status update attempt", func() {
+			It("Should handle aggregateClusters (Placement not found) failure with status update attempt", func() {
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
-					Client:         k8sClient,
-					GetError:       fmt.Errorf("placement not found"),
+					Client: k8sClient,
+					GetError: apierrors.NewNotFound(schema.GroupResource{
+						Group: "cluster.open-cluster-management.io", Resource: "placements"}, "test-placement-1"),
 					ShouldFailGet:  true,
 					TargetResource: "placements",
 				}
@@ -2993,6 +3002,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Namespace: errorTestMRA.Namespace,
 					},
 				})
+				// NotFound errors do not return error
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -3004,7 +3014,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(errorTestMRA.Status.RoleAssignments).To(HaveLen(1))
 				Expect(errorTestMRA.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 				Expect(errorTestMRA.Status.RoleAssignments[0].Reason).To(Equal(string(mrav1beta1.ReasonInvalidReference)))
-				Expect(errorTestMRA.Status.RoleAssignments[0].Message).To(ContainSubstring("placement not found"))
+				Expect(errorTestMRA.Status.RoleAssignments[0].Message).To(ContainSubstring("Placement not found"))
 			})
 
 			It("Should handle status.appliedClusters for previous clusters", func() {
@@ -3660,7 +3670,10 @@ func TestAggregateClusters(t *testing.T) {
 			t.Fatalf("update Status error = %v", err)
 		}
 
-		clusters, _ := reconciler.aggregateClusters(ctx, mra)
+		clusters, _, err := reconciler.aggregateClusters(ctx, mra)
+		if err != nil {
+			t.Fatalf("aggregateClusters error = %v", err)
+		}
 		if len(clusters) != 2 {
 			t.Fatalf("aggregateClusters returned %d clusters, want 2", len(clusters))
 		}
