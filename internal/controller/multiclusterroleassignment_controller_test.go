@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
@@ -620,6 +621,48 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Expect(status.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
 				}
 			}
+		})
+
+		It("Should return error and set Ready condition when aggregateClusters fails with transient error", func() {
+			By("Creating a mock client that returns transient error for Placement get")
+			errMsg := "API server connection timeout"
+			mockClient := &MockErrorClient{
+				Client:         k8sClient,
+				GetError:       errors.New(errMsg),
+				ShouldFailGet:  true,
+				TargetResource: "placements",
+			}
+			mockReconciler := &MulticlusterRoleAssignmentReconciler{
+				Client: mockClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Reconciling with the mock client")
+			result, err := mockReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: mraNamespacedName,
+			})
+
+			By("Verifying Reconcile returns error for retry")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(errMsg))
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			By("Verifying Ready condition was set despite error")
+			updatedMRA := &mrav1beta1.MulticlusterRoleAssignment{}
+			Expect(k8sClient.Get(ctx, mraNamespacedName, updatedMRA)).To(Succeed())
+
+			var readyCondition *metav1.Condition
+			for i, condition := range updatedMRA.Status.Conditions {
+				if condition.Type == string(mrav1beta1.ConditionTypeReady) {
+					readyCondition = &updatedMRA.Status.Conditions[i]
+					break
+				}
+			}
+
+			Expect(readyCondition).NotTo(BeNil())
+			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAssignmentsPending)))
+			Expect(readyCondition.Message).To(Equal("2 out of 2 role assignments pending"))
 		})
 
 		It("Should cleanup ClusterPermissions when cluster removed from all assignments", func() {
@@ -1290,10 +1333,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			Describe("Error handling", func() {
 				It("Should return error for transient errors", func() {
-					transientErr := fmt.Errorf("connection timeout")
+					errorMsg := "connection timeout"
 					mockClient := &MockErrorClient{
 						Client:         k8sClient,
-						GetError:       transientErr,
+						GetError:       errors.New(errorMsg),
 						ShouldFailGet:  true,
 						TargetResource: "placements",
 					}
@@ -1309,7 +1352,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					clusters, roleAssignmentClusters, err := mockReconciler.aggregateClusters(ctx, mra)
 
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("connection timeout"))
+					Expect(err.Error()).To(ContainSubstring(errorMsg))
 					Expect(err.Error()).To(ContainSubstring(roleAssignment1Name))
 
 					Expect(clusters).To(BeNil())

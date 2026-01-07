@@ -208,9 +208,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	currentClusters, roleAssignmentClusters, err := r.aggregateClusters(ctx, &mra)
 	if err != nil {
-		r.setCondition(&mra, mrav1beta1.ConditionTypeReady, metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsPending,
-			"Cannot determine target clusters")
-
 		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
 			log.Error(statusErr, "Failed to update status after aggregation error")
 		}
@@ -440,7 +437,8 @@ func (r *MulticlusterRoleAssignmentReconciler) isClusterPermissionManaged(obj cl
 	return cpLabels[clusterPermissionManagedByLabel] == clusterPermissionManagedByValue
 }
 
-// updateStatus calculates and saves the current status state.
+// updateStatus initializes missing role assignment statuses, recalculates the Ready condition, and persists status to
+// the API server.
 func (r *MulticlusterRoleAssignmentReconciler) updateStatus(
 	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment) error {
 
