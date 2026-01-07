@@ -47,8 +47,8 @@ type ConditionReason string
 
 // Reasons for ConditionTypeApplied. These explain why the Applied condition has a particular status.
 const (
-	// ReasonAppliedSuccessfully indicates role assignments were successfully applied to all target clusters.
-	ReasonAppliedSuccessfully ConditionReason = "AppliedSuccessfully"
+	// ReasonApplied indicates role assignments were successfully applied to all target clusters.
+	ReasonApplied ConditionReason = "Applied"
 
 	// ReasonApplyFailed indicates role assignment application failed.
 	ReasonApplyFailed ConditionReason = "ApplyFailed"
@@ -60,14 +60,14 @@ const (
 // Reasons for ConditionTypeReady. These explain why the Ready condition has a particular status. Ready condition
 // reasons focus on RoleAssignment-level health, not cluster operations.
 const (
-	// ReasonAllAssignmentsReady indicates all role assignments are active and healthy.
-	ReasonAllAssignmentsReady ConditionReason = "AllAssignmentsReady"
+	// ReasonAssignmentsReady indicates all role assignments are active and healthy.
+	ReasonAssignmentsReady ConditionReason = "AssignmentsReady"
 
 	// ReasonAssignmentsPending indicates some role assignments are still being processed.
 	ReasonAssignmentsPending ConditionReason = "AssignmentsPending"
 
-	// ReasonAssignmentsPartialFailure indicates some role assignments are in error state.
-	ReasonAssignmentsPartialFailure ConditionReason = "AssignmentsPartialFailure"
+	// ReasonAssignmentsFailure indicates some role assignments are in error state.
+	ReasonAssignmentsFailure ConditionReason = "AssignmentsFailure"
 
 	// ReasonProvisioningFailed indicates role assignments could not be provisioned. This occurs when the controller
 	// fails to apply the desired state to target clusters (Applied condition is False).
@@ -103,9 +103,6 @@ const (
 
 	// ReasonNoMatchingClusters indicates the placement exists but matches zero clusters.
 	ReasonNoMatchingClusters RoleAssignmentStatusReason = "NoMatchingClusters"
-
-	// ReasonDependencyNotReady indicates an external dependency is not ready.
-	ReasonDependencyNotReady RoleAssignmentStatusReason = "DependencyNotReady"
 
 	// ReasonSuccessfullyApplied indicates the role assignment was successfully applied to all target clusters.
 	ReasonSuccessfullyApplied RoleAssignmentStatusReason = "SuccessfullyApplied"

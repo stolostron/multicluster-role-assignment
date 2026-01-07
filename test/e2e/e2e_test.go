@@ -3134,13 +3134,13 @@ func validateMRASuccessConditions(mra mrav1beta1.MulticlusterRoleAssignment) {
 	readyCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeReady))
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAllAssignmentsReady)))
+	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAssignmentsReady)))
 	Expect(readyCondition.Message).To(ContainSubstring("role assignments ready"))
 
 	appliedCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeApplied))
 	Expect(appliedCondition).NotTo(BeNil())
 	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
-	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonAppliedSuccessfully)))
+	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonApplied)))
 	Expect(appliedCondition.Message).To(ContainSubstring("ClusterPermissions applied successfully"))
 }
 

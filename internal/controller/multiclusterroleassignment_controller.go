@@ -206,7 +206,18 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	r.clearStaleStatus(&mra)
 
-	currentClusters, roleAssignmentClusters := r.aggregateClusters(ctx, &mra)
+	currentClusters, roleAssignmentClusters, err := r.aggregateClusters(ctx, &mra)
+	if err != nil {
+		r.setCondition(&mra, mrav1beta1.ConditionTypeReady, metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsPending,
+			"Cannot determine target clusters")
+
+		if statusErr := r.updateStatus(ctx, &mra); statusErr != nil {
+			log.Error(statusErr, "Failed to update status after aggregation error")
+		}
+
+		log.Error(err, "Failed to aggregate clusters, will retry")
+		return ctrl.Result{}, err
+	}
 
 	// Create clusters to process by adding previously applied clusters to ensure cleanup
 	previousClusters := mra.Status.AppliedClusters
@@ -248,11 +259,12 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	return ctrl.Result{}, nil
 }
 
-// aggregateClusters aggregates all cluster names from RoleAssignment specs and returns a deduplicated list of cluster
-// names along with a map of RoleAssignment names to their target clusters. Updates role assignment statuses based on
+// aggregateClusters aggregates all cluster names from RoleAssignments and returns a deduplicated list of cluster names,
+// a map of RoleAssignment names to their target clusters, and an error. Updates role assignment statuses based on
 // results.
-func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Context,
-	mra *mrav1beta1.MulticlusterRoleAssignment) (allClusters []string, roleAssignmentClusters map[string][]string) {
+func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
+	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment) (
+	allClusters []string, roleAssignmentClusters map[string][]string, err error) {
 
 	log := logf.FromContext(ctx)
 
@@ -281,14 +293,18 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Con
 		if err != nil {
 			log.Error(err, "Failed to resolve placement clusters", "roleAssignment", roleAssignment.Name)
 
-			if strings.Contains(err.Error(), "not found") {
+			if apierrors.IsNotFound(err) {
+				// Persistent error: Placement doesn't exist (user must fix this). It is safe to continue processing
+				// other RoleAssignments
 				r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
 					mrav1beta1.ReasonInvalidReference, fmt.Sprintf("Placement not found: %v", err))
+				continue
 			} else {
-				r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
-					mrav1beta1.ReasonDependencyNotReady, fmt.Sprintf("Waiting for PlacementDecision: %v", err))
+				// Transient error: API timeout, connection error, etc. Not safe to continue (could cause incorrect
+				// ClusterPermission deletions).
+				return nil, nil, fmt.Errorf(
+					"error resolving clusters for role assignment %s: %w", roleAssignment.Name, err)
 			}
-			continue
 		}
 
 		if len(clustersInRA) == 0 {
@@ -314,15 +330,13 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(ctx context.Con
 	allClusters = slices.Collect(maps.Keys(allClustersMap))
 	slices.Sort(allClusters)
 
-	return allClusters, roleAssignmentClusters
+	return allClusters, roleAssignmentClusters, nil
 }
 
 // resolvePlacementClusters resolves a Placement reference to a list of cluster names by querying PlacementDecision
 // resources.
 func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 	ctx context.Context, placementRef mrav1beta1.PlacementRef) ([]string, error) {
-
-	log := logf.FromContext(ctx)
 
 	var placement clusterv1beta1.Placement
 	err := r.Get(ctx, client.ObjectKey{
@@ -331,8 +345,6 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 	}, &placement)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Error(
-				err, "Referenced Placement not found", "placement", placementRef.Name, "namespace", placementRef.Namespace)
 			return nil, fmt.Errorf("placement %s/%s not found: %w", placementRef.Namespace, placementRef.Name, err)
 		}
 		return nil, fmt.Errorf("failed to get placement %s/%s: %w", placementRef.Namespace, placementRef.Name, err)
@@ -522,7 +534,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	}
 
 	if errorCount > 0 {
-		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsPartialFailure, formatStatusMessage(
+		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsFailure, formatStatusMessage(
 			errorCount, totalRoleAssignments, "role assignments failed")
 	}
 
@@ -532,7 +544,7 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	}
 
 	if activeCount == totalRoleAssignments && totalRoleAssignments > 0 {
-		return metav1.ConditionTrue, mrav1beta1.ReasonAllAssignmentsReady, formatStatusMessage(
+		return metav1.ConditionTrue, mrav1beta1.ReasonAssignmentsReady, formatStatusMessage(
 			activeCount, totalRoleAssignments, "role assignments ready")
 	}
 
@@ -603,7 +615,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 	totalClusters := len(clusters)
 
 	if successCount == totalClusters {
-		r.setCondition(mra, mrav1beta1.ConditionTypeApplied, metav1.ConditionTrue, mrav1beta1.ReasonAppliedSuccessfully,
+		r.setCondition(mra, mrav1beta1.ConditionTypeApplied, metav1.ConditionTrue, mrav1beta1.ReasonApplied,
 			formatStatusMessage(successCount, totalClusters, "ClusterPermissions applied successfully"))
 	} else {
 		r.setCondition(mra, mrav1beta1.ConditionTypeApplied, metav1.ConditionFalse, mrav1beta1.ReasonApplyFailed,
@@ -1107,7 +1119,12 @@ func (r *MulticlusterRoleAssignmentReconciler) handleMulticlusterRoleAssignmentD
 
 	log.Info("Handling MulticlusterRoleAssignment deletion")
 
-	currentClusters, _ := r.aggregateClusters(ctx, mra)
+	currentClusters, _, err := r.aggregateClusters(ctx, mra)
+	if err != nil {
+		// Transient error during deletion - retry to ensure complete cleanup
+		log.Error(err, "Failed to aggregate clusters during deletion, will retry")
+		return err
+	}
 
 	// Include previously applied clusters to ensure complete cleanup even if role assignments were removed from spec
 	// before deletion
