@@ -1287,6 +1287,73 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(clusters).To(HaveLen(3))
 				Expect(clusters).To(ContainElements(cluster1Name, cluster2Name, cluster3Name))
 			})
+
+			Describe("Error handling", func() {
+				It("Should return error for transient errors", func() {
+					transientErr := fmt.Errorf("connection timeout")
+					mockClient := &MockErrorClient{
+						Client:         k8sClient,
+						GetError:       transientErr,
+						ShouldFailGet:  true,
+						TargetResource: "placements",
+					}
+					mockReconciler := &MulticlusterRoleAssignmentReconciler{
+						Client: mockClient,
+						Scheme: k8sClient.Scheme(),
+					}
+
+					mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []mrav1beta1.PlacementRef{
+						{Name: "will-fail-placement", Namespace: multiclusterRoleAssignmentNamespace},
+					}
+
+					clusters, roleAssignmentClusters, err := mockReconciler.aggregateClusters(ctx, mra)
+
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("connection timeout"))
+					Expect(err.Error()).To(ContainSubstring(roleAssignment1Name))
+
+					Expect(clusters).To(BeNil())
+					Expect(roleAssignmentClusters).To(BeNil())
+				})
+
+				It("Should continue processing for NotFound errors and set RoleAssignment status", func() {
+					mra.Spec.RoleAssignments[0].ClusterSelection.Placements = []mrav1beta1.PlacementRef{
+						{Name: "nonexistent-placement", Namespace: multiclusterRoleAssignmentNamespace},
+					}
+					mra.Spec.RoleAssignments[1].ClusterSelection.Placements = []mrav1beta1.PlacementRef{
+						{Name: placement2Name, Namespace: multiclusterRoleAssignmentNamespace},
+					}
+
+					clusters, roleAssignmentClusters, err := reconciler.aggregateClusters(ctx, mra)
+
+					Expect(err).ToNot(HaveOccurred())
+					Expect(clusters).To(HaveLen(1))
+					Expect(clusters).To(ContainElement(cluster3Name))
+
+					Expect(roleAssignmentClusters).To(HaveLen(1))
+					Expect(roleAssignmentClusters[roleAssignment2Name]).To(ConsistOf(cluster3Name))
+					Expect(roleAssignmentClusters).NotTo(HaveKey(roleAssignment1Name))
+
+					var failedRA, successRA *mrav1beta1.RoleAssignmentStatus
+					for i, status := range mra.Status.RoleAssignments {
+						switch status.Name {
+						case roleAssignment1Name:
+							failedRA = &mra.Status.RoleAssignments[i]
+						case roleAssignment2Name:
+							successRA = &mra.Status.RoleAssignments[i]
+						}
+					}
+
+					Expect(failedRA).NotTo(BeNil())
+					Expect(failedRA.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+					Expect(failedRA.Reason).To(Equal(string(mrav1beta1.ReasonInvalidReference)))
+					Expect(failedRA.Message).To(ContainSubstring("Placement not found"))
+
+					Expect(successRA).NotTo(BeNil())
+					Expect(successRA.Status).To(Equal(string(mrav1beta1.StatusTypePending)))
+					Expect(successRA.Reason).To(Equal(string(mrav1beta1.ReasonProcessing)))
+				})
+			})
 		})
 
 		Describe("resolvePlacementClusters", func() {
