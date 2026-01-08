@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
+	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -40,7 +40,7 @@ type clusterPermissionEventHandler struct{}
 func (h *clusterPermissionEventHandler) Create(ctx context.Context, e event.TypedCreateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	cp := e.Object.(*clusterpermissionv1alpha1.ClusterPermission)
+	cp := e.Object.(*cpv1alpha1.ClusterPermission)
 	enqueueAllOwners(ctx, cp, q)
 }
 
@@ -48,8 +48,8 @@ func (h *clusterPermissionEventHandler) Create(ctx context.Context, e event.Type
 func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	oldCP := e.ObjectOld.(*clusterpermissionv1alpha1.ClusterPermission)
-	newCP := e.ObjectNew.(*clusterpermissionv1alpha1.ClusterPermission)
+	oldCP := e.ObjectOld.(*cpv1alpha1.ClusterPermission)
+	newCP := e.ObjectNew.(*cpv1alpha1.ClusterPermission)
 
 	affectedMRAs := findAffectedMRAs(oldCP, newCP)
 
@@ -66,7 +66,7 @@ func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.Type
 func (h *clusterPermissionEventHandler) Delete(ctx context.Context, e event.TypedDeleteEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
-	cp := e.Object.(*clusterpermissionv1alpha1.ClusterPermission)
+	cp := e.Object.(*cpv1alpha1.ClusterPermission)
 	enqueueAllOwners(ctx, cp, q)
 }
 
@@ -76,7 +76,7 @@ func (h *clusterPermissionEventHandler) Generic(ctx context.Context, e event.Typ
 }
 
 // findAffectedMRAs identifies which MRAs are affected by comparing old vs new bindings
-func findAffectedMRAs(oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission) map[string]bool {
+func findAffectedMRAs(oldCP, newCP *cpv1alpha1.ClusterPermission) map[string]bool {
 	affectedMRAs := make(map[string]bool)
 
 	oldClusterRoleBindings := buildClusterRoleBindingMap(oldCP)
@@ -85,9 +85,9 @@ func findAffectedMRAs(oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission)
 	newRoleBindings := buildRoleBindingMap(newCP)
 
 	compareBindings(oldClusterRoleBindings, newClusterRoleBindings, oldCP, newCP, affectedMRAs,
-		func(b clusterpermissionv1alpha1.ClusterRoleBinding) string { return b.Name })
+		func(b cpv1alpha1.ClusterRoleBinding) string { return b.Name })
 	compareBindings(oldRoleBindings, newRoleBindings, oldCP, newCP, affectedMRAs,
-		func(b clusterpermissionv1alpha1.RoleBinding) string { return b.Name })
+		func(b cpv1alpha1.RoleBinding) string { return b.Name })
 
 	if hasOrphanedBindings(newCP, newClusterRoleBindings, newRoleBindings) {
 		// Orphaned bindings detected - reconcile all owners to clean up
@@ -99,9 +99,9 @@ func findAffectedMRAs(oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission)
 
 // buildClusterRoleBindingMap creates a map of binding name -> binding
 func buildClusterRoleBindingMap(
-	cp *clusterpermissionv1alpha1.ClusterPermission) map[string]clusterpermissionv1alpha1.ClusterRoleBinding {
+	cp *cpv1alpha1.ClusterPermission) map[string]cpv1alpha1.ClusterRoleBinding {
 
-	bindingMap := make(map[string]clusterpermissionv1alpha1.ClusterRoleBinding)
+	bindingMap := make(map[string]cpv1alpha1.ClusterRoleBinding)
 	if cp.Spec.ClusterRoleBindings != nil {
 		for _, binding := range *cp.Spec.ClusterRoleBindings {
 			bindingMap[binding.Name] = binding
@@ -113,9 +113,9 @@ func buildClusterRoleBindingMap(
 
 // buildRoleBindingMap creates a map of namespace/name -> binding
 func buildRoleBindingMap(
-	cp *clusterpermissionv1alpha1.ClusterPermission) map[string]clusterpermissionv1alpha1.RoleBinding {
+	cp *cpv1alpha1.ClusterPermission) map[string]cpv1alpha1.RoleBinding {
 
-	bindingMap := make(map[string]clusterpermissionv1alpha1.RoleBinding)
+	bindingMap := make(map[string]cpv1alpha1.RoleBinding)
 	if cp.Spec.RoleBindings != nil {
 		for _, binding := range *cp.Spec.RoleBindings {
 			key := binding.Namespace + "/" + binding.Name
@@ -128,7 +128,7 @@ func buildRoleBindingMap(
 // compareBindings compares old and new bindings and identifies affected MRAs
 func compareBindings[T any](
 	oldBindings, newBindings map[string]T,
-	oldCP, newCP *clusterpermissionv1alpha1.ClusterPermission,
+	oldCP, newCP *cpv1alpha1.ClusterPermission,
 	affectedMRAs map[string]bool,
 	getBindingName func(T) string) {
 
@@ -154,19 +154,18 @@ func compareBindings[T any](
 }
 
 // getOwnerFromAnnotation retrieves the MRA owner identifier for a given binding name
-func getOwnerFromAnnotation(cp *clusterpermissionv1alpha1.ClusterPermission, bindingName string) string {
+func getOwnerFromAnnotation(cp *cpv1alpha1.ClusterPermission, bindingName string) string {
 	if cp.Annotations == nil {
 		return ""
 	}
-	ownerKey := OwnerAnnotationPrefix + bindingName
+	ownerKey := ownerAnnotationPrefix + bindingName
 
 	return cp.Annotations[ownerKey]
 }
 
 // hasOrphanedBindings checks if any bindings exist without owner annotations
-func hasOrphanedBindings(cp *clusterpermissionv1alpha1.ClusterPermission,
-	clusterRoleBindings map[string]clusterpermissionv1alpha1.ClusterRoleBinding,
-	roleBindings map[string]clusterpermissionv1alpha1.RoleBinding) bool {
+func hasOrphanedBindings(cp *cpv1alpha1.ClusterPermission, clusterRoleBindings map[string]cpv1alpha1.ClusterRoleBinding,
+	roleBindings map[string]cpv1alpha1.RoleBinding) bool {
 
 	for name := range clusterRoleBindings {
 		if getOwnerFromAnnotation(cp, name) == "" {
@@ -184,11 +183,11 @@ func hasOrphanedBindings(cp *clusterpermissionv1alpha1.ClusterPermission,
 }
 
 // extractAllOwners extracts all MRA owner identifiers from ClusterPermission annotations
-func extractAllOwners(cp *clusterpermissionv1alpha1.ClusterPermission) map[string]bool {
+func extractAllOwners(cp *cpv1alpha1.ClusterPermission) map[string]bool {
 	owners := make(map[string]bool)
 	if cp.Annotations != nil {
 		for key, value := range cp.Annotations {
-			if strings.HasPrefix(key, OwnerAnnotationPrefix) {
+			if strings.HasPrefix(key, ownerAnnotationPrefix) {
 				owners[value] = true
 			}
 		}
@@ -197,7 +196,7 @@ func extractAllOwners(cp *clusterpermissionv1alpha1.ClusterPermission) map[strin
 }
 
 // enqueueAllOwners enqueues reconcile requests for all MRAs that own this ClusterPermission
-func enqueueAllOwners(ctx context.Context, cp *clusterpermissionv1alpha1.ClusterPermission,
+func enqueueAllOwners(ctx context.Context, cp *cpv1alpha1.ClusterPermission,
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	owners := extractAllOwners(cp)

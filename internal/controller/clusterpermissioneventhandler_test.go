@@ -116,7 +116,7 @@ func TestFindAffectedMRAs(t *testing.T) {
 					createBinding("viewer", "", "default/mra1", "default-user", "view"),
 					createBinding("editor", "", "default/mra2", "default-user", "edit"),
 					createBinding("orphan", "", "default/orphan", "default-user", "view"))
-				delete(result.Annotations, OwnerAnnotationPrefix+"orphan")
+				delete(result.Annotations, ownerAnnotationPrefix+"orphan")
 				return result
 			}(),
 			expectedMRAs: []string{"default/mra1", "default/mra2"},
@@ -186,7 +186,7 @@ func TestEventHandlers_Update(t *testing.T) {
 					createBinding("viewer", "", "default/mra1", "default-user", "view"),
 					createBinding("editor", "", "default/mra2", "default-user", "edit"),
 					createBinding("orphan", "", "default/orphan", "default-user", "view"))
-				delete(result.Annotations, OwnerAnnotationPrefix+"orphan")
+				delete(result.Annotations, ownerAnnotationPrefix+"orphan")
 				return result
 			}(),
 			expectedMRAs: []reconcile.Request{
@@ -372,7 +372,7 @@ func createCP(bindings ...binding) *cpv1alpha1.ClusterPermission {
 				Subjects:  []rbacv1.Subject{{Kind: "User", Name: b.subjectName, APIGroup: rbacv1.GroupName}},
 				RoleRef:   cpv1alpha1.RoleRef{Kind: "ClusterRole", Name: b.roleName, APIGroup: rbacv1.GroupName},
 			})
-			cp.Annotations[OwnerAnnotationPrefix+b.bindingName] = b.mraOwner
+			cp.Annotations[ownerAnnotationPrefix+b.bindingName] = b.mraOwner
 		} else {
 			// ClusterRoleBinding
 			crbs = append(crbs, cpv1alpha1.ClusterRoleBinding{
@@ -380,7 +380,7 @@ func createCP(bindings ...binding) *cpv1alpha1.ClusterPermission {
 				Subjects: []rbacv1.Subject{{Kind: "User", Name: b.subjectName, APIGroup: rbacv1.GroupName}},
 				RoleRef:  &rbacv1.RoleRef{Kind: "ClusterRole", Name: b.roleName, APIGroup: rbacv1.GroupName},
 			})
-			cp.Annotations[OwnerAnnotationPrefix+b.bindingName] = b.mraOwner
+			cp.Annotations[ownerAnnotationPrefix+b.bindingName] = b.mraOwner
 		}
 	}
 

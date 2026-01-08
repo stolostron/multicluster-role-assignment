@@ -143,9 +143,8 @@ spec:
             description: status defines the observed state of MulticlusterRoleAssignment
             properties:
               appliedClusters:
-                description: |-
-                  AppliedClusters contains all clusters where ClusterPermissions have been applied by this
-                  MulticlusterRoleAssignment.
+                description: AppliedClusters contains all (total) clusters where role
+                  assignments have been applied to.
                 items:
                   type: string
                 type: array
