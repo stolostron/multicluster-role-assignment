@@ -21,8 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// IMPORTANT ////////////////////////////////////////
+// v1alpha1 api is being kept for transition between 2.15 and 2.16, where api was changed to v1beta1. True migration not
+// needed since 2.15 was TP for this operator. v1alpha1 can be safely removed in 2.17.
+// IMPORTANT ////////////////////////////////////////
 
 // MulticlusterRoleAssignmentSpec defines the desired state of MulticlusterRoleAssignment.
 type MulticlusterRoleAssignmentSpec struct {
