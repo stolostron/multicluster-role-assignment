@@ -33,11 +33,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 
-	rbacv1beta1 "github.com/stolostron/multicluster-role-assignment/api/v1beta1"
+	mrav1beta1 "github.com/stolostron/multicluster-role-assignment/api/v1beta1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
-	clusterpermissionv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
+	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	// +kubebuilder:scaffold:imports
@@ -51,9 +51,9 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(rbacv1beta1.AddToScheme(scheme))
+	utilruntime.Must(mrav1beta1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
-	utilruntime.Must(clusterpermissionv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
