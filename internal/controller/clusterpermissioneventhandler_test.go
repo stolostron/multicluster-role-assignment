@@ -106,6 +106,16 @@ func TestFindAffectedMRAs_Status(t *testing.T) {
 			newCP:        createCPStatus(), // Empty status
 			expectedMRAs: []string{"default/mra1"},
 		},
+		{
+			name: "status change for different mra",
+			oldCP: createCPStatus(
+				createStatus("default/mra2", "other-ns", "mra2", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra2", "other-ns", "mra2", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra2"},
+		},
 	}
 
 	for _, tt := range tests {

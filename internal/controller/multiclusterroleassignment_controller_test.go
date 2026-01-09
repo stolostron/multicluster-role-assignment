@@ -331,11 +331,16 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	})
 
 	Context("Clusterpermission status changes", func() {
+		const (
+			testClusterName = "cluster1"
+			testViewRole    = "view"
+		)
+
 		It("should reflect failed status in mra status", func() {
 			mraName := "test-mra-status"
 			raName := "testRoleAssignment"
-			clusterRoleName := "view"
-			clusterName := "cluster1"
+			clusterRoleName := testViewRole
+			clusterName := testClusterName
 
 			mra := &mrav1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -420,8 +425,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		It("should reflect pending status in mra status when CP condition is unknown", func() {
 			mraName := "test-mra-status-pending"
 			raName := "testRoleAssignment"
-			clusterRoleName := "view"
-			clusterName := "cluster1"
+			clusterRoleName := testViewRole
+			clusterName := testClusterName
 
 			mra := &mrav1beta1.MulticlusterRoleAssignment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -506,7 +511,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			mraName := "test-mra-rb-error"
 			raName := "testRoleAssignmentRB"
 			clusterRoleName := "admin"
-			clusterName := "cluster1"
+			clusterName := testClusterName
 			namespace := "target-ns"
 
 			mra := &mrav1beta1.MulticlusterRoleAssignment{
