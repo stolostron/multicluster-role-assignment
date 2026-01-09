@@ -89,6 +89,17 @@ func findAffectedMRAs(oldCP, newCP *cpv1alpha1.ClusterPermission) map[string]boo
 	compareBindings(oldRoleBindings, newRoleBindings, oldCP, newCP, affectedMRAs,
 		func(b cpv1alpha1.RoleBinding) string { return b.Name })
 
+	// Check for status changes
+	oldClusterRoleStatus := buildClusterRoleBindingStatusMap(oldCP)
+	newClusterRoleStatus := buildClusterRoleBindingStatusMap(newCP)
+	compareStatus(oldClusterRoleStatus, newClusterRoleStatus, oldCP, newCP, affectedMRAs,
+		func(b cpv1alpha1.ClusterRoleBindingStatus) string { return b.Name })
+
+	oldRoleStatus := buildRoleBindingStatusMap(oldCP)
+	newRoleStatus := buildRoleBindingStatusMap(newCP)
+	compareStatus(oldRoleStatus, newRoleStatus, oldCP, newCP, affectedMRAs,
+		func(b cpv1alpha1.RoleBindingStatus) string { return b.Name })
+
 	if hasOrphanedBindings(newCP, newClusterRoleBindings, newRoleBindings) {
 		// Orphaned bindings detected - reconcile all owners to clean up
 		return extractAllOwners(newCP)
@@ -223,4 +234,60 @@ func enqueueMRA(ctx context.Context, mraID string, q workqueue.TypedRateLimiting
 			Name:      namespaceName[1],
 		},
 	})
+}
+
+// buildClusterRoleBindingStatusMap creates a map of binding name -> binding status
+func buildClusterRoleBindingStatusMap(
+	cp *cpv1alpha1.ClusterPermission) map[string]cpv1alpha1.ClusterRoleBindingStatus {
+
+	statusMap := make(map[string]cpv1alpha1.ClusterRoleBindingStatus)
+	if cp.Status.ResourceStatus != nil && cp.Status.ResourceStatus.ClusterRoleBindings != nil {
+		for _, status := range cp.Status.ResourceStatus.ClusterRoleBindings {
+			statusMap[status.Name] = status
+		}
+	}
+	return statusMap
+}
+
+// buildRoleBindingStatusMap creates a map of namespace/name -> binding status
+func buildRoleBindingStatusMap(
+	cp *cpv1alpha1.ClusterPermission) map[string]cpv1alpha1.RoleBindingStatus {
+
+	statusMap := make(map[string]cpv1alpha1.RoleBindingStatus)
+	if cp.Status.ResourceStatus != nil && cp.Status.ResourceStatus.RoleBindings != nil {
+		for _, status := range cp.Status.ResourceStatus.RoleBindings {
+			// Use namespace/name as key to match how buildRoleBindingMap works
+			key := status.Namespace + "/" + status.Name
+			statusMap[key] = status
+		}
+	}
+	return statusMap
+}
+
+// compareStatus compares old and new status and identifies affected MRAs
+func compareStatus[T any](
+	oldStatus, newStatus map[string]T,
+	oldCP, newCP *cpv1alpha1.ClusterPermission,
+	affectedMRAs map[string]bool,
+	getBindingName func(T) string) {
+
+	for key, newS := range newStatus {
+		oldS, exists := oldStatus[key]
+
+		// Status added or modified - look up owner in new CP
+		if !exists || !equality.Semantic.DeepEqual(oldS, newS) {
+			if owner := getOwnerFromAnnotation(newCP, getBindingName(newS)); owner != "" {
+				affectedMRAs[owner] = true
+			}
+		}
+	}
+
+	for key, oldS := range oldStatus {
+		if _, exists := newStatus[key]; !exists {
+			// Status removed - look up owner in old CP
+			if owner := getOwnerFromAnnotation(oldCP, getBindingName(oldS)); owner != "" {
+				affectedMRAs[owner] = true
+			}
+		}
+	}
 }
