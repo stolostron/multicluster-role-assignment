@@ -33,7 +33,108 @@ import (
 	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
-func TestFindAffectedMRAs(t *testing.T) {
+func TestFindAffectedMRAs_Status(t *testing.T) {
+	tests := []struct {
+		name         string
+		oldCP        *cpv1alpha1.ClusterPermission
+		newCP        *cpv1alpha1.ClusterPermission
+		expectedMRAs []string
+	}{
+		{
+			name: "no changes - no MRAs should be affected",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{},
+		},
+		{
+			name: "status change - Clusterpermission status change of Condition Type",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "status change - Clusterpermission status change of Condition Status",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionFalse, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "no changes - Clusterpermission status change of Condition Reason",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "ReasonChanged", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "no changes - Clusterpermission status change of condition Message",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "MessageChanged")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name:  "status added - should affect owner",
+			oldCP: createCPStatus(), // Empty status
+			newCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "status removed - should affect owner",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP:        createCPStatus(), // Empty status
+			expectedMRAs: []string{"default/mra1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mras := findAffectedMRAs(tt.oldCP, tt.newCP)
+
+			if len(mras) != len(tt.expectedMRAs) {
+				t.Errorf("got %d affected MRAs, want %d\nGot: %v\nWant: %v",
+					len(mras), len(tt.expectedMRAs), mras, tt.expectedMRAs)
+			}
+
+			// verifies all items exist
+			for _, mra := range tt.expectedMRAs {
+				if !mras[mra] {
+					t.Errorf("expected MRA %q to be affected, but it wasn't\nAffected MRAs: %v", mra, mras)
+				}
+			}
+
+			// verifies no unexpected items exist
+			for mra := range mras {
+				if !slices.Contains(tt.expectedMRAs, mra) {
+					t.Errorf("unexpected MRA %q is affected\nExpected: %v\nGot: %v", mra, tt.expectedMRAs, mras)
+				}
+			}
+		})
+	}
+}
+
+func TestFindAffectedMRAs_Bindings(t *testing.T) {
 	tests := []struct {
 		name         string
 		oldCP        *cpv1alpha1.ClusterPermission
@@ -338,6 +439,31 @@ type binding struct {
 	roleName    string
 }
 
+type status struct {
+	mraOwner   string
+	Namespace  string
+	Name       string
+	Conditions []metav1.Condition
+}
+
+func createStatus(mraOwner, namespace, name string, conditions ...metav1.Condition) status {
+	return status{
+		mraOwner:   mraOwner,
+		Namespace:  namespace,
+		Name:       name,
+		Conditions: conditions,
+	}
+}
+
+func createCondition(condType string, status metav1.ConditionStatus, reason, message string) metav1.Condition {
+	return metav1.Condition{
+		Type:    condType,
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+	}
+}
+
 // createBinding creates a binding. Pass empty string for namespace to create ClusterRoleBinding.
 func createBinding(bindingName, namespace, mraOwner, subjectName, roleName string) binding {
 	return binding{
@@ -347,6 +473,48 @@ func createBinding(bindingName, namespace, mraOwner, subjectName, roleName strin
 		subjectName,
 		roleName,
 	}
+}
+
+func createCPStatus(statuses ...status) *cpv1alpha1.ClusterPermission {
+	cp := &cpv1alpha1.ClusterPermission{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "mra-managed-permissions",
+			Namespace:   "test-cluster",
+			Annotations: make(map[string]string),
+		},
+		Spec: cpv1alpha1.ClusterPermissionSpec{},
+		Status: cpv1alpha1.ClusterPermissionStatus{
+			ResourceStatus: &cpv1alpha1.ResourceStatus{},
+		},
+	}
+
+	var crbs []cpv1alpha1.ClusterRoleBindingStatus
+	var rbs []cpv1alpha1.RoleBindingStatus
+
+	for _, s := range statuses {
+		cp.Annotations[ownerAnnotationPrefix+s.Name] = s.mraOwner
+		if s.Namespace != "" {
+			rbs = append(rbs, cpv1alpha1.RoleBindingStatus{
+				Name:       s.Name,
+				Namespace:  s.Namespace,
+				Conditions: s.Conditions,
+			})
+		} else {
+			crbs = append(crbs, cpv1alpha1.ClusterRoleBindingStatus{
+				Name:       s.Name,
+				Conditions: s.Conditions,
+			})
+		}
+	}
+
+	if len(crbs) > 0 {
+		cp.Status.ResourceStatus.ClusterRoleBindings = crbs
+	}
+	if len(rbs) > 0 {
+		cp.Status.ResourceStatus.RoleBindings = rbs
+	}
+
+	return cp
 }
 
 // createCP creates a ClusterPermission with the specified bindings.
