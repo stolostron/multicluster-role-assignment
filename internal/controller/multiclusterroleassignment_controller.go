@@ -799,7 +799,8 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	}
 }
 
-// checkBindingStatusForCluster checks if any bindings for the RoleAssignment on a specific cluster are in Error or Unknown state.
+// checkBindingStatusForCluster checks if any bindings for the RoleAssignment on a specific cluster are in Error or
+// Unknown state.
 func (r *MulticlusterRoleAssignmentReconciler) checkBindingStatusForCluster(
 	mra *mrav1beta1.MulticlusterRoleAssignment,
 	raSpec *mrav1beta1.RoleAssignment,
