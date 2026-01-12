@@ -23,7 +23,10 @@ import (
 
 // IMPORTANT ////////////////////////////////////////
 // v1alpha1 api is being kept for transition between 2.15 and 2.16, where api was changed to v1beta1. True migration not
-// needed since 2.15 was TP for this operator. v1alpha1 can be safely removed in 2.17.
+// needed since 2.15 was TP for this operator. We should be careful when removing this API. It could be safest to remove
+// in 2.18, since 2.15 is an odd number release and falls under 3 year EUS support, we might need to support skip level
+// upgrades from 2.15 -> 2.17. In the 2.15 -> 2.17 upgrade scenaio, the CRD would still need v1alpha1 else it could fail
+// with the error in ACM-28211. See ACM-7786 for more info in 3 year EUS and skip level ACM upgrade support.
 // IMPORTANT ////////////////////////////////////////
 
 // MulticlusterRoleAssignmentSpec defines the desired state of MulticlusterRoleAssignment.
