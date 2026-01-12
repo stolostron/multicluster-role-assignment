@@ -14,12 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1alpha1
 
 import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// IMPORTANT ////////////////////////////////////////
+// v1alpha1 api is being kept for transition between 2.15 and 2.16, where api was changed to v1beta1. True migration not
+// needed since 2.15 was TP for this operator. v1alpha1 can be safely removed in 2.17.
+// IMPORTANT ////////////////////////////////////////
 
 // MulticlusterRoleAssignmentSpec defines the desired state of MulticlusterRoleAssignment.
 type MulticlusterRoleAssignmentSpec struct {
@@ -57,29 +62,16 @@ type RoleAssignment struct {
 	ClusterSelection ClusterSelection `json:"clusterSelection"`
 }
 
-// PlacementRef represents a reference to a Placement resource
-type PlacementRef struct {
-	// Name of the Placement resource
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-
-	// Namespace of the Placement resource
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Namespace string `json:"namespace"`
-}
-
 type ClusterSelection struct {
 	// Type defines the type of cluster selection.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum={placements}
+	// +kubebuilder:validation:Enum={clusterNames}
 	Type string `json:"type"`
 
-	// Placements defines the Placement resources to use for cluster selection.
+	// ClusterNames defines the clusters where the role should be applied.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	Placements []PlacementRef `json:"placements"`
+	ClusterNames []string `json:"clusterNames"`
 }
 
 // MulticlusterRoleAssignmentStatus defines the observed state of MulticlusterRoleAssignment.
@@ -91,10 +83,6 @@ type MulticlusterRoleAssignmentStatus struct {
 	// RoleAssignments provides the status of each role assignment.
 	// +optional
 	RoleAssignments []RoleAssignmentStatus `json:"roleAssignments,omitempty"`
-
-	// AppliedClusters contains all (total) clusters where role assignments have been applied to.
-	// +optional
-	AppliedClusters []string `json:"appliedClusters,omitempty"`
 }
 
 // RoleAssignmentStatus defines the status of a specific role assignment.
@@ -123,7 +111,8 @@ type RoleAssignmentStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:storageversion
+// +kubebuilder:unservedversion
+// +kubebuilder:deprecatedversion
 
 // MulticlusterRoleAssignment is the Schema for the multiclusterroleassignments API.
 type MulticlusterRoleAssignment struct {
