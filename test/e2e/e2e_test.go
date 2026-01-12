@@ -3079,6 +3079,216 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 		})
+
+		Context("ClusterPermission failure handling", func() {
+			var (
+				testMRAName       = "test-mra-failure"
+				testPlacementName = "placement-failure"
+				cpName            = "mra-managed-permissions"
+				clusterNamespace  = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating a placement for failure test")
+				createPlacement(testPlacementName, openClusterManagementGlobalSetNamespace)
+				createPlacementDecision(testPlacementName, openClusterManagementGlobalSetNamespace, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up failure test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  subject:
+    kind: User
+    name: test-user-failure
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+    - name: failure-role-assignment
+      clusterRole: view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: %s
+            namespace: %s
+`, testMRAName, openClusterManagementGlobalSetNamespace, testPlacementName, openClusterManagementGlobalSetNamespace)
+
+				mraFile := fmt.Sprintf("/tmp/%s.yaml", testMRAName)
+				err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
+				Expect(err).NotTo(HaveOccurred())
+
+				cmd := exec.Command("kubectl", "apply", "-f", mraFile)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("waiting for MRA to be ready")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
+							found = true
+							break
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should manually fail the ClusterPermission", func() {
+				By("updating ClusterPermission status to Failed")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(cpName, clusterNamespace, metav1.ConditionFalse, "ApplyFailed", "Simulated failure for testing")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should reflect the failure in MRA status", func() {
+				By("waiting for MRA to reflect failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
+							if cond.Status == metav1.ConditionFalse && strings.Contains(cond.Message, "role assignments failed") {
+								found = true
+							}
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA Ready condition to be False with failure message")
+
+					raFound := false
+					for _, ra := range mraObj.Status.RoleAssignments {
+						if ra.Name == "failure-role-assignment" {
+							if ra.Status == string(mrav1beta1.StatusTypeError) && strings.Contains(ra.Message, "Simulated failure") {
+								raFound = true
+							}
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected RoleAssignment status to be Error with simulated failure message")
+
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
+
+		Context("ClusterPermission unknown status handling", func() {
+			var (
+				testMRAName       = "test-mra-unknown"
+				testPlacementName = "placement-unknown"
+				cpName            = "mra-managed-permissions"
+				clusterNamespace  = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating a placement for unknown status test")
+				createPlacement(testPlacementName, openClusterManagementGlobalSetNamespace)
+				createPlacementDecision(testPlacementName, openClusterManagementGlobalSetNamespace, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up unknown status test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  subject:
+    kind: User
+    name: test-user-unknown
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+    - name: unknown-role-assignment
+      clusterRole: view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: %s
+            namespace: %s
+`, testMRAName, openClusterManagementGlobalSetNamespace, testPlacementName, openClusterManagementGlobalSetNamespace)
+
+				mraFile := fmt.Sprintf("/tmp/%s.yaml", testMRAName)
+				err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
+				Expect(err).NotTo(HaveOccurred())
+
+				cmd := exec.Command("kubectl", "apply", "-f", mraFile)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("waiting for MRA to be ready")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
+							found = true
+							break
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should manually update ClusterPermission status to Unknown", func() {
+				By("updating ClusterPermission status to Unknown")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(cpName, clusterNamespace, metav1.ConditionUnknown, "UnknownStatus", "Simulated unknown status for testing")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should reflect the unknown status in MRA status", func() {
+				By("waiting for MRA to reflect pending status")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					// Check Ready condition is not True (it might be False or Unknown depending on logic, usually False if there are pending assignments)
+					// Based on calculateReadyCondition logic: if pendingCount > 0, returns False, ReasonAssignmentsPending
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
+							if cond.Status == metav1.ConditionFalse && cond.Reason == string(mrav1beta1.ReasonAssignmentsPending) {
+								found = true
+							}
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA Ready condition to be False with ReasonAssignmentsPending")
+
+					raFound := false
+					for _, ra := range mraObj.Status.RoleAssignments {
+						if ra.Name == "unknown-role-assignment" {
+							if ra.Status == string(mrav1beta1.StatusTypePending) && strings.Contains(ra.Message, "Simulated unknown status") {
+								raFound = true
+							}
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected RoleAssignment status to be Pending with simulated unknown status message")
+
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
 	})
 })
 
@@ -3564,6 +3774,72 @@ status:
 
 	// Apply status update with server-side apply
 	cmd := exec.Command("kubectl", "apply", "-f", pdFile, "--subresource=status", "--server-side")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// updateClusterPermissionStatus updates the status of a ClusterPermission to simulate success or failure.
+func updateClusterPermissionStatus(name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) {
+	// Fetch the latest version first
+	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
+	var cp cpv1alpha1.ClusterPermission
+	unmarshalJSON(cpJSON, &cp)
+
+	if cp.Status.ResourceStatus == nil {
+		cp.Status.ResourceStatus = &cpv1alpha1.ResourceStatus{}
+	}
+
+	// Update conditions for all ClusterRoleBindings
+	if cp.Spec.ClusterRoleBindings != nil {
+		if cp.Status.ResourceStatus.ClusterRoleBindings == nil {
+			cp.Status.ResourceStatus.ClusterRoleBindings = make([]cpv1alpha1.ClusterRoleBindingStatus, 0)
+		}
+
+		for _, binding := range *cp.Spec.ClusterRoleBindings {
+			// Find existing status or create new one
+			found := false
+			for i, status := range cp.Status.ResourceStatus.ClusterRoleBindings {
+				if status.Name == binding.Name {
+					cp.Status.ResourceStatus.ClusterRoleBindings[i].Conditions = []metav1.Condition{
+						{
+							Type:               "Applied",
+							Status:             conditionStatus,
+							Reason:             reason,
+							Message:            message,
+							LastTransitionTime: metav1.Now(),
+						},
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				cp.Status.ResourceStatus.ClusterRoleBindings = append(cp.Status.ResourceStatus.ClusterRoleBindings,
+					cpv1alpha1.ClusterRoleBindingStatus{
+						Name: binding.Name,
+						Conditions: []metav1.Condition{
+							{
+								Type:               "Applied",
+								Status:             conditionStatus,
+								Reason:             reason,
+								Message:            message,
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					})
+			}
+		}
+	}
+
+	// Marshall back to JSON and apply status update
+	cpBytes, err := json.Marshal(cp)
+	Expect(err).NotTo(HaveOccurred())
+
+	tmpFile := fmt.Sprintf("/tmp/%s-%s-status-update.json", name, namespace)
+	err = os.WriteFile(tmpFile, cpBytes, 0644)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", tmpFile, "--subresource=status", "--server-side")
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 }
