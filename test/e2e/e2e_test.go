@@ -143,10 +143,10 @@ var _ = Describe("Manager", Ordered, func() {
 
 		for _, p := range placements {
 			By(fmt.Sprintf("creating Placement %s", p.name))
-			createPlacement(p.name, openClusterManagementGlobalSetNamespace)
+			createPlacement(p.name)
 
 			By(fmt.Sprintf("creating PlacementDecision for %s", p.name))
-			createPlacementDecision(p.name, openClusterManagementGlobalSetNamespace, p.clusters)
+			createPlacementDecision(p.name, p.clusters)
 		}
 
 		By("deploying the controller-manager")
@@ -848,8 +848,8 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("creating Placement and PlacementDecision for newmanagedcluster04")
-					createPlacement("placement-newcluster-04", openClusterManagementGlobalSetNamespace)
-					createPlacementDecision("placement-newcluster-04", openClusterManagementGlobalSetNamespace,
+					createPlacement("placement-newcluster-04")
+					createPlacementDecision("placement-newcluster-04",
 						[]string{"newmanagedcluster04"})
 
 					By("fetching and modifying MRA to add newmanagedcluster04 RoleAssignment")
@@ -3090,8 +3090,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			BeforeAll(func() {
 				By("creating a placement for failure test")
-				createPlacement(testPlacementName, openClusterManagementGlobalSetNamespace)
-				createPlacementDecision(testPlacementName, openClusterManagementGlobalSetNamespace, []string{"managedcluster01"})
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
@@ -3101,55 +3101,22 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should create MRA and wait for it to be ready", func() {
 				By("creating an MRA")
-				mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
-kind: MulticlusterRoleAssignment
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  subject:
-    kind: User
-    name: test-user-failure
-    apiGroup: rbac.authorization.k8s.io
-  roleAssignments:
-    - name: failure-role-assignment
-      clusterRole: view
-      clusterSelection:
-        type: placements
-        placements:
-          - name: %s
-            namespace: %s
-`, testMRAName, openClusterManagementGlobalSetNamespace, testPlacementName, openClusterManagementGlobalSetNamespace)
-
-				mraFile := fmt.Sprintf("/tmp/%s.yaml", testMRAName)
-				err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
-				Expect(err).NotTo(HaveOccurred())
-
-				cmd := exec.Command("kubectl", "apply", "-f", mraFile)
-				_, err = utils.Run(cmd)
-				Expect(err).NotTo(HaveOccurred())
+				createMRAWithPlacement(testMRAName, "test-user-failure", "failure-role-assignment", testPlacementName)
 
 				By("waiting for MRA to be ready")
-				Eventually(func(g Gomega) {
-					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
-					var mraObj mrav1beta1.MulticlusterRoleAssignment
-					unmarshalJSON(mraJSON, &mraObj)
-
-					found := false
-					for _, cond := range mraObj.Status.Conditions {
-						if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
-							found = true
-							break
-						}
-					}
-					g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
-				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				waitForMRA(testMRAName)
 			})
 
 			It("should manually fail the ClusterPermission", func() {
 				By("updating ClusterPermission status to Failed")
 				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(cpName, clusterNamespace, metav1.ConditionFalse, "ApplyFailed", "Simulated failure for testing")
+					updateClusterPermissionStatus(
+						cpName,
+						clusterNamespace,
+						metav1.ConditionFalse,
+						"ApplyFailed",
+						"Simulated failure for testing",
+					)
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
 
@@ -3163,7 +3130,8 @@ spec:
 					found := false
 					for _, cond := range mraObj.Status.Conditions {
 						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
-							if cond.Status == metav1.ConditionFalse && strings.Contains(cond.Message, "role assignments failed") {
+							if cond.Status == metav1.ConditionFalse &&
+								strings.Contains(cond.Message, "role assignments failed") {
 								found = true
 							}
 						}
@@ -3173,12 +3141,14 @@ spec:
 					raFound := false
 					for _, ra := range mraObj.Status.RoleAssignments {
 						if ra.Name == "failure-role-assignment" {
-							if ra.Status == string(mrav1beta1.StatusTypeError) && strings.Contains(ra.Message, "Simulated failure") {
+							if ra.Status == string(mrav1beta1.StatusTypeError) &&
+								strings.Contains(ra.Message, "Simulated failure") {
 								raFound = true
 							}
 						}
 					}
-					g.Expect(raFound).To(BeTrue(), "Expected RoleAssignment status to be Error with simulated failure message")
+					g.Expect(raFound).To(BeTrue(),
+						"Expected RoleAssignment status to be Error with simulated failure message")
 
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
@@ -3194,8 +3164,8 @@ spec:
 
 			BeforeAll(func() {
 				By("creating a placement for unknown status test")
-				createPlacement(testPlacementName, openClusterManagementGlobalSetNamespace)
-				createPlacementDecision(testPlacementName, openClusterManagementGlobalSetNamespace, []string{"managedcluster01"})
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
@@ -3205,55 +3175,22 @@ spec:
 
 			It("should create MRA and wait for it to be ready", func() {
 				By("creating an MRA")
-				mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
-kind: MulticlusterRoleAssignment
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  subject:
-    kind: User
-    name: test-user-unknown
-    apiGroup: rbac.authorization.k8s.io
-  roleAssignments:
-    - name: unknown-role-assignment
-      clusterRole: view
-      clusterSelection:
-        type: placements
-        placements:
-          - name: %s
-            namespace: %s
-`, testMRAName, openClusterManagementGlobalSetNamespace, testPlacementName, openClusterManagementGlobalSetNamespace)
-
-				mraFile := fmt.Sprintf("/tmp/%s.yaml", testMRAName)
-				err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
-				Expect(err).NotTo(HaveOccurred())
-
-				cmd := exec.Command("kubectl", "apply", "-f", mraFile)
-				_, err = utils.Run(cmd)
-				Expect(err).NotTo(HaveOccurred())
+				createMRAWithPlacement(testMRAName, "test-user-unknown", "unknown-role-assignment", testPlacementName)
 
 				By("waiting for MRA to be ready")
-				Eventually(func(g Gomega) {
-					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
-					var mraObj mrav1beta1.MulticlusterRoleAssignment
-					unmarshalJSON(mraJSON, &mraObj)
-
-					found := false
-					for _, cond := range mraObj.Status.Conditions {
-						if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
-							found = true
-							break
-						}
-					}
-					g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
-				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				waitForMRA(testMRAName)
 			})
 
 			It("should manually update ClusterPermission status to Unknown", func() {
 				By("updating ClusterPermission status to Unknown")
 				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(cpName, clusterNamespace, metav1.ConditionUnknown, "UnknownStatus", "Simulated unknown status for testing")
+					updateClusterPermissionStatus(
+						cpName,
+						clusterNamespace,
+						metav1.ConditionUnknown,
+						"UnknownStatus",
+						"Simulated unknown status for testing",
+					)
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
 
@@ -3264,12 +3201,14 @@ spec:
 					var mraObj mrav1beta1.MulticlusterRoleAssignment
 					unmarshalJSON(mraJSON, &mraObj)
 
-					// Check Ready condition is not True (it might be False or Unknown depending on logic, usually False if there are pending assignments)
+					// Check Ready condition is not True (it might be False or Unknown depending on logic, usually
+					// False if there are pending assignments)
 					// Based on calculateReadyCondition logic: if pendingCount > 0, returns False, ReasonAssignmentsPending
 					found := false
 					for _, cond := range mraObj.Status.Conditions {
 						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
-							if cond.Status == metav1.ConditionFalse && cond.Reason == string(mrav1beta1.ReasonAssignmentsPending) {
+							if cond.Status == metav1.ConditionFalse &&
+								cond.Reason == string(mrav1beta1.ReasonAssignmentsPending) {
 								found = true
 							}
 						}
@@ -3279,12 +3218,14 @@ spec:
 					raFound := false
 					for _, ra := range mraObj.Status.RoleAssignments {
 						if ra.Name == "unknown-role-assignment" {
-							if ra.Status == string(mrav1beta1.StatusTypePending) && strings.Contains(ra.Message, "Simulated unknown status") {
+							if ra.Status == string(mrav1beta1.StatusTypePending) &&
+								strings.Contains(ra.Message, "Simulated unknown status") {
 								raFound = true
 							}
 						}
 					}
-					g.Expect(raFound).To(BeTrue(), "Expected RoleAssignment status to be Pending with simulated unknown status message")
+					g.Expect(raFound).To(BeTrue(),
+						"Expected RoleAssignment status to be Pending with simulated unknown status message")
 
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
@@ -3689,17 +3630,67 @@ func checkMRAForBindingExistance(mra mrav1beta1.MulticlusterRoleAssignment, bind
 	return false
 }
 
+// createMRAWithPlacement creates a MulticlusterRoleAssignment resource that targets a specific placement.
+func createMRAWithPlacement(mraName, userName, roleName, placementName string) {
+	mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  subject:
+    kind: User
+    name: %s
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+    - name: %s
+      clusterRole: view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: %s
+            namespace: %s
+`, mraName, openClusterManagementGlobalSetNamespace, userName, roleName, placementName,
+		openClusterManagementGlobalSetNamespace)
+
+	mraFile := fmt.Sprintf("/tmp/%s.yaml", mraName)
+	err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", mraFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// waitForMRA to be ready waits for the MRA to be in a Ready state.
+func waitForMRA(mraName string) {
+	Eventually(func(g Gomega) {
+		mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+		var mraObj mrav1beta1.MulticlusterRoleAssignment
+		unmarshalJSON(mraJSON, &mraObj)
+
+		found := false
+		for _, cond := range mraObj.Status.Conditions {
+			if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
+				found = true
+				break
+			}
+		}
+		g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
+	}, 30*time.Second, 1*time.Second).Should(Succeed())
+}
+
 // createPlacement creates a Placement resource using kubectl.
 // NOTE: The Placement spec is intentionally minimal/empty because these e2e tests do not run the Placement controller.
 // PlacementDecisions are manually created.
-func createPlacement(name, namespace string) {
+func createPlacement(name string) {
 	placementYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
   name: %s
   namespace: %s
 spec: {}
-`, name, namespace)
+`, name, openClusterManagementGlobalSetNamespace)
 
 	placementFile := fmt.Sprintf("/tmp/%s.yaml", name)
 	err := os.WriteFile(placementFile, []byte(placementYAML), os.FileMode(0o644))
@@ -3711,7 +3702,7 @@ spec: {}
 }
 
 // createPlacementDecision creates a PlacementDecision resource for a specified Placement.
-func createPlacementDecision(placementName, namespace string, clusters []string) {
+func createPlacementDecision(placementName string, clusters []string) {
 	pdName := placementName + "-decision-1"
 
 	var decisions string
@@ -3728,7 +3719,7 @@ metadata:
     cluster.open-cluster-management.io/placement: %s
 status:
   decisions:
-%s`, pdName, namespace, placementName, decisions)
+%s`, pdName, openClusterManagementGlobalSetNamespace, placementName, decisions)
 
 	pdFile := fmt.Sprintf("/tmp/%s.yaml", pdName)
 	err := os.WriteFile(pdFile, []byte(pdYAML), os.FileMode(0o644))
@@ -3779,7 +3770,8 @@ status:
 }
 
 // updateClusterPermissionStatus updates the status of a ClusterPermission to simulate success or failure.
-func updateClusterPermissionStatus(name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) {
+func updateClusterPermissionStatus(
+	name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) {
 	// Fetch the latest version first
 	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
 	var cp cpv1alpha1.ClusterPermission
