@@ -45,7 +45,10 @@ import (
 	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
-const multiclusterRoleAssignmentNamespace = "open-cluster-management-global-set"
+const (
+	multiclusterRoleAssignmentNamespace = "open-cluster-management-global-set"
+	testAdminRole                       = "admin"
+)
 
 var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	ctx := context.Background()
@@ -512,7 +515,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		It("should reflect failed status for RoleBinding in mra status", func() {
 			mraName := "test-mra-rb-error"
 			raName := "testRoleAssignmentRB"
-			clusterRoleName := "admin"
+			clusterRoleName := testAdminRole
 			clusterName := testClusterName
 			namespace := "target-ns"
 
@@ -601,7 +604,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		It("should append new issues to existing error status", func() {
 			mraName := "test-mra-append-error"
 			raName := "testRoleAssignmentAppend"
-			clusterRoleName := "admin"
+			clusterRoleName := testAdminRole
 			clusterName := testClusterName
 			previousErrorMsg := "Previous error occurred"
 
@@ -2563,7 +2566,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 
 			It("Should generate different names for different inputs", func() {
-				bindingName1 := reconciler.generateBindingName(mra, "admin-role-assignment", "admin")
+				bindingName1 := reconciler.generateBindingName(mra, "admin-role-assignment", testAdminRole)
 				bindingName2 := reconciler.generateBindingName(mra, "viewer-role-assignment", "view")
 
 				Expect(bindingName1).NotTo(Equal(bindingName2))
@@ -2676,7 +2679,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should calculate namespace scoped permissions (RoleBinding) when target namespaces specified", func() {
 				mra.Spec.RoleAssignments[0].Name = "namespaced-role1"
-				mra.Spec.RoleAssignments[0].ClusterRole = "admin"
+				mra.Spec.RoleAssignments[0].ClusterRole = testAdminRole
 				mra.Spec.RoleAssignments[0].TargetNamespaces = []string{"namespace1", "namespace2"}
 
 				roleAssignmentClusters := map[string][]string{
@@ -2691,7 +2694,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(slice.OwnerAnnotations).To(HaveLen(2))
 
 				for _, binding := range slice.RoleBindings {
-					Expect(binding.RoleRef.Name).To(Equal("admin"))
+					Expect(binding.RoleRef.Name).To(Equal(testAdminRole))
 					Expect(binding.Subjects).To(HaveLen(1))
 					Expect(binding.Subjects[0].Name).To(Equal("test-user"))
 					Expect([]string{"namespace1", "namespace2"}).To(ContainElement(binding.Namespace))
