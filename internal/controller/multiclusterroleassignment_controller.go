@@ -895,7 +895,6 @@ func (r *MulticlusterRoleAssignmentReconciler) checkRoleBindingStatus(
 	cluster string,
 	bindingsMap map[string]*metav1.Condition,
 ) ([]string, []string) {
-	//var firstUnknown *metav1.Condition
 	var allErrorMsg []string
 	var allUnknownMsg []string
 

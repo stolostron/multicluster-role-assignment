@@ -416,7 +416,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			}
 			allClusters := []string{clusterName}
 
-			r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed to apply"))
@@ -501,7 +502,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			}
 			allClusters := []string{clusterName}
 
-			r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypePending)))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Waiting for application"))
@@ -589,7 +591,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			}
 			allClusters := []string{clusterName}
 
-			r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("RB Failed"))

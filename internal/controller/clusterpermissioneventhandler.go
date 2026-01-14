@@ -92,12 +92,12 @@ func findAffectedMRAs(oldCP, newCP *cpv1alpha1.ClusterPermission) map[string]boo
 	// Check for status changes
 	oldClusterRoleBindingStatus := buildClusterRoleBindingStatusMap(oldCP)
 	newClusterRoleBindingStatus := buildClusterRoleBindingStatusMap(newCP)
-	compareStatus(oldClusterRoleBindingStatus, newClusterRoleBindingStatus, oldCP, newCP, affectedMRAs,
+	compareStatus(oldClusterRoleBindingStatus, newClusterRoleBindingStatus, newCP, affectedMRAs,
 		func(b cpv1alpha1.ClusterRoleBindingStatus) string { return b.Name })
 
 	oldRoleBindingStatus := buildRoleBindingStatusMap(oldCP)
 	newRoleBindingStatus := buildRoleBindingStatusMap(newCP)
-	compareStatus(oldRoleBindingStatus, newRoleBindingStatus, oldCP, newCP, affectedMRAs,
+	compareStatus(oldRoleBindingStatus, newRoleBindingStatus, newCP, affectedMRAs,
 		func(b cpv1alpha1.RoleBindingStatus) string { return b.Name })
 
 	if hasOrphanedBindings(newCP, newClusterRoleBindings, newRoleBindings) {
@@ -270,7 +270,7 @@ func buildRoleBindingStatusMap(
 // the MRA already reconciles off the spec change when a binding is removed.
 func compareStatus[T any](
 	oldStatus, newStatus map[string]T,
-	oldCP, newCP *cpv1alpha1.ClusterPermission,
+	newCP *cpv1alpha1.ClusterPermission,
 	affectedMRAs map[string]bool,
 	getBindingName func(T) string) {
 
