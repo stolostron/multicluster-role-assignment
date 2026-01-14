@@ -90,14 +90,14 @@ func findAffectedMRAs(oldCP, newCP *cpv1alpha1.ClusterPermission) map[string]boo
 		func(b cpv1alpha1.RoleBinding) string { return b.Name })
 
 	// Check for status changes
-	oldClusterRoleStatus := buildClusterRoleBindingStatusMap(oldCP)
-	newClusterRoleStatus := buildClusterRoleBindingStatusMap(newCP)
-	compareStatus(oldClusterRoleStatus, newClusterRoleStatus, oldCP, newCP, affectedMRAs,
+	oldClusterRoleBindingStatus := buildClusterRoleBindingStatusMap(oldCP)
+	newClusterRoleBindingStatus := buildClusterRoleBindingStatusMap(newCP)
+	compareStatus(oldClusterRoleBindingStatus, newClusterRoleBindingStatus, oldCP, newCP, affectedMRAs,
 		func(b cpv1alpha1.ClusterRoleBindingStatus) string { return b.Name })
 
-	oldRoleStatus := buildRoleBindingStatusMap(oldCP)
-	newRoleStatus := buildRoleBindingStatusMap(newCP)
-	compareStatus(oldRoleStatus, newRoleStatus, oldCP, newCP, affectedMRAs,
+	oldRoleBindingStatus := buildRoleBindingStatusMap(oldCP)
+	newRoleBindingStatus := buildRoleBindingStatusMap(newCP)
+	compareStatus(oldRoleBindingStatus, newRoleBindingStatus, oldCP, newCP, affectedMRAs,
 		func(b cpv1alpha1.RoleBindingStatus) string { return b.Name })
 
 	if hasOrphanedBindings(newCP, newClusterRoleBindings, newRoleBindings) {
@@ -264,7 +264,10 @@ func buildRoleBindingStatusMap(
 	return statusMap
 }
 
-// compareStatus compares old and new status and identifies affected MRAs
+// compareStatus compares old and new status and identifies affected MRAs.
+// Only status additions and modifications trigger reconciliation. Status removals are ignored
+// because they indicate the binding was removed and the CP controller cleaned up the status -
+// the MRA already reconciles off the spec change when a binding is removed.
 func compareStatus[T any](
 	oldStatus, newStatus map[string]T,
 	oldCP, newCP *cpv1alpha1.ClusterPermission,
@@ -277,15 +280,6 @@ func compareStatus[T any](
 		// Status added or modified - look up owner in new CP
 		if !exists || !equality.Semantic.DeepEqual(oldS, newS) {
 			if owner := getOwnerFromAnnotation(newCP, getBindingName(newS)); owner != "" {
-				affectedMRAs[owner] = true
-			}
-		}
-	}
-
-	for key, oldS := range oldStatus {
-		if _, exists := newStatus[key]; !exists {
-			// Status removed - look up owner in old CP
-			if owner := getOwnerFromAnnotation(oldCP, getBindingName(oldS)); owner != "" {
 				affectedMRAs[owner] = true
 			}
 		}

@@ -99,12 +99,12 @@ func TestFindAffectedMRAs_Status(t *testing.T) {
 			expectedMRAs: []string{"default/mra1"},
 		},
 		{
-			name: "status removed - should affect owner",
+			name: "status removed - should NOT affect owner (binding removal reconciles via spec change)",
 			oldCP: createCPStatus(
 				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
 			),
 			newCP:        createCPStatus(), // Empty status
-			expectedMRAs: []string{"default/mra1"},
+			expectedMRAs: []string{},
 		},
 		{
 			name: "status change for different mra",
@@ -113,6 +113,83 @@ func TestFindAffectedMRAs_Status(t *testing.T) {
 			),
 			newCP: createCPStatus(
 				createStatus("default/mra2", "other-ns", "mra2", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra2"},
+		},
+		// ClusterRoleBinding tests (empty namespace triggers CRB path)
+		{
+			name: "CRB: no changes - no MRAs should be affected",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{},
+		},
+		{
+			name: "CRB: status change - Condition Type change",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "CRB: status change - Condition Status change",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionFalse, "Failed", "Binding failed")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "CRB: status change - Condition Reason change",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "ReasonChanged", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "CRB: status change - Condition Message change",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "MessageChanged")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name:  "CRB: status added - should affect owner",
+			oldCP: createCPStatus(),
+			newCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			expectedMRAs: []string{"default/mra1"},
+		},
+		{
+			name: "CRB: status removed - should NOT affect owner (binding removal reconciles via spec change)",
+			oldCP: createCPStatus(
+				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP:        createCPStatus(),
+			expectedMRAs: []string{},
+		},
+		{
+			name: "CRB: status change for different mra",
+			oldCP: createCPStatus(
+				createStatus("default/mra2", "", "crb2", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
+			),
+			newCP: createCPStatus(
+				createStatus("default/mra2", "", "crb2", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
 			),
 			expectedMRAs: []string{"default/mra2"},
 		},

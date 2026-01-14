@@ -3230,6 +3230,230 @@ var _ = Describe("Manager", Ordered, func() {
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
 		})
+
+		Context("Multiple MRAs with shared ClusterPermission - status propagation", func() {
+			var (
+				cpName           = "mra-managed-permissions"
+				clusterNamespace = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating placements for shared CP test")
+				createPlacement("placement-shared-1")
+				createPlacementDecision("placement-shared-1", []string{"managedcluster01"})
+				createPlacement("placement-shared-2")
+				createPlacementDecision("placement-shared-2", []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up shared CP test resources")
+				cleanupTestResources("test-mra-shared-1", []string{"managedcluster01"})
+				cleanupTestResources("test-mra-shared-2", []string{"managedcluster01"})
+			})
+
+			It("should create two MRAs targeting the same cluster (shared ClusterPermission)", func() {
+				By("creating first MRA")
+				createMRAWithPlacement("test-mra-shared-1", "test-user-shared-1", "ra-shared-1", "placement-shared-1")
+
+				By("creating second MRA")
+				createMRAWithPlacement("test-mra-shared-2", "test-user-shared-2", "ra-shared-2", "placement-shared-2")
+
+				By("waiting for both MRAs to be ready")
+				waitForMRA("test-mra-shared-1")
+				waitForMRA("test-mra-shared-2")
+			})
+
+			It("should update ClusterPermission status to Failed and verify both MRAs reflect failure", func() {
+				By("setting ClusterPermission status to Failed (affects all bindings)")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionFalse, "ApplyFailed", "Simulated failure for shared CP test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying first MRA reflects failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", "test-mra-shared-1",
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "ra-shared-1" && ra.Status == string(mrav1beta1.StatusTypeError) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected first MRA role assignment to be Error")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying second MRA also reflects failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", "test-mra-shared-2",
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "ra-shared-2" && ra.Status == string(mrav1beta1.StatusTypeError) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected second MRA role assignment to be Error")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should recover both MRAs when ClusterPermission status becomes True", func() {
+				By("setting ClusterPermission status back to True")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionTrue, "Applied", "Recovered for shared CP test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying first MRA recovers")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", "test-mra-shared-1",
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "ra-shared-1" && ra.Status == string(mrav1beta1.StatusTypeActive) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected first MRA role assignment to recover to Active")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying second MRA also recovers")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", "test-mra-shared-2",
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "ra-shared-2" && ra.Status == string(mrav1beta1.StatusTypeActive) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected second MRA role assignment to recover to Active")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
+
+		Context("Error recovery - CP error resolved leads to MRA recovery", func() {
+			var (
+				testMRAName       = "test-mra-recovery"
+				testPlacementName = "placement-recovery"
+				cpName            = "mra-managed-permissions"
+				clusterNamespace  = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating placement for recovery test")
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up recovery test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				createMRAWithPlacement(testMRAName, "test-user-recovery", "recovery-role-assignment", testPlacementName)
+
+				By("waiting for MRA to be ready")
+				waitForMRA(testMRAName)
+
+				By("verifying MRA is in Active state")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "recovery-role-assignment" {
+							g.Expect(ra.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
+						}
+					}
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should fail when ClusterPermission status becomes Failed", func() {
+				By("updating ClusterPermission status to Failed")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionFalse, "ApplyFailed", "Temporary failure for recovery test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("waiting for MRA to reflect failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "recovery-role-assignment" &&
+							ra.Status == string(mrav1beta1.StatusTypeError) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected role assignment to be in Error state")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should recover when ClusterPermission status becomes True again", func() {
+				By("updating ClusterPermission status back to True (simulating recovery)")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionTrue, "Applied", "Recovery successful",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("waiting for MRA to recover to Active state")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					// Check role assignment recovered to Active
+					raRecovered := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == "recovery-role-assignment" &&
+							ra.Status == string(mrav1beta1.StatusTypeActive) {
+							raRecovered = true
+						}
+					}
+					g.Expect(raRecovered).To(BeTrue(), "Expected role assignment to recover to Active state")
+
+					// Check Ready condition is True
+					readyRecovered := false
+					for _, cond := range mra.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) &&
+							cond.Status == metav1.ConditionTrue {
+							readyRecovered = true
+						}
+					}
+					g.Expect(readyRecovered).To(BeTrue(), "Expected Ready condition to recover to True")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
 	})
 })
 
