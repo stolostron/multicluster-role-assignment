@@ -231,7 +231,9 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 
 	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, clustersToProcess, roleAssignmentClusters)
 
-	if err := r.updateRoleAssignmentStatusesFromClusterPermission(ctx, &mra, roleAssignmentClusters, currentClusters); err != nil {
+	err = r.updateRoleAssignmentStatusesFromClusterPermission(
+		ctx, &mra, roleAssignmentClusters, currentClusters)
+	if err != nil {
 		if apierrors.IsConflict(err) {
 			log.Info("ClusterPermission fetch conflict, requeuing", "resourceVersion", mra.ResourceVersion)
 			return ctrl.Result{RequeueAfter: standardRequeueDelay}, nil
@@ -816,7 +818,9 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	if raStatus.Status == string(mrav1beta1.StatusTypeError) {
 		if len(allErrorMessages) > 0 || len(allUnknownMessages) > 0 {
 			// Combine all new issues and append to existing error message
-			additionalMessage := fmt.Sprintf("Additional binding issues: %s", strings.Join(append(allErrorMessages, allUnknownMessages...), "; "))
+			allIssues := append(allErrorMessages, allUnknownMessages...)
+			additionalMessage := fmt.Sprintf("Additional binding issues: %s",
+				strings.Join(allIssues, "; "))
 			r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
 				mrav1beta1.ReasonApplicationFailed, raStatus.Message+". "+additionalMessage)
 		}

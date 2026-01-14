@@ -597,6 +597,101 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("RB Failed"))
 		})
+
+		It("should append new issues to existing error status", func() {
+			mraName := "test-mra-append-error"
+			raName := "testRoleAssignmentAppend"
+			clusterRoleName := "admin"
+			clusterName := testClusterName
+			previousErrorMsg := "Previous error occurred"
+
+			mra := &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mraName,
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: mrav1beta1.MulticlusterRoleAssignmentSpec{
+					RoleAssignments: []mrav1beta1.RoleAssignment{
+						{
+							Name:             raName,
+							ClusterRole:      clusterRoleName,
+							ClusterSelection: mrav1beta1.ClusterSelection{Type: "placements"},
+						},
+					},
+				},
+				Status: mrav1beta1.MulticlusterRoleAssignmentStatus{
+					RoleAssignments: []mrav1beta1.RoleAssignmentStatus{
+						{
+							Name:    raName,
+							Status:  string(mrav1beta1.StatusTypeError),
+							Message: previousErrorMsg,
+						},
+					},
+				},
+			}
+
+			r := &MulticlusterRoleAssignmentReconciler{}
+			r.Scheme = k8sClient.Scheme()
+
+			// Generate expected binding name
+			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
+
+			// Create CP with a failed binding
+			cp := &cpv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mra-managed-permissions",
+					Namespace: clusterName,
+					Labels: map[string]string{
+						"rbac.open-cluster-management.io/managed-by": "multiclusterroleassignment-controller",
+					},
+				},
+				Spec: cpv1alpha1.ClusterPermissionSpec{
+					ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
+						{
+							Name: bindingName,
+							RoleRef: &rbacv1.RoleRef{
+								APIGroup: "rbac.authorization.k8s.io",
+								Kind:     "ClusterRole",
+								Name:     clusterRoleName,
+							},
+						},
+					},
+				},
+				Status: cpv1alpha1.ClusterPermissionStatus{
+					ResourceStatus: &cpv1alpha1.ResourceStatus{
+						ClusterRoleBindings: []cpv1alpha1.ClusterRoleBindingStatus{
+							{
+								Name: bindingName,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionFalse,
+										Reason:  "ApplyFailed",
+										Message: "New failure",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(mra, cp).Build()
+			r.Client = fakeClient
+
+			roleAssignmentClusters := map[string][]string{
+				raName: {clusterName},
+			}
+			allClusters := []string{clusterName}
+
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring(previousErrorMsg))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Additional binding issues"))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("New failure"))
+		})
 	})
 
 	Context("extractPlacementKeys", func() {
