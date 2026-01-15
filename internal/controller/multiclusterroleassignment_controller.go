@@ -234,10 +234,6 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 	err = r.updateRoleAssignmentStatusesFromClusterPermission(
 		ctx, &mra, roleAssignmentClusters, currentClusters)
 	if err != nil {
-		if apierrors.IsConflict(err) {
-			log.Info("ClusterPermission fetch conflict, requeuing", "resourceVersion", mra.ResourceVersion)
-			return ctrl.Result{RequeueAfter: standardRequeueDelay}, nil
-		}
 		log.Error(err, "Failed to update role assignment statuses from ClusterPermission",
 			"multiclusterroleassignment", req.NamespacedName,
 			"clusters", currentClusters)
