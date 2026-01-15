@@ -3140,7 +3140,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should requeue after cluster permission failures", func() {
+			It("Should return error on cluster permission failures", func() {
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
@@ -3159,8 +3159,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Namespace: errorTestMRA.Namespace,
 					},
 				})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(clusterPermissionFailureRequeueDelay))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to process ClusterPermissions"))
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 
 			It("Should handle deletion cleanup failure", func() {

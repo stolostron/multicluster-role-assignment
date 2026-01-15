@@ -64,10 +64,9 @@ const (
 
 // Reconciliation constants.
 const (
-	standardRequeueDelay                 = 100 * time.Millisecond
-	clusterPermissionFailureRequeueDelay = 30 * time.Second
-	finalizerName                        = "finalizer.rbac.open-cluster-management.io/multiclusterroleassignment"
-	placementIndexField                  = "spec.roleAssignments.clusterSelection.placements"
+	standardRequeueDelay = 100 * time.Millisecond
+	finalizerName        = "finalizer.rbac.open-cluster-management.io/multiclusterroleassignment"
+	placementIndexField  = "spec.roleAssignments.clusterSelection.placements"
 )
 
 // SetupIndexes configures field indexes for efficient lookups.
@@ -247,7 +246,8 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 			"ClusterPermission processing completed with errors", "failedClusters", len(clusterPermissionErrors),
 			"totalClusters", len(clustersToProcess))
 
-		return ctrl.Result{RequeueAfter: clusterPermissionFailureRequeueDelay}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to process ClusterPermissions for %d/%d clusters",
+			len(clusterPermissionErrors), len(clustersToProcess))
 	}
 
 	log.Info("Successfully completed reconciliation", "multiclusterroleassignment", req.NamespacedName, "generation",
