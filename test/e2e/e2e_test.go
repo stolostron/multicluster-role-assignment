@@ -143,10 +143,10 @@ var _ = Describe("Manager", Ordered, func() {
 
 		for _, p := range placements {
 			By(fmt.Sprintf("creating Placement %s", p.name))
-			createPlacement(p.name, openClusterManagementGlobalSetNamespace)
+			createPlacement(p.name)
 
 			By(fmt.Sprintf("creating PlacementDecision for %s", p.name))
-			createPlacementDecision(p.name, openClusterManagementGlobalSetNamespace, p.clusters)
+			createPlacementDecision(p.name, p.clusters)
 		}
 
 		By("deploying the controller-manager")
@@ -848,8 +848,8 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("creating Placement and PlacementDecision for newmanagedcluster04")
-					createPlacement("placement-newcluster-04", openClusterManagementGlobalSetNamespace)
-					createPlacementDecision("placement-newcluster-04", openClusterManagementGlobalSetNamespace,
+					createPlacement("placement-newcluster-04")
+					createPlacementDecision("placement-newcluster-04",
 						[]string{"newmanagedcluster04"})
 
 					By("fetching and modifying MRA to add newmanagedcluster04 RoleAssignment")
@@ -3079,6 +3079,535 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 			})
 		})
+
+		Context("ClusterPermission failure handling", func() {
+			var (
+				testMRAName       = "test-mra-failure"
+				testPlacementName = "placement-failure"
+				cpName            = "mra-managed-permissions"
+				clusterNamespace  = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating a placement for failure test")
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up failure test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				createMRAWithPlacement(testMRAName, "test-user-failure", "failure-role-assignment", testPlacementName)
+
+				By("waiting for MRA to be ready")
+				waitForMRA(testMRAName)
+			})
+
+			It("should manually fail the ClusterPermission", func() {
+				By("updating ClusterPermission status to Failed")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName,
+						clusterNamespace,
+						metav1.ConditionFalse,
+						"ApplyFailed",
+						"Simulated failure for testing",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should reflect the failure in MRA status", func() {
+				By("waiting for MRA to reflect failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
+							if cond.Status == metav1.ConditionFalse &&
+								strings.Contains(cond.Message, "role assignments failed") {
+								found = true
+							}
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA Ready condition to be False with failure message")
+
+					raFound := false
+					for _, ra := range mraObj.Status.RoleAssignments {
+						if ra.Name == "failure-role-assignment" {
+							if ra.Status == string(mrav1beta1.StatusTypeError) &&
+								strings.Contains(ra.Message, "Simulated failure") {
+								raFound = true
+							}
+						}
+					}
+					g.Expect(raFound).To(BeTrue(),
+						"Expected RoleAssignment status to be Error with simulated failure message")
+
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
+
+		Context("ClusterPermission unknown status handling", func() {
+			var (
+				testMRAName       = "test-mra-unknown"
+				testPlacementName = "placement-unknown"
+				cpName            = "mra-managed-permissions"
+				clusterNamespace  = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating a placement for unknown status test")
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up unknown status test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				createMRAWithPlacement(testMRAName, "test-user-unknown", "unknown-role-assignment", testPlacementName)
+
+				By("waiting for MRA to be ready")
+				waitForMRA(testMRAName)
+			})
+
+			It("should manually update ClusterPermission status to Unknown", func() {
+				By("updating ClusterPermission status to Unknown")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName,
+						clusterNamespace,
+						metav1.ConditionUnknown,
+						"UnknownStatus",
+						"Simulated unknown status for testing",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should reflect the unknown status in MRA status", func() {
+				By("waiting for MRA to reflect pending status")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName, openClusterManagementGlobalSetNamespace)
+					var mraObj mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mraObj)
+
+					// Verify Ready condition is False with ReasonAssignmentsPending
+					found := false
+					for _, cond := range mraObj.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
+							if cond.Status == metav1.ConditionFalse &&
+								cond.Reason == string(mrav1beta1.ReasonAssignmentsPending) {
+								found = true
+							}
+						}
+					}
+					g.Expect(found).To(BeTrue(), "Expected MRA Ready condition to be False with ReasonAssignmentsPending")
+
+					raFound := false
+					for _, ra := range mraObj.Status.RoleAssignments {
+						if ra.Name == "unknown-role-assignment" {
+							if ra.Status == string(mrav1beta1.StatusTypePending) &&
+								strings.Contains(ra.Message, "Simulated unknown status") {
+								raFound = true
+							}
+						}
+					}
+					g.Expect(raFound).To(BeTrue(),
+						"Expected RoleAssignment status to be Pending with simulated unknown status message")
+
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
+
+		Context("Multiple MRAs with shared ClusterPermission - status propagation", func() {
+			var (
+				cpName           = "mra-managed-permissions"
+				clusterNamespace = "managedcluster01"
+			)
+
+			BeforeAll(func() {
+				By("creating placements for shared CP test")
+				createPlacement("placement-shared-1")
+				createPlacementDecision("placement-shared-1", []string{"managedcluster01"})
+				createPlacement("placement-shared-2")
+				createPlacementDecision("placement-shared-2", []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up shared CP test resources")
+				cleanupTestResources("test-mra-shared-1", []string{"managedcluster01"})
+				cleanupTestResources("test-mra-shared-2", []string{"managedcluster01"})
+			})
+
+			It("should create two MRAs targeting the same cluster (shared ClusterPermission)", func() {
+				By("creating first MRA")
+				createMRAWithPlacement("test-mra-shared-1", "test-user-shared-1", "ra-shared-1", "placement-shared-1")
+
+				By("creating second MRA")
+				createMRAWithPlacement("test-mra-shared-2", "test-user-shared-2", "ra-shared-2", "placement-shared-2")
+
+				By("waiting for both MRAs to be ready")
+				waitForMRA("test-mra-shared-1")
+				waitForMRA("test-mra-shared-2")
+			})
+
+			It("should update ClusterPermission status to Failed and verify both MRAs reflect failure", func() {
+				By("setting ClusterPermission status to Failed (affects all bindings)")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionFalse, "ApplyFailed", "Simulated failure for shared CP test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying both MRAs reflect failure")
+				verifyMRAHasRoleAssignmentStatus("test-mra-shared-1", "ra-shared-1", mrav1beta1.StatusTypeError)
+				verifyMRAHasRoleAssignmentStatus("test-mra-shared-2", "ra-shared-2", mrav1beta1.StatusTypeError)
+			})
+
+			It("should recover both MRAs when ClusterPermission status becomes True", func() {
+				By("setting ClusterPermission status back to True")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionTrue, "Applied", "Recovered for shared CP test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("verifying both MRAs recover")
+				verifyMRAHasRoleAssignmentStatus("test-mra-shared-1", "ra-shared-1", mrav1beta1.StatusTypeActive)
+				verifyMRAHasRoleAssignmentStatus("test-mra-shared-2", "ra-shared-2", mrav1beta1.StatusTypeActive)
+			})
+		})
+
+		Context("Error recovery - CP error resolved leads to MRA recovery", func() {
+			var (
+				testMRAName            = "test-mra-recovery"
+				testPlacementName      = "placement-recovery"
+				cpName                 = "mra-managed-permissions"
+				clusterNamespace       = "managedcluster01"
+				recoveryRoleAssignment = "recovery-role-assignment"
+			)
+
+			BeforeAll(func() {
+				By("creating placement for recovery test")
+				createPlacement(testPlacementName)
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+			})
+
+			AfterAll(func() {
+				By("cleaning up recovery test resources")
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
+			})
+
+			It("should create MRA and wait for it to be ready", func() {
+				By("creating an MRA")
+				createMRAWithPlacement(testMRAName, "test-user-recovery", recoveryRoleAssignment, testPlacementName)
+
+				By("waiting for MRA to be ready")
+				waitForMRA(testMRAName)
+
+				By("verifying MRA is in Active state")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == recoveryRoleAssignment {
+							g.Expect(ra.Status).To(Equal(string(mrav1beta1.StatusTypeActive)))
+						}
+					}
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should fail when ClusterPermission status becomes Failed", func() {
+				By("updating ClusterPermission status to Failed")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionFalse, "ApplyFailed", "Temporary failure for recovery test",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("waiting for MRA to reflect failure")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					raFound := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == recoveryRoleAssignment &&
+							ra.Status == string(mrav1beta1.StatusTypeError) {
+							raFound = true
+						}
+					}
+					g.Expect(raFound).To(BeTrue(), "Expected role assignment to be in Error state")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+
+			It("should recover when ClusterPermission status becomes True again", func() {
+				By("updating ClusterPermission status back to True (simulating recovery)")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatus(
+						cpName, clusterNamespace,
+						metav1.ConditionTrue, "Applied", "Recovery successful",
+					)
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				By("waiting for MRA to recover to Active state")
+				Eventually(func(g Gomega) {
+					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", testMRAName,
+						openClusterManagementGlobalSetNamespace)
+					var mra mrav1beta1.MulticlusterRoleAssignment
+					unmarshalJSON(mraJSON, &mra)
+
+					// Check role assignment recovered to Active
+					raRecovered := false
+					for _, ra := range mra.Status.RoleAssignments {
+						if ra.Name == recoveryRoleAssignment &&
+							ra.Status == string(mrav1beta1.StatusTypeActive) {
+							raRecovered = true
+						}
+					}
+					g.Expect(raRecovered).To(BeTrue(), "Expected role assignment to recover to Active state")
+
+					// Check Ready condition is True
+					readyRecovered := false
+					for _, cond := range mra.Status.Conditions {
+						if cond.Type == string(mrav1beta1.ConditionTypeReady) &&
+							cond.Status == metav1.ConditionTrue {
+							readyRecovered = true
+						}
+					}
+					g.Expect(readyRecovered).To(BeTrue(), "Expected Ready condition to recover to True")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+			})
+		})
+
+		Context("Complex Scenario - Mixed Statuses on Multiple MRAs", func() {
+			var (
+				cpName = "mra-managed-permissions"
+			)
+
+			BeforeAll(func() {
+				By("creating all sample MulticlusterRoleAssignments")
+				manifestFiles := []string{
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
+				}
+				for _, manifestFile := range manifestFiles {
+					applyK8sManifest(manifestFile)
+				}
+
+				By("waiting for all MRAs to be ready")
+				waitForMRA(testMulticlusterRoleAssignmentMultiple2Name)
+				waitForMRA(testMulticlusterRoleAssignmentMultiple1Name)
+				waitForMRA(testMulticlusterRoleAssignmentSingleRBName)
+				waitForMRA(testMulticlusterRoleAssignmentSingleCRBName)
+			})
+
+			AfterAll(func() {
+				By("cleaning up complex scenario resources")
+				deleteK8sMRA(testMulticlusterRoleAssignmentMultiple2Name)
+				deleteK8sMRA(testMulticlusterRoleAssignmentMultiple1Name)
+				deleteK8sMRA(testMulticlusterRoleAssignmentSingleRBName)
+				deleteK8sMRA(testMulticlusterRoleAssignmentSingleCRBName)
+
+				// Clean up CPs on managed clusters
+				for i := 1; i <= 3; i++ {
+					clusterName := fmt.Sprintf("managedcluster%02d", i)
+					cmd := exec.Command("kubectl", "delete", "clusterpermissions", cpName, "-n", clusterName)
+					_, _ = utils.Run(cmd)
+				}
+			})
+
+			It("should verify MRA statuses reflect mixed binding states", func() {
+				// Define expected behaviors:
+				// MRA Multiple 1: Failed on Cluster 1 (Error), Unknown on Cluster 2 (Pending), Success on Cluster 3
+				// -> Result: Error (Error takes precedence over Pending)
+				// MRA Multiple 2: Success on Cluster 1, Success on Cluster 2, Failed on Cluster 3
+				// -> Result: Error
+				// MRA Single RB: Unknown on Cluster 2
+				// -> Result: Pending
+				// MRA Single CRB: Success on Cluster 1
+				// -> Result: Active
+
+				statusMapCluster1 := map[string]StatusDetails{
+					testMulticlusterRoleAssignmentMultiple1Name: {
+						Status:  metav1.ConditionFalse,
+						Reason:  "ApplyFailed",
+						Message: "Simulated failure for complex test",
+					},
+					testMulticlusterRoleAssignmentMultiple2Name: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentSingleCRBName: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentSingleRBName: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+				}
+
+				statusMapCluster2 := map[string]StatusDetails{
+					testMulticlusterRoleAssignmentMultiple1Name: {
+						Status:  metav1.ConditionUnknown,
+						Reason:  "UnknownStatus",
+						Message: "Simulated unknown status for complex test",
+					},
+					testMulticlusterRoleAssignmentMultiple2Name: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentSingleRBName: {
+						Status:  metav1.ConditionUnknown,
+						Reason:  "UnknownStatus",
+						Message: "Simulated unknown status for complex test",
+					},
+				}
+
+				statusMapCluster3 := map[string]StatusDetails{
+					testMulticlusterRoleAssignmentMultiple1Name: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentMultiple2Name: {
+						Status:  metav1.ConditionFalse,
+						Reason:  "ApplyFailed",
+						Message: "Simulated failure for complex test",
+					},
+				}
+
+				By("injecting mixed statuses into ClusterPermissions")
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster01", statusMapCluster1)
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster02", statusMapCluster2)
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster03", statusMapCluster3)
+				}, 1*time.Minute, 1*time.Second).Should(Succeed())
+
+				By("verifying MRA statuses")
+				// MRA 1: Error (due to Cluster 1 failure, despite Cluster 2 unknown)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple1Name,
+					"admin-assignment-cluster-1",
+					mrav1beta1.StatusTypeError,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple1Name,
+					"view-assignment-namespaced-clusters-1-2",
+					mrav1beta1.StatusTypeError,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple1Name,
+					"edit-assignment-cluster-3",
+					mrav1beta1.StatusTypeActive,
+				)
+
+				// MRA 2: Error (due to Cluster 3 failure)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple2Name,
+					"view-assignment-all-clusters",
+					mrav1beta1.StatusTypeError,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple2Name,
+					"admin-assignment-cluster-1",
+					mrav1beta1.StatusTypeActive,
+				)
+
+				// MRA Single RB: Pending (due to Cluster 2 unknown)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentSingleRBName,
+					"test-role-assignment-namespaced",
+					mrav1beta1.StatusTypePending,
+				)
+
+				// MRA Single CRB: Active (Cluster 1 success)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentSingleCRBName,
+					"test-role-assignment",
+					mrav1beta1.StatusTypeActive,
+				)
+			})
+
+			It("should recover all MRAs when bindings are fixed", func() {
+				By("setting all bindings to Success")
+				successMap := map[string]StatusDetails{
+					testMulticlusterRoleAssignmentMultiple1Name: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentMultiple2Name: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentSingleRBName: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+					testMulticlusterRoleAssignmentSingleCRBName: {
+						Status:  metav1.ConditionTrue,
+						Reason:  "Applied",
+						Message: "Successfully applied",
+					},
+				}
+
+				Eventually(func(g Gomega) {
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster01", successMap)
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster02", successMap)
+					updateClusterPermissionStatusByOwner(cpName, "managedcluster03", successMap)
+				}, 1*time.Minute, 1*time.Second).Should(Succeed())
+
+				By("verifying all MRAs recover to Active")
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple1Name,
+					"admin-assignment-cluster-1",
+					mrav1beta1.StatusTypeActive,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentMultiple2Name,
+					"view-assignment-all-clusters",
+					mrav1beta1.StatusTypeActive,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentSingleRBName,
+					"test-role-assignment-namespaced",
+					mrav1beta1.StatusTypeActive,
+				)
+				verifyMRAHasRoleAssignmentStatus(
+					testMulticlusterRoleAssignmentSingleCRBName,
+					"test-role-assignment",
+					mrav1beta1.StatusTypeActive,
+				)
+			})
+		})
 	})
 })
 
@@ -3479,17 +4008,67 @@ func checkMRAForBindingExistance(mra mrav1beta1.MulticlusterRoleAssignment, bind
 	return false
 }
 
+// createMRAWithPlacement creates a MulticlusterRoleAssignment resource that targets a specific placement.
+func createMRAWithPlacement(mraName, userName, roleName, placementName string) {
+	mraYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  subject:
+    kind: User
+    name: %s
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+    - name: %s
+      clusterRole: view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: %s
+            namespace: %s
+`, mraName, openClusterManagementGlobalSetNamespace, userName, roleName, placementName,
+		openClusterManagementGlobalSetNamespace)
+
+	mraFile := fmt.Sprintf("/tmp/%s.yaml", mraName)
+	err := os.WriteFile(mraFile, []byte(mraYAML), 0644)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", mraFile)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// waitForMRA to be ready waits for the MRA to be in a Ready state.
+func waitForMRA(mraName string) {
+	Eventually(func(g Gomega) {
+		mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
+		var mraObj mrav1beta1.MulticlusterRoleAssignment
+		unmarshalJSON(mraJSON, &mraObj)
+
+		found := false
+		for _, cond := range mraObj.Status.Conditions {
+			if cond.Type == string(mrav1beta1.ConditionTypeReady) && cond.Status == metav1.ConditionTrue {
+				found = true
+				break
+			}
+		}
+		g.Expect(found).To(BeTrue(), "Expected MRA to be Ready")
+	}, 30*time.Second, 1*time.Second).Should(Succeed())
+}
+
 // createPlacement creates a Placement resource using kubectl.
 // NOTE: The Placement spec is intentionally minimal/empty because these e2e tests do not run the Placement controller.
 // PlacementDecisions are manually created.
-func createPlacement(name, namespace string) {
+func createPlacement(name string) {
 	placementYAML := fmt.Sprintf(`apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
   name: %s
   namespace: %s
 spec: {}
-`, name, namespace)
+`, name, openClusterManagementGlobalSetNamespace)
 
 	placementFile := fmt.Sprintf("/tmp/%s.yaml", name)
 	err := os.WriteFile(placementFile, []byte(placementYAML), os.FileMode(0o644))
@@ -3501,7 +4080,7 @@ spec: {}
 }
 
 // createPlacementDecision creates a PlacementDecision resource for a specified Placement.
-func createPlacementDecision(placementName, namespace string, clusters []string) {
+func createPlacementDecision(placementName string, clusters []string) {
 	pdName := placementName + "-decision-1"
 
 	var decisions string
@@ -3518,7 +4097,7 @@ metadata:
     cluster.open-cluster-management.io/placement: %s
 status:
   decisions:
-%s`, pdName, namespace, placementName, decisions)
+%s`, pdName, openClusterManagementGlobalSetNamespace, placementName, decisions)
 
 	pdFile := fmt.Sprintf("/tmp/%s.yaml", pdName)
 	err := os.WriteFile(pdFile, []byte(pdYAML), os.FileMode(0o644))
@@ -3564,6 +4143,284 @@ status:
 
 	// Apply status update with server-side apply
 	cmd := exec.Command("kubectl", "apply", "-f", pdFile, "--subresource=status", "--server-side")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// verifyMRAHasRoleAssignmentStatus verifies that an MRA has a role assignment with the expected status.
+func verifyMRAHasRoleAssignmentStatus(mraName, raName string, expectedStatus mrav1beta1.RoleAssignmentStatusType) {
+	Eventually(func(g Gomega) {
+		mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", mraName,
+			openClusterManagementGlobalSetNamespace)
+		var mra mrav1beta1.MulticlusterRoleAssignment
+		unmarshalJSON(mraJSON, &mra)
+
+		raFound := false
+		var actualStatus string
+		for _, ra := range mra.Status.RoleAssignments {
+			if ra.Name == raName {
+				actualStatus = ra.Status
+				if ra.Status == string(expectedStatus) {
+					raFound = true
+				}
+			}
+		}
+		g.Expect(raFound).To(BeTrue(),
+			fmt.Sprintf("Expected MRA %s role assignment %s to be %s, but got %s. Full status: %v",
+				mraName, raName, expectedStatus, actualStatus, mra.Status))
+	}, 1*time.Minute, 1*time.Second).Should(Succeed())
+}
+
+// updateClusterPermissionStatus updates the status of a ClusterPermission to simulate success or failure.
+func updateClusterPermissionStatus(
+	name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) {
+	// Fetch the latest version first
+	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
+	var cp cpv1alpha1.ClusterPermission
+	unmarshalJSON(cpJSON, &cp)
+
+	if cp.Status.ResourceStatus == nil {
+		cp.Status.ResourceStatus = &cpv1alpha1.ResourceStatus{}
+	}
+
+	// Update conditions for all ClusterRoleBindings
+	if cp.Spec.ClusterRoleBindings != nil {
+		if cp.Status.ResourceStatus.ClusterRoleBindings == nil {
+			cp.Status.ResourceStatus.ClusterRoleBindings = make([]cpv1alpha1.ClusterRoleBindingStatus, 0)
+		}
+
+		for _, binding := range *cp.Spec.ClusterRoleBindings {
+			// Find existing status or create new one
+			found := false
+			for i, status := range cp.Status.ResourceStatus.ClusterRoleBindings {
+				if status.Name == binding.Name {
+					cp.Status.ResourceStatus.ClusterRoleBindings[i].Conditions = []metav1.Condition{
+						{
+							Type:               "Applied",
+							Status:             conditionStatus,
+							Reason:             reason,
+							Message:            message,
+							LastTransitionTime: metav1.Now(),
+						},
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				cp.Status.ResourceStatus.ClusterRoleBindings = append(cp.Status.ResourceStatus.ClusterRoleBindings,
+					cpv1alpha1.ClusterRoleBindingStatus{
+						Name: binding.Name,
+						Conditions: []metav1.Condition{
+							{
+								Type:               "Applied",
+								Status:             conditionStatus,
+								Reason:             reason,
+								Message:            message,
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					})
+			}
+		}
+	}
+
+	// Update conditions for all RoleBindings
+	if cp.Spec.RoleBindings != nil {
+		if cp.Status.ResourceStatus.RoleBindings == nil {
+			cp.Status.ResourceStatus.RoleBindings = make([]cpv1alpha1.RoleBindingStatus, 0)
+		}
+
+		for _, binding := range *cp.Spec.RoleBindings {
+			// Find existing status or create new one
+			found := false
+			for i, status := range cp.Status.ResourceStatus.RoleBindings {
+				if status.Name == binding.Name && status.Namespace == binding.Namespace {
+					cp.Status.ResourceStatus.RoleBindings[i].Conditions = []metav1.Condition{
+						{
+							Type:               "Applied",
+							Status:             conditionStatus,
+							Reason:             reason,
+							Message:            message,
+							LastTransitionTime: metav1.Now(),
+						},
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				cp.Status.ResourceStatus.RoleBindings = append(cp.Status.ResourceStatus.RoleBindings,
+					cpv1alpha1.RoleBindingStatus{
+						Name:      binding.Name,
+						Namespace: binding.Namespace,
+						Conditions: []metav1.Condition{
+							{
+								Type:               "Applied",
+								Status:             conditionStatus,
+								Reason:             reason,
+								Message:            message,
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					})
+			}
+		}
+	}
+
+	// Marshall back to JSON and apply status update
+	cpBytes, err := json.Marshal(cp)
+	Expect(err).NotTo(HaveOccurred())
+
+	tmpFile := fmt.Sprintf("/tmp/%s-%s-status-update.json", name, namespace)
+	err = os.WriteFile(tmpFile, cpBytes, 0644)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", tmpFile, "--subresource=status", "--server-side")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// StatusDetails holds the status details for a binding or MRA
+type StatusDetails struct {
+	Status  metav1.ConditionStatus
+	Reason  string
+	Message string
+}
+
+// updateClusterPermissionStatusByOwner updates bindings with statuses based on the owning MRA name.
+func updateClusterPermissionStatusByOwner(
+	name, namespace string, statusMap map[string]StatusDetails) {
+
+	// Fetch the latest version first
+	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
+	var cp cpv1alpha1.ClusterPermission
+	unmarshalJSON(cpJSON, &cp)
+
+	if cp.Status.ResourceStatus == nil {
+		cp.Status.ResourceStatus = &cpv1alpha1.ResourceStatus{}
+	}
+
+	// Update conditions for all ClusterRoleBindings
+	if cp.Spec.ClusterRoleBindings != nil {
+		if cp.Status.ResourceStatus.ClusterRoleBindings == nil {
+			cp.Status.ResourceStatus.ClusterRoleBindings = make([]cpv1alpha1.ClusterRoleBindingStatus, 0)
+		}
+
+		for _, binding := range *cp.Spec.ClusterRoleBindings {
+			status, reason, message := metav1.ConditionUnknown, "UnknownStatus", "Binding not found in status map"
+
+			// Try to look up by owner MRA annotation
+			ownerKey := clusterPermissionOwnerAnnotationPrefix + binding.Name
+			if ownerValue, ok := cp.Annotations[ownerKey]; ok {
+				parts := strings.Split(ownerValue, "/")
+				if len(parts) == 2 {
+					if details, ok := statusMap[parts[1]]; ok {
+						status, reason, message = details.Status, details.Reason, details.Message
+					}
+				}
+			}
+
+			// Find existing status or create new one
+			found := false
+			for i, s := range cp.Status.ResourceStatus.ClusterRoleBindings {
+				if s.Name == binding.Name {
+					cp.Status.ResourceStatus.ClusterRoleBindings[i].Conditions = []metav1.Condition{
+						{
+							Type:               "Applied",
+							Status:             status,
+							Reason:             reason,
+							Message:            message,
+							LastTransitionTime: metav1.Now(),
+						},
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				cp.Status.ResourceStatus.ClusterRoleBindings = append(cp.Status.ResourceStatus.ClusterRoleBindings,
+					cpv1alpha1.ClusterRoleBindingStatus{
+						Name: binding.Name,
+						Conditions: []metav1.Condition{
+							{
+								Type:               "Applied",
+								Status:             status,
+								Reason:             reason,
+								Message:            message,
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					})
+			}
+		}
+	}
+
+	// Update conditions for all RoleBindings
+	if cp.Spec.RoleBindings != nil {
+		if cp.Status.ResourceStatus.RoleBindings == nil {
+			cp.Status.ResourceStatus.RoleBindings = make([]cpv1alpha1.RoleBindingStatus, 0)
+		}
+
+		for _, binding := range *cp.Spec.RoleBindings {
+			status, reason, message := metav1.ConditionUnknown, "UnknownStatus", "Binding not found in status map"
+
+			// Try to look up by owner MRA annotation
+			ownerKey := clusterPermissionOwnerAnnotationPrefix + binding.Name
+			if ownerValue, ok := cp.Annotations[ownerKey]; ok {
+				parts := strings.Split(ownerValue, "/")
+				if len(parts) == 2 {
+					if details, ok := statusMap[parts[1]]; ok {
+						status, reason, message = details.Status, details.Reason, details.Message
+					}
+				}
+			}
+
+			// Find existing status or create new one
+			found := false
+			for i, s := range cp.Status.ResourceStatus.RoleBindings {
+				if s.Name == binding.Name && s.Namespace == binding.Namespace {
+					cp.Status.ResourceStatus.RoleBindings[i].Conditions = []metav1.Condition{
+						{
+							Type:               "Applied",
+							Status:             status,
+							Reason:             reason,
+							Message:            message,
+							LastTransitionTime: metav1.Now(),
+						},
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				cp.Status.ResourceStatus.RoleBindings = append(cp.Status.ResourceStatus.RoleBindings,
+					cpv1alpha1.RoleBindingStatus{
+						Name:      binding.Name,
+						Namespace: binding.Namespace,
+						Conditions: []metav1.Condition{
+							{
+								Type:               "Applied",
+								Status:             status,
+								Reason:             reason,
+								Message:            message,
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					})
+			}
+		}
+	}
+
+	// Marshall back to JSON and apply status update
+	cpBytes, err := json.Marshal(cp)
+	Expect(err).NotTo(HaveOccurred())
+
+	tmpFile := fmt.Sprintf("/tmp/%s-%s-mixed-status-update.json", name, namespace)
+	err = os.WriteFile(tmpFile, cpBytes, 0644)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "apply", "-f", tmpFile, "--subresource=status", "--server-side")
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 }

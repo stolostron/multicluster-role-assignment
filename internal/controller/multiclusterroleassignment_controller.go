@@ -30,6 +30,7 @@ import (
 
 	"github.com/stolostron/multicluster-role-assignment/internal/utils"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -229,6 +230,15 @@ func (r *MulticlusterRoleAssignmentReconciler) Reconcile(ctx context.Context, re
 		currentClusters, "generation", mra.Generation)
 
 	clusterPermissionErrors := r.processClusterPermissions(ctx, &mra, clustersToProcess, roleAssignmentClusters)
+
+	err = r.updateRoleAssignmentStatusesFromClusterPermission(
+		ctx, &mra, roleAssignmentClusters, currentClusters)
+	if err != nil {
+		log.Error(err, "Failed to update role assignment statuses from ClusterPermission",
+			"multiclusterroleassignment", req.NamespacedName,
+			"clusters", currentClusters)
+		return ctrl.Result{}, err
+	}
 
 	slices.Sort(currentClusters)
 	mra.Status.AppliedClusters = currentClusters
@@ -673,6 +683,243 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
 				fmt.Sprintf("Applied to %d clusters", len(successClustersForRA)))
 		}
 	}
+}
+
+// analyzeBindingCondition inspects a condition and returns whether it is a failure or unknown/pending state.
+func (r *MulticlusterRoleAssignmentReconciler) analyzeBindingCondition(
+	cond *metav1.Condition, bindingName, namespace, cluster string) (isError bool, isUnknown bool, msg string) {
+
+	if cond.Status == metav1.ConditionFalse {
+		msg := fmt.Sprintf("ClusterRoleBinding %s failed on cluster %s: %s", bindingName, cluster, cond.Message)
+		if namespace != "" {
+			msg = fmt.Sprintf("RoleBinding %s/%s failed on cluster %s: %s", namespace, bindingName, cluster, cond.Message)
+		}
+		return true, false, msg
+	}
+
+	if cond.Status == metav1.ConditionUnknown {
+		msg := fmt.Sprintf("ClusterRoleBinding %s pending on cluster %s: %s", bindingName, cluster, cond.Message)
+		if namespace != "" {
+			msg = fmt.Sprintf("RoleBinding %s/%s pending on cluster %s: %s", namespace, bindingName, cluster, cond.Message)
+		}
+		return false, true, msg
+	}
+
+	return false, false, ""
+}
+
+// updateRoleAssignmentStatusesFromClusterPermission checks the ClusterPermission status
+// for each specific binding owned by this RoleAssignment and updates the status if there are failures.
+// Returns an error if fetching ClusterPermission resources fails.
+func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatusesFromClusterPermission(
+	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment,
+	roleAssignmentClusters map[string][]string, allClusters []string) error {
+
+	clusterBindingsStatus, err := r.buildClusterBindingsStatusMap(ctx, allClusters)
+	if err != nil {
+		return err
+	}
+
+	for _, raStatus := range mra.Status.RoleAssignments {
+		r.processRoleAssignmentStatus(mra, raStatus, roleAssignmentClusters, clusterBindingsStatus)
+	}
+	return nil
+}
+
+// buildClusterBindingsStatusMap returns a nested map: cluster name → (binding key → Applied condition).
+// This allows callers to look up the status of any binding on any cluster, for example:
+//
+//	condition := clusterBindingsStatus["cluster1"]["CRB:my-binding"]
+//
+// Binding keys use the format "CRB:<name>" for ClusterRoleBindings or "RB:<namespace>:<name>" for RoleBindings.
+func (r *MulticlusterRoleAssignmentReconciler) buildClusterBindingsStatusMap(
+	ctx context.Context, allClusters []string) (map[string]map[string]*metav1.Condition, error) {
+
+	clusterBindingsStatus := make(map[string]map[string]*metav1.Condition)
+
+	for _, cluster := range allClusters {
+		cp, err := r.getClusterPermission(ctx, cluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ClusterPermission for cluster %s: %w", cluster, err)
+		}
+		// cp == nil means not found, which is expected for new clusters
+		// cp.Status.ResourceStatus == nil means no status yet, which is expected during initial sync
+		if cp == nil || cp.Status.ResourceStatus == nil {
+			continue
+		}
+
+		bindingMap := make(map[string]*metav1.Condition)
+
+		if cp.Status.ResourceStatus.ClusterRoleBindings != nil {
+			for _, crb := range cp.Status.ResourceStatus.ClusterRoleBindings {
+				if cond := meta.FindStatusCondition(crb.Conditions, string(mrav1beta1.ConditionTypeApplied)); cond != nil {
+					bindingMap["CRB:"+crb.Name] = cond
+				}
+			}
+		}
+
+		if cp.Status.ResourceStatus.RoleBindings != nil {
+			for _, rb := range cp.Status.ResourceStatus.RoleBindings {
+				if cond := meta.FindStatusCondition(rb.Conditions, string(mrav1beta1.ConditionTypeApplied)); cond != nil {
+					bindingMap[fmt.Sprintf("RB:%s:%s", rb.Namespace, rb.Name)] = cond
+				}
+			}
+		}
+
+		clusterBindingsStatus[cluster] = bindingMap
+	}
+	return clusterBindingsStatus, nil
+}
+
+// processRoleAssignmentStatus updates the status for a single RoleAssignment.
+// If the RoleAssignment already has an error status, any new CP binding errors are appended to the existing message.
+func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
+	mra *mrav1beta1.MulticlusterRoleAssignment,
+	raStatus mrav1beta1.RoleAssignmentStatus,
+	roleAssignmentClusters map[string][]string,
+	clusterBindingsStatus map[string]map[string]*metav1.Condition) {
+
+	var raSpec *mrav1beta1.RoleAssignment
+	for i, ra := range mra.Spec.RoleAssignments {
+		if ra.Name == raStatus.Name {
+			raSpec = &mra.Spec.RoleAssignments[i]
+			break
+		}
+	}
+	if raSpec == nil {
+		return
+	}
+
+	targetClusters := roleAssignmentClusters[raStatus.Name]
+	if len(targetClusters) == 0 {
+		return
+	}
+
+	var allErrorMessages []string
+	var allUnknownMessages []string
+	failedClusters := make(map[string]bool)
+	pendingClusters := make(map[string]bool)
+
+	// Loop all clusters in targetClusters and gather all Error and Unknown messages
+	for _, cluster := range targetClusters {
+		bindingsMap, ok := clusterBindingsStatus[cluster]
+		if !ok {
+			continue
+		}
+
+		clusterErrors, clusterUnknowns := r.checkBindingStatusForCluster(mra, raSpec, cluster, bindingsMap)
+		if len(clusterErrors) > 0 {
+			failedClusters[cluster] = true
+			allErrorMessages = append(allErrorMessages, clusterErrors...)
+		}
+		if len(clusterUnknowns) > 0 {
+			pendingClusters[cluster] = true
+			allUnknownMessages = append(allUnknownMessages, clusterUnknowns...)
+		}
+	}
+
+	// If the status is already in error state, append new CP binding errors/unknowns to the existing message
+	if raStatus.Status == string(mrav1beta1.StatusTypeError) {
+		if len(allErrorMessages) > 0 || len(allUnknownMessages) > 0 {
+			// Combine all new issues and append to existing error message
+			allIssues := append(allErrorMessages, allUnknownMessages...)
+			additionalMessage := fmt.Sprintf("Additional binding issues: %s",
+				strings.Join(allIssues, "; "))
+			r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
+				mrav1beta1.ReasonApplicationFailed, raStatus.Message+". "+additionalMessage)
+		}
+		// Don't overwrite existing error with pending/success - keep the error state
+		return
+	}
+
+	// Build combined status message based on collected issues
+	if len(allErrorMessages) > 0 {
+		var finalMessage string
+		if len(allUnknownMessages) > 0 {
+			// Combine errors and unknowns
+			allMessages := append(allErrorMessages, allUnknownMessages...)
+			finalMessage = fmt.Sprintf("Failed on %d cluster(s), pending on %d cluster(s): %s",
+				len(failedClusters), len(pendingClusters), strings.Join(allMessages, "; "))
+		} else {
+			finalMessage = fmt.Sprintf("Failed on %d cluster(s): %s",
+				len(failedClusters), strings.Join(allErrorMessages, "; "))
+		}
+		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
+			mrav1beta1.ReasonApplicationFailed, finalMessage)
+		return
+	}
+
+	if len(allUnknownMessages) > 0 {
+		finalMessage := fmt.Sprintf("Pending on %d cluster(s): %s",
+			len(pendingClusters), strings.Join(allUnknownMessages, "; "))
+		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypePending,
+			mrav1beta1.ReasonProcessing, finalMessage)
+	}
+}
+
+// checkBindingStatusForCluster checks if any bindings for the RoleAssignment on a specific cluster are in Error or
+// Unknown state.
+func (r *MulticlusterRoleAssignmentReconciler) checkBindingStatusForCluster(
+	mra *mrav1beta1.MulticlusterRoleAssignment,
+	raSpec *mrav1beta1.RoleAssignment,
+	cluster string,
+	bindingsMap map[string]*metav1.Condition,
+) ([]string, []string) {
+	if len(raSpec.TargetNamespaces) == 0 {
+		return r.checkClusterRoleBindingStatus(mra, raSpec, cluster, bindingsMap)
+	}
+	return r.checkRoleBindingStatus(mra, raSpec, cluster, bindingsMap)
+}
+
+// checkClusterRoleBindingStatus checks the status of a ClusterRoleBinding and returns
+// slices of error messages and unknown/pending messages.
+func (r *MulticlusterRoleAssignmentReconciler) checkClusterRoleBindingStatus(
+	mra *mrav1beta1.MulticlusterRoleAssignment,
+	raSpec *mrav1beta1.RoleAssignment,
+	cluster string,
+	bindingsMap map[string]*metav1.Condition,
+) ([]string, []string) {
+	var allErrorMsg []string
+	var allUnknownMsg []string
+
+	bindingName := r.generateBindingName(mra, raSpec.Name, raSpec.ClusterRole)
+	key := "CRB:" + bindingName
+
+	if cond := bindingsMap[key]; cond != nil {
+		isError, isUnknown, msg := r.analyzeBindingCondition(cond, bindingName, "", cluster)
+		if isError {
+			allErrorMsg = append(allErrorMsg, msg)
+		} else if isUnknown {
+			allUnknownMsg = append(allUnknownMsg, msg)
+		}
+	}
+	return allErrorMsg, allUnknownMsg
+}
+
+// checkRoleBindingStatus checks the status of RoleBindings for all target namespaces.
+func (r *MulticlusterRoleAssignmentReconciler) checkRoleBindingStatus(
+	mra *mrav1beta1.MulticlusterRoleAssignment,
+	raSpec *mrav1beta1.RoleAssignment,
+	cluster string,
+	bindingsMap map[string]*metav1.Condition,
+) ([]string, []string) {
+	var allErrorMsg []string
+	var allUnknownMsg []string
+
+	for _, namespace := range raSpec.TargetNamespaces {
+		bindingName := r.generateBindingName(mra, raSpec.Name, raSpec.ClusterRole, namespace)
+		key := fmt.Sprintf("RB:%s:%s", namespace, bindingName)
+
+		if cond := bindingsMap[key]; cond != nil {
+			isError, isUnknown, msg := r.analyzeBindingCondition(cond, bindingName, namespace, cluster)
+			if isError {
+				allErrorMsg = append(allErrorMsg, msg)
+			} else if isUnknown {
+				allUnknownMsg = append(allUnknownMsg, msg)
+			}
+		}
+	}
+	return allErrorMsg, allUnknownMsg
 }
 
 // ensureClusterPermission creates or updates the ClusterPermission for a specific cluster.
@@ -1218,7 +1465,22 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 			builder.WithPredicates(
 				predicate.And(
 					predicate.NewPredicateFuncs(r.isClusterPermissionManaged),
-					predicate.GenerationChangedPredicate{},
+					predicate.Funcs{
+						UpdateFunc: func(e event.UpdateEvent) bool {
+							oldCP := e.ObjectOld.(*cpv1alpha1.ClusterPermission)
+							newCP := e.ObjectNew.(*cpv1alpha1.ClusterPermission)
+							if oldCP.Generation != newCP.Generation {
+								return true
+							}
+							return !equality.Semantic.DeepEqual(oldCP.Status.ResourceStatus, newCP.Status.ResourceStatus)
+						},
+						CreateFunc: func(e event.CreateEvent) bool {
+							return true
+						},
+						DeleteFunc: func(e event.DeleteEvent) bool {
+							return true
+						},
+					},
 				),
 			),
 		).
