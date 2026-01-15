@@ -2232,6 +2232,17 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(bindingName2).NotTo(ContainSubstring("/"))
 				Expect(bindingName2).NotTo(ContainSubstring("M"))
 			})
+
+			It("Should truncate very long role names to comply with Kubernetes name length limits", func() {
+				veryLongRoleName := "this-is-a-super-extremely-long-cluster-role-name-that-definitely-exceeds-limits"
+				bindingName := reconciler.generateBindingName(mra, "test-assignment", veryLongRoleName)
+
+				Expect(bindingName).To(HaveLen(63))
+
+				expectedTruncated := veryLongRoleName[:46]
+				Expect(bindingName).To(HavePrefix(expectedTruncated))
+				Expect(bindingName[:46]).To(Equal(expectedTruncated))
+			})
 		})
 
 		Describe("generateOwnerAnnotationKey", func() {
