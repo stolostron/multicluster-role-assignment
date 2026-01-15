@@ -2984,6 +2984,30 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(result.RequeueAfter).To(Equal(standardRequeueDelay))
 			})
 
+			It("Should return error when finalizer removal update fails with non-conflict non-notfound error", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					UpdateError:      fmt.Errorf("finalizer removal update failed"),
+					ShouldFailUpdate: true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("finalizer removal update failed"))
+			})
+
 			It("Should return error when finalizer update fails with non-conflict error", func() {
 				errorTestMRA.Finalizers = nil
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
