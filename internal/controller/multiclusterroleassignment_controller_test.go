@@ -336,6 +336,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 	Context("Clusterpermission status changes", func() {
 		const (
 			testClusterName = "cluster1"
+			cluster1        = "cluster1"
+			cluster2        = "cluster2"
+			cluster3        = "cluster3"
 			testViewRole    = "view"
 		)
 
@@ -694,6 +697,386 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring(previousErrorMsg))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Additional binding issues"))
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("New failure"))
+		})
+
+		It("should output correct count failed or pending roleassignment message based on a cp with multiple bindings", func() {
+			mraName := "test-mra-cluster-count"
+			raName := "testRoleAssignmentMultiNS"
+			clusterRoleName := testViewRole
+			targetCluster1 := cluster1
+			targetCluster2 := cluster2
+			namespace1 := "default"
+			namespace2 := "kube-system"
+
+			mra := &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mraName,
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: mrav1beta1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind:     "User",
+						APIGroup: "rbac.authorization.k8s.io",
+						Name:     "test-user",
+					},
+					RoleAssignments: []mrav1beta1.RoleAssignment{
+						{
+							Name:             raName,
+							ClusterRole:      clusterRoleName,
+							TargetNamespaces: []string{namespace1, namespace2},
+							ClusterSelection: mrav1beta1.ClusterSelection{
+								Type: "placements",
+								Placements: []mrav1beta1.PlacementRef{
+									{Namespace: "ns1", Name: "placement1"},
+								},
+							},
+						},
+					},
+				},
+				Status: mrav1beta1.MulticlusterRoleAssignmentStatus{
+					RoleAssignments: []mrav1beta1.RoleAssignmentStatus{
+						{
+							Name:   raName,
+							Status: string(mrav1beta1.StatusTypeActive),
+						},
+					},
+				},
+			}
+
+			r := &MulticlusterRoleAssignmentReconciler{}
+			r.Scheme = k8sClient.Scheme()
+
+			// Generate expected binding names for both namespaces
+			bindingName1 := r.generateBindingName(mra, raName, clusterRoleName, namespace1)
+			bindingName2 := r.generateBindingName(mra, raName, clusterRoleName, namespace2)
+
+			// Create ClusterPermission for cluster1 with BOTH bindings failed
+			cp1 := &cpv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterPermissionManagedName,
+					Namespace: targetCluster1,
+					Labels: map[string]string{
+						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+					},
+				},
+				Status: cpv1alpha1.ClusterPermissionStatus{
+					ResourceStatus: &cpv1alpha1.ResourceStatus{
+						RoleBindings: []cpv1alpha1.RoleBindingStatus{
+							{
+								Name:      bindingName1,
+								Namespace: namespace1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionFalse,
+										Reason:  "ApplyFailed",
+										Message: "Failed binding 1 on " + targetCluster1,
+									},
+								},
+							},
+							{
+								Name:      bindingName2,
+								Namespace: namespace2,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionFalse,
+										Reason:  "ApplyFailed",
+										Message: "Failed binding 2 on " + targetCluster1,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Create ClusterPermission for cluster2 with BOTH bindings pending (unknown)
+			cp2 := &cpv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterPermissionManagedName,
+					Namespace: targetCluster2,
+					Labels: map[string]string{
+						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+					},
+				},
+				Status: cpv1alpha1.ClusterPermissionStatus{
+					ResourceStatus: &cpv1alpha1.ResourceStatus{
+						RoleBindings: []cpv1alpha1.RoleBindingStatus{
+							{
+								Name:      bindingName1,
+								Namespace: namespace1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionUnknown,
+										Reason:  "Pending",
+										Message: "Pending binding 1 on " + targetCluster2,
+									},
+								},
+							},
+							{
+								Name:      bindingName2,
+								Namespace: namespace2,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionUnknown,
+										Reason:  "Pending",
+										Message: "Pending binding 2 on " + targetCluster2,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(mra, cp1, cp2).Build()
+			r.Client = fakeClient
+
+			// Role assignment targets both clusters
+			roleAssignmentClusters := map[string][]string{
+				raName: {targetCluster1, targetCluster2},
+			}
+			allClusters := []string{targetCluster1, targetCluster2}
+
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status is Error (because there are failures)
+			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+
+			// Key assertion: Verify the cluster counts are correct (1 failed, 1 pending)
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed on 1 cluster(s), pending on 1 cluster(s)"))
+
+			// Also verify all binding error messages are included
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed binding 1 on " + targetCluster1))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed binding 2 on " + targetCluster1))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Pending binding 1 on " + targetCluster2))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Pending binding 2 on " + targetCluster2))
+		})
+
+		It("should correctly count multiple failed clusters without pending", func() {
+			// Test scenario: 3 clusters, 2 namespaces each, all bindings failed on all clusters
+			// Should report "Failed on 3 cluster(s)" not "Failed on 6 cluster(s)"
+
+			mraName := "test-mra-multi-failed-clusters"
+			raName := "testRoleAssignmentMultiFailedClusters"
+			clusterRoleName := testAdminRole
+			targetClusterA := cluster1
+			targetClusterB := cluster2
+			targetClusterC := cluster3
+			namespace1 := "ns1"
+			namespace2 := "ns2"
+
+			mra := &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mraName,
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: mrav1beta1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind:     "User",
+						APIGroup: "rbac.authorization.k8s.io",
+						Name:     "test-user",
+					},
+					RoleAssignments: []mrav1beta1.RoleAssignment{
+						{
+							Name:             raName,
+							ClusterRole:      clusterRoleName,
+							TargetNamespaces: []string{namespace1, namespace2},
+							ClusterSelection: mrav1beta1.ClusterSelection{
+								Type: "placements",
+							},
+						},
+					},
+				},
+				Status: mrav1beta1.MulticlusterRoleAssignmentStatus{
+					RoleAssignments: []mrav1beta1.RoleAssignmentStatus{
+						{
+							Name:   raName,
+							Status: string(mrav1beta1.StatusTypeActive),
+						},
+					},
+				},
+			}
+
+			r := &MulticlusterRoleAssignmentReconciler{}
+			r.Scheme = k8sClient.Scheme()
+
+			bindingName1 := r.generateBindingName(mra, raName, clusterRoleName, namespace1)
+			bindingName2 := r.generateBindingName(mra, raName, clusterRoleName, namespace2)
+
+			// Helper to create a CP with failed bindings
+			createFailedCP := func(clusterName string) *cpv1alpha1.ClusterPermission {
+				return &cpv1alpha1.ClusterPermission{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      clusterPermissionManagedName,
+						Namespace: clusterName,
+						Labels: map[string]string{
+							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+						},
+					},
+					Status: cpv1alpha1.ClusterPermissionStatus{
+						ResourceStatus: &cpv1alpha1.ResourceStatus{
+							RoleBindings: []cpv1alpha1.RoleBindingStatus{
+								{
+									Name:      bindingName1,
+									Namespace: namespace1,
+									Conditions: []metav1.Condition{
+										{
+											Type:    "Applied",
+											Status:  metav1.ConditionFalse,
+											Reason:  "ApplyFailed",
+											Message: "Failed on " + clusterName,
+										},
+									},
+								},
+								{
+									Name:      bindingName2,
+									Namespace: namespace2,
+									Conditions: []metav1.Condition{
+										{
+											Type:    "Applied",
+											Status:  metav1.ConditionFalse,
+											Reason:  "ApplyFailed",
+											Message: "Failed on " + clusterName,
+										},
+									},
+								},
+							},
+						},
+					},
+				}
+			}
+
+			cp1 := createFailedCP(targetClusterA)
+			cp2 := createFailedCP(targetClusterB)
+			cp3 := createFailedCP(targetClusterC)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).
+				WithObjects(mra, cp1, cp2, cp3).Build()
+			r.Client = fakeClient
+
+			roleAssignmentClusters := map[string][]string{
+				raName: {targetClusterA, targetClusterB, targetClusterC},
+			}
+			allClusters := []string{targetClusterA, targetClusterB, targetClusterC}
+
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed on 3 cluster(s):"))
+		})
+
+		It("should correctly count pending clusters only", func() {
+			mraName := "test-mra-pending-only"
+			raName := "testRoleAssignmentPendingOnly"
+			clusterRoleName := testViewRole
+			targetClusterA := cluster1
+			targetClusterB := cluster2
+			namespace1 := "ns1"
+			namespace2 := "ns2"
+
+			mra := &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mraName,
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: mrav1beta1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind:     "User",
+						APIGroup: "rbac.authorization.k8s.io",
+						Name:     "test-user",
+					},
+					RoleAssignments: []mrav1beta1.RoleAssignment{
+						{
+							Name:             raName,
+							ClusterRole:      clusterRoleName,
+							TargetNamespaces: []string{namespace1, namespace2},
+							ClusterSelection: mrav1beta1.ClusterSelection{
+								Type: "placements",
+							},
+						},
+					},
+				},
+				Status: mrav1beta1.MulticlusterRoleAssignmentStatus{
+					RoleAssignments: []mrav1beta1.RoleAssignmentStatus{
+						{
+							Name:   raName,
+							Status: string(mrav1beta1.StatusTypeActive),
+						},
+					},
+				},
+			}
+
+			r := &MulticlusterRoleAssignmentReconciler{}
+			r.Scheme = k8sClient.Scheme()
+
+			bindingName1 := r.generateBindingName(mra, raName, clusterRoleName, namespace1)
+			bindingName2 := r.generateBindingName(mra, raName, clusterRoleName, namespace2)
+
+			createPendingCP := func(clusterName string) *cpv1alpha1.ClusterPermission {
+				return &cpv1alpha1.ClusterPermission{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      clusterPermissionManagedName,
+						Namespace: clusterName,
+						Labels: map[string]string{
+							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+						},
+					},
+					Status: cpv1alpha1.ClusterPermissionStatus{
+						ResourceStatus: &cpv1alpha1.ResourceStatus{
+							RoleBindings: []cpv1alpha1.RoleBindingStatus{
+								{
+									Name:      bindingName1,
+									Namespace: namespace1,
+									Conditions: []metav1.Condition{
+										{
+											Type:    "Applied",
+											Status:  metav1.ConditionUnknown,
+											Reason:  "Pending",
+											Message: "Pending on " + clusterName,
+										},
+									},
+								},
+								{
+									Name:      bindingName2,
+									Namespace: namespace2,
+									Conditions: []metav1.Condition{
+										{
+											Type:    "Applied",
+											Status:  metav1.ConditionUnknown,
+											Reason:  "Pending",
+											Message: "Pending on " + clusterName,
+										},
+									},
+								},
+							},
+						},
+					},
+				}
+			}
+
+			cp1 := createPendingCP(targetClusterA)
+			cp2 := createPendingCP(targetClusterB)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).
+				WithObjects(mra, cp1, cp2).Build()
+			r.Client = fakeClient
+
+			roleAssignmentClusters := map[string][]string{
+				raName: {targetClusterA, targetClusterB},
+			}
+			allClusters := []string{targetClusterA, targetClusterB}
+
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypePending)))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Pending on 2 cluster(s):"))
 		})
 	})
 

@@ -797,6 +797,8 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 
 	var allErrorMessages []string
 	var allUnknownMessages []string
+	failedClusters := make(map[string]bool)
+	pendingClusters := make(map[string]bool)
 
 	// Loop all clusters in targetClusters and gather all Error and Unknown messages
 	for _, cluster := range targetClusters {
@@ -806,8 +808,14 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 		}
 
 		clusterErrors, clusterUnknowns := r.checkBindingStatusForCluster(mra, raSpec, cluster, bindingsMap)
-		allErrorMessages = append(allErrorMessages, clusterErrors...)
-		allUnknownMessages = append(allUnknownMessages, clusterUnknowns...)
+		if len(clusterErrors) > 0 {
+			failedClusters[cluster] = true
+			allErrorMessages = append(allErrorMessages, clusterErrors...)
+		}
+		if len(clusterUnknowns) > 0 {
+			pendingClusters[cluster] = true
+			allUnknownMessages = append(allUnknownMessages, clusterUnknowns...)
+		}
 	}
 
 	// If the status is already in error state, append new CP binding errors/unknowns to the existing message
@@ -831,10 +839,10 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			// Combine errors and unknowns
 			allMessages := append(allErrorMessages, allUnknownMessages...)
 			finalMessage = fmt.Sprintf("Failed on %d cluster(s), pending on %d cluster(s): %s",
-				len(allErrorMessages), len(allUnknownMessages), strings.Join(allMessages, "; "))
+				len(failedClusters), len(pendingClusters), strings.Join(allMessages, "; "))
 		} else {
 			finalMessage = fmt.Sprintf("Failed on %d cluster(s): %s",
-				len(allErrorMessages), strings.Join(allErrorMessages, "; "))
+				len(failedClusters), strings.Join(allErrorMessages, "; "))
 		}
 		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
 			mrav1beta1.ReasonApplicationFailed, finalMessage)
@@ -843,7 +851,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 
 	if len(allUnknownMessages) > 0 {
 		finalMessage := fmt.Sprintf("Pending on %d cluster(s): %s",
-			len(allUnknownMessages), strings.Join(allUnknownMessages, "; "))
+			len(pendingClusters), strings.Join(allUnknownMessages, "; "))
 		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypePending,
 			mrav1beta1.ReasonProcessing, finalMessage)
 	}
