@@ -3342,6 +3342,17 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(bindingName2).NotTo(ContainSubstring("/"))
 				Expect(bindingName2).NotTo(ContainSubstring("M"))
 			})
+
+			It("Should truncate very long role names to comply with Kubernetes name length limits", func() {
+				veryLongRoleName := "this-is-a-super-extremely-long-cluster-role-name-that-definitely-exceeds-limits"
+				bindingName := reconciler.generateBindingName(mra, "test-assignment", veryLongRoleName)
+
+				Expect(bindingName).To(HaveLen(63))
+
+				expectedTruncated := veryLongRoleName[:46]
+				Expect(bindingName).To(HavePrefix(expectedTruncated))
+				Expect(bindingName[:46]).To(Equal(expectedTruncated))
+			})
 		})
 
 		Describe("generateOwnerAnnotationKey", func() {
@@ -4094,6 +4105,30 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(result.RequeueAfter).To(Equal(standardRequeueDelay))
 			})
 
+			It("Should return error when finalizer removal update fails with non-conflict non-notfound error", func() {
+				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, errorTestMRA)).To(Succeed())
+
+				mockClient := &MockErrorClient{
+					Client:           k8sClient,
+					UpdateError:      fmt.Errorf("finalizer removal update failed"),
+					ShouldFailUpdate: true,
+				}
+				errorReconciler := &MulticlusterRoleAssignmentReconciler{
+					Client: mockClient,
+					Scheme: k8sClient.Scheme(),
+				}
+
+				_, err := errorReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      errorTestMRA.Name,
+						Namespace: errorTestMRA.Namespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("finalizer removal update failed"))
+			})
+
 			It("Should return error when finalizer update fails with non-conflict error", func() {
 				errorTestMRA.Finalizers = nil
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
@@ -4250,7 +4285,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should requeue after cluster permission failures", func() {
+			It("Should return error on cluster permission failures", func() {
 				Expect(k8sClient.Create(ctx, errorTestMRA)).To(Succeed())
 
 				mockClient := &MockErrorClient{
@@ -4269,8 +4304,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Namespace: errorTestMRA.Namespace,
 					},
 				})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(clusterPermissionFailureRequeueDelay))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to process ClusterPermissions"))
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 
 			It("Should handle deletion cleanup failure", func() {
