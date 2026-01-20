@@ -9,21 +9,13 @@ spec:
   agentSpec:
     workload:
       manifests:
-        # =============================================================================
-        # MANAGED CLUSTER ROLES (where VMs run)
-        # =============================================================================
-
-        # -----------------------------------------------------------------------------
-        # acm-virt:view - Read-only VM access (no secrets, no migration)
-        # Binding: RoleBinding (namespace-scoped)
-        # -----------------------------------------------------------------------------
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
             labels:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-virt:view
+            name: acm-virt-extended:view
           rules:
             - apiGroups:
               - k8s.cni.cncf.io
@@ -125,19 +117,22 @@ spec:
               - get
               - list
               - watch
-
-        # -----------------------------------------------------------------------------
-        # acm-virt:admin - Full VM management + secrets (no migration)
-        # Binding: RoleBinding (namespace-scoped)
-        # Fixes: ACM-27287 (secrets missing get verb)
-        # -----------------------------------------------------------------------------
+            # Migration Policies (namespace-scoped)
+            - apiGroups:
+              - migrations.kubevirt.io
+              resources:
+              - migrationpolicies
+              verbs:
+              - get
+              - list
+              - watch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
             labels:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-virt:admin
+            name: acm-virt-extended:admin
           rules:
             - apiGroups:
               - k8s.cni.cncf.io
@@ -282,20 +277,7 @@ spec:
               - update
               - patch
               - delete
-
-        # -----------------------------------------------------------------------------
-        # acm-virt:migrate - Migration policies + version checks (managed cluster)
-        # Binding: ClusterRoleBinding (cluster-scoped resources)
-        # Addresses: ACM-26074 (clusterversions for compatibility check)
-        # -----------------------------------------------------------------------------
-        - apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            labels:
-              rbac.open-cluster-management.io/filter: vm-clusterroles
-              clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-virt:migrate
-          rules:
+            # Migration Policies (namespace-scoped)
             - apiGroups:
               - migrations.kubevirt.io
               resources:
@@ -308,39 +290,13 @@ spec:
               - update
               - patch
               - delete
-            - apiGroups:
-              - config.openshift.io
-              resources:
-              - clusterversions
-              verbs:
-              - get
-              - list
-              - watch
-            - apiGroups:
-              - operators.coreos.com
-              resources:
-              - clusterserviceversions
-              verbs:
-              - get
-              - list
-              - watch
-
-        # =============================================================================
-        # HUB CLUSTER ROLES (ACM control plane)
-        # =============================================================================
-
-        # -----------------------------------------------------------------------------
-        # acm-fleet:view - Fleet Virtualization UI (managedclusters, kubevirtprojects)
-        # Binding: ClusterRoleBinding (cluster-scoped on Hub)
-        # Adds: userpermissions (ACM-26480)
-        # -----------------------------------------------------------------------------
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
             labels:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-fleet:view
+            name: acm-virt-fleet:view
           rules:
             - apiGroups:
               - clusterview.open-cluster-management.io
@@ -370,18 +326,13 @@ spec:
               - userpermissions
               verbs:
               - list
-
-        # -----------------------------------------------------------------------------
-        # acm-migration:view - View Forklift migrations (Hub - read-only)
-        # Binding: ClusterRoleBinding (cluster-scoped on Hub)
-        # -----------------------------------------------------------------------------
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
             labels:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-migration:view
+            name: acm-virt-live-migration:view
           rules:
             - apiGroups:
               - forklift.konveyor.io
@@ -395,18 +346,30 @@ spec:
               - get
               - list
               - watch
-
-        # -----------------------------------------------------------------------------
-        # acm-migration:admin - Manage Forklift migrations (Hub - full access)
-        # Binding: ClusterRoleBinding (cluster-scoped on Hub)
-        # -----------------------------------------------------------------------------
+            # Cluster-scoped resources for migration version compatibility check
+            - apiGroups:
+              - config.openshift.io
+              resources:
+              - clusterversions
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - operators.coreos.com
+              resources:
+              - clusterserviceversions
+              verbs:
+              - get
+              - list
+              - watch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
             labels:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
-            name: acm-migration:admin
+            name: acm-virt-live-migration:admin
           rules:
             - apiGroups:
               - forklift.konveyor.io
@@ -424,3 +387,20 @@ spec:
               - update
               - patch
               - delete
+            # Cluster-scoped resources for migration version compatibility check
+            - apiGroups:
+              - config.openshift.io
+              resources:
+              - clusterversions
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - operators.coreos.com
+              resources:
+              - clusterserviceversions
+              verbs:
+              - get
+              - list
+              - watch
