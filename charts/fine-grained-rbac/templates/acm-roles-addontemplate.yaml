@@ -142,8 +142,6 @@ spec:
               - configmaps
               - persistentvolumeclaims
               - pods
-              - pods/exec
-              - secrets
               - services
               verbs:
               - get
