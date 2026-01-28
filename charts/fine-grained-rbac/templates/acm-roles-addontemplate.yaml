@@ -112,14 +112,6 @@ spec:
               - get
               - list
               - watch
-            - apiGroups:
-              - migrations.kubevirt.io
-              resources:
-              - migrationpolicies
-              verbs:
-              - get
-              - list
-              - watch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
@@ -238,18 +230,6 @@ spec:
               - template.openshift.io
               resources:
               - templates
-              verbs:
-              - get
-              - list
-              - watch
-              - create
-              - update
-              - patch
-              - delete
-            - apiGroups:
-              - migrations.kubevirt.io
-              resources:
-              - migrationpolicies
               verbs:
               - get
               - list
