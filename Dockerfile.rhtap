@@ -20,7 +20,8 @@ RUN CGO_ENABLED=1 GOFLAGS='-mod=readonly' go build -tags strictfipsruntime -a -o
 # Use UBI9 minimal as base image to package the manager binary
 FROM registry.redhat.io/ubi9/ubi-minimal:latest@sha256:34880b64c07f28f64d95737f82f891516de9a3b43583f39970f7bf8e4cfa48b7
 LABEL \
-    name="multicluster-role-assignment" \
+    name="rhacm2/multicluster-role-assignment-rhel9" \
+    cpe="cpe:/a:redhat:acm:2.15::el9" \
     com.redhat.component="multicluster-role-assignment" \
     description="Kubernetes operator for multicluster role assignment management built for \
 Open Cluster Management (OCM) environments. Automates RBAC management across multiple clusters \
