@@ -8,7 +8,7 @@ require (
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.34.3
 	k8s.io/client-go v0.34.3
-	open-cluster-management.io/api v1.1.0
+	open-cluster-management.io/api v1.2.0
 	open-cluster-management.io/cluster-permission v0.16.1-0.20251223064118-28a3fb8c91bd
 	sigs.k8s.io/controller-runtime v0.22.4
 )

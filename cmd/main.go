@@ -52,7 +52,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(mrav1beta1.AddToScheme(scheme))
-	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1beta1.Install(scheme))
 	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }

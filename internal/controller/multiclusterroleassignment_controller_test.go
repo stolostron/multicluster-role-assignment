@@ -4582,7 +4582,7 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
-		clusterv1beta1.AddToScheme,
+		clusterv1beta1.Install,
 		cpv1alpha1.AddToScheme,
 		corev1.AddToScheme,
 	} {
@@ -4835,7 +4835,7 @@ func TestAggregateClusters(t *testing.T) {
 	var testscheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
-		clusterv1beta1.AddToScheme,
+		clusterv1beta1.Install,
 		corev1.AddToScheme,
 	} {
 		if err := addToScheme(testscheme); err != nil {
@@ -5462,7 +5462,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 	var testScheme = scheme.Scheme
 	for _, addToScheme := range []func(*runtime.Scheme) error{
 		mrav1beta1.AddToScheme,
-		clusterv1beta1.AddToScheme,
+		clusterv1beta1.Install,
 		cpv1alpha1.AddToScheme,
 	} {
 		if err := addToScheme(testScheme); err != nil {

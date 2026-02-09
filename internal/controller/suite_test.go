@@ -66,7 +66,7 @@ var _ = BeforeSuite(func() {
 	err = mrav1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = clusterv1beta1.AddToScheme(scheme.Scheme)
+	err = clusterv1beta1.Install(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = cpv1alpha1.AddToScheme(scheme.Scheme)
