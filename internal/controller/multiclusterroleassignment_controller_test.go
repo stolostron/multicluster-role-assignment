@@ -2005,8 +2005,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			appliedFound := false
 			readyFound := false
 
-			// ClusterPermissions are created but don't have ResourceStatus yet,
-			// so both Applied and Ready are False (bindings not confirmed applied on managed clusters)
+			// ClusterPermissions are created successfully (Applied is True), but don't have ResourceStatus yet,
+			// so Ready is False (bindings not confirmed applied on managed clusters)
 			for _, condition := range mra.Status.Conditions {
 				switch condition.Type {
 				case string(mrav1beta1.ConditionTypeApplied):
