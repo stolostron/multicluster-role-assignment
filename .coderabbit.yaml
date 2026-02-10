@@ -1,0 +1,10 @@
+# .coderabbit.yaml
+version: "1.0"
+language: "en-US"
+reviews:
+  profile: "chill" # Options: chill, assertive, comprehensive
+  auto_review:
+    enabled: true
+  tools:
+    shellcheck:
+      enabled: false # Disabling extra tools keeps it "minimal"
