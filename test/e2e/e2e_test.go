@@ -472,7 +472,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment status", func() {
@@ -557,7 +557,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment status", func() {
@@ -640,7 +640,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment status", func() {
@@ -791,7 +791,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment statuses", func() {
@@ -917,7 +917,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation after cluster addition", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment status", func() {
@@ -969,7 +969,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation after role assignment removal", func() {
 				It("should have correct conditions", func() {
 					By("verifying MulticlusterRoleAssignment conditions")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment status", func() {
@@ -1153,8 +1153,8 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation", func() {
 				It("should have correct conditions for all MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for all MRAs")
-					for _, mra := range mras {
-						validateMRASuccessConditions(mra)
+					for i := range mras {
+						validateMRASuccessConditions(&mras[i])
 					}
 				})
 
@@ -1454,8 +1454,8 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation after comprehensive modifications", func() {
 				It("should have correct conditions for all comprehensively modified MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for all comprehensively modified MRAs")
-					for _, mra := range mras {
-						validateMRASuccessConditions(mra)
+					for i := range mras {
+						validateMRASuccessConditions(&mras[i])
 					}
 				})
 
@@ -2068,7 +2068,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("MulticlusterRoleAssignment validation after rapid patching", func() {
 				It("should have correct conditions after rapid patching", func() {
 					By("verifying MulticlusterRoleAssignment conditions after rapid patching")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 
 				It("should have correct role assignment statuses after rapid patching", func() {
@@ -2233,7 +2233,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should have correct conditions for remaining MRAs", func() {
 					By("verifying MulticlusterRoleAssignment conditions for remaining MRAs")
 					for i := 1; i < len(mras); i++ {
-						validateMRASuccessConditions(mras[i])
+						validateMRASuccessConditions(&mras[i])
 					}
 				})
 
@@ -2329,7 +2329,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					By("verifying MRA creation succeeded")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 				})
 			})
 
@@ -2390,7 +2390,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					By("verifying MRA conditions are successful")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 
 					By("verifying role assignment status is Active")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
@@ -2436,7 +2436,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					By("verifying MRA conditions are successful")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 
 					By("verifying role assignment status is Active")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
@@ -2578,7 +2578,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					By("verifying MRA conditions are successful")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 
 					By("verifying role assignment status is Active")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
@@ -2611,6 +2611,9 @@ var _ = Describe("Manager", Ordered, func() {
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
 						"test-multicluster-role-assignment-multiple-1", openClusterManagementGlobalSetNamespace)
 					unmarshalJSON(mraJSON, &mra)
+
+					By("simulating ClusterPermission success status")
+					simulateClusterPermissionSuccess(&mra)
 
 					By("verifying MRA has 4 roleAssignments")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(4))
@@ -2657,6 +2660,9 @@ var _ = Describe("Manager", Ordered, func() {
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
 						"test-multicluster-role-assignment-multiple-1", openClusterManagementGlobalSetNamespace)
 					unmarshalJSON(mraJSON, &mra)
+
+					By("simulating ClusterPermission success status for all clusters")
+					simulateClusterPermissionSuccess(&mra)
 
 					By("verifying edit-assignment-cluster-3 is still Active (affected by placement-cluster-03)")
 					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
@@ -2763,7 +2769,7 @@ var _ = Describe("Manager", Ordered, func() {
 					unmarshalJSON(mraJSON, &mra)
 
 					By("verifying MRA conditions are successful")
-					validateMRASuccessConditions(mra)
+					validateMRASuccessConditions(&mra)
 
 					By("verifying role assignment status is Active")
 					Expect(mra.Status.RoleAssignments).To(HaveLen(1))
@@ -3658,8 +3664,36 @@ func validateClusterPermissionBindings(clusterPermission cpv1alpha1.ClusterPermi
 	}
 }
 
+// simulateClusterPermissionSuccess simulates the ClusterPermission controller setting ResourceStatus
+// as Applied for all target clusters. This is needed in e2e tests because there is no real
+// ClusterPermission controller running in the Kind cluster. The MRA is updated in-place with the
+// re-fetched version after reconciliation.
+func simulateClusterPermissionSuccess(mra *mrav1beta1.MulticlusterRoleAssignment) {
+	for _, cluster := range mra.Status.AppliedClusters {
+		Eventually(func(g Gomega) {
+			updateClusterPermissionStatus(
+				"mra-managed-permissions", cluster,
+				metav1.ConditionTrue, "AppliedManifestComplete", "Apply manifest complete",
+			)
+		}).Should(Succeed())
+	}
+
+	// Wait for the controller to reconcile with the updated ClusterPermission status
+	waitForController()
+
+	// Re-fetch the MRA to get the latest status after reconciliation
+	mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
+		mra.Name, mra.Namespace)
+	unmarshalJSON(mraJSON, mra)
+}
+
 // validateMRASuccessConditions validates the expected success conditions for a MulticlusterRoleAssignment.
-func validateMRASuccessConditions(mra mrav1beta1.MulticlusterRoleAssignment) {
+// It first simulates ClusterPermission binding status as Applied for all target clusters (since the e2e
+// environment has no real ClusterPermission controller), then re-fetches the MRA and validates conditions.
+// The MRA is updated in-place so subsequent tests use the refreshed version.
+func validateMRASuccessConditions(mra *mrav1beta1.MulticlusterRoleAssignment) {
+	simulateClusterPermissionSuccess(mra)
+
 	readyCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeReady))
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
@@ -4041,10 +4075,23 @@ spec:
 }
 
 // waitForMRA to be ready waits for the MRA to be in a Ready state.
+// It first simulates ClusterPermission success status for all applied clusters since there is
+// no real ClusterPermission controller in the e2e Kind cluster.
 func waitForMRA(mraName string) {
+	// First, wait for the MRA to have AppliedClusters populated
+	var mraObj mrav1beta1.MulticlusterRoleAssignment
 	Eventually(func(g Gomega) {
 		mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
-		var mraObj mrav1beta1.MulticlusterRoleAssignment
+		unmarshalJSON(mraJSON, &mraObj)
+		g.Expect(mraObj.Status.AppliedClusters).NotTo(BeEmpty(), "Expected MRA to have applied clusters")
+	}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+	// Simulate ClusterPermission success status for all applied clusters
+	simulateClusterPermissionSuccess(&mraObj)
+
+	// Now verify the MRA is Ready
+	Eventually(func(g Gomega) {
+		mraJSON := fetchK8sResourceJSON("multiclusterroleassignment", mraName, openClusterManagementGlobalSetNamespace)
 		unmarshalJSON(mraJSON, &mraObj)
 
 		found := false

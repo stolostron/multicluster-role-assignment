@@ -511,21 +511,9 @@ func (r *MulticlusterRoleAssignmentReconciler) setRoleAssignmentStatus(mra *mrav
 	}
 }
 
-// calculateReadyCondition determines the Ready condition based on other conditions and role assignment statuses.
+// calculateReadyCondition determines the Ready condition based on role assignment statuses.
 func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	mra *mrav1beta1.MulticlusterRoleAssignment) (metav1.ConditionStatus, mrav1beta1.ConditionReason, string) {
-
-	var appliedCondition *metav1.Condition
-
-	for _, condition := range mra.Status.Conditions {
-		if condition.Type == string(mrav1beta1.ConditionTypeApplied) {
-			appliedCondition = &condition
-		}
-	}
-
-	if appliedCondition != nil && appliedCondition.Status == metav1.ConditionFalse {
-		return metav1.ConditionFalse, mrav1beta1.ReasonProvisioningFailed, "ClusterPermission application failed"
-	}
 
 	var errorCount, activeCount, pendingCount int
 	totalRoleAssignments := len(mra.Status.RoleAssignments)
@@ -539,6 +527,12 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 		case string(mrav1beta1.StatusTypePending):
 			pendingCount++
 		}
+	}
+
+	if errorCount > 0 && pendingCount > 0 {
+		message := formatStatusMessage(errorCount, totalRoleAssignments, "role assignments failed") + ", " +
+			formatStatusMessage(pendingCount, totalRoleAssignments, "role assignments pending")
+		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsFailure, message
 	}
 
 	if errorCount > 0 {
@@ -716,13 +710,14 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatusesFromC
 	roleAssignmentClusters map[string][]string, allClusters []string) error {
 
 	clusterBindingsStatus, err := r.buildClusterBindingsStatusMap(ctx, allClusters)
+
 	if err != nil {
 		return err
 	}
-
 	for _, raStatus := range mra.Status.RoleAssignments {
 		r.processRoleAssignmentStatus(mra, raStatus, roleAssignmentClusters, clusterBindingsStatus)
 	}
+
 	return nil
 }
 
@@ -743,12 +738,17 @@ func (r *MulticlusterRoleAssignmentReconciler) buildClusterBindingsStatusMap(
 			return nil, fmt.Errorf("failed to get ClusterPermission for cluster %s: %w", cluster, err)
 		}
 		// cp == nil means not found, which is expected for new clusters
-		// cp.Status.ResourceStatus == nil means no status yet, which is expected during initial sync
-		if cp == nil || cp.Status.ResourceStatus == nil {
+		if cp == nil {
 			continue
 		}
 
 		bindingMap := make(map[string]*metav1.Condition)
+
+		// Case caused by no available managed cluster that clusterpermission is trying to apply manifest work for
+		if cp.Status.ResourceStatus == nil {
+			clusterBindingsStatus[cluster] = bindingMap
+			continue
+		}
 
 		if cp.Status.ResourceStatus.ClusterRoleBindings != nil {
 			for _, crb := range cp.Status.ResourceStatus.ClusterRoleBindings {
@@ -799,6 +799,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	var allUnknownMessages []string
 	failedClusters := make(map[string]bool)
 	pendingClusters := make(map[string]bool)
+	successClusters := make(map[string]bool)
 
 	// Loop all clusters in targetClusters and gather all Error and Unknown messages
 	for _, cluster := range targetClusters {
@@ -807,14 +808,22 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			continue
 		}
 
+		if len(bindingsMap) == 0 {
+			pendingClusters[cluster] = true
+			allUnknownMessages = append(allUnknownMessages, fmt.Sprintf("cluster %s is in unavailable status", cluster))
+			continue
+		}
+
 		clusterErrors, clusterUnknowns := r.checkBindingStatusForCluster(mra, raSpec, cluster, bindingsMap)
 		if len(clusterErrors) > 0 {
 			failedClusters[cluster] = true
 			allErrorMessages = append(allErrorMessages, clusterErrors...)
-		}
-		if len(clusterUnknowns) > 0 {
+		} else if len(clusterUnknowns) > 0 {
 			pendingClusters[cluster] = true
 			allUnknownMessages = append(allUnknownMessages, clusterUnknowns...)
+		} else {
+			// No errors and no unknowns means bindings are successfully applied
+			successClusters[cluster] = true
 		}
 	}
 
@@ -835,9 +844,11 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	// Build combined status message based on collected issues
 	if len(allErrorMessages) > 0 {
 		var finalMessage string
-		if len(allUnknownMessages) > 0 {
-			// Combine errors and unknowns
-			allMessages := append(allErrorMessages, allUnknownMessages...)
+		allMessages := append(allErrorMessages, allUnknownMessages...)
+		if len(successClusters) > 0 {
+			finalMessage = fmt.Sprintf("Applied to %d cluster(s), failed on %d cluster(s), pending on %d cluster(s): %s",
+				len(successClusters), len(failedClusters), len(pendingClusters), strings.Join(allMessages, "; "))
+		} else if len(allUnknownMessages) > 0 {
 			finalMessage = fmt.Sprintf("Failed on %d cluster(s), pending on %d cluster(s): %s",
 				len(failedClusters), len(pendingClusters), strings.Join(allMessages, "; "))
 		} else {
@@ -850,8 +861,14 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	}
 
 	if len(allUnknownMessages) > 0 {
-		finalMessage := fmt.Sprintf("Pending on %d cluster(s): %s",
-			len(pendingClusters), strings.Join(allUnknownMessages, "; "))
+		var finalMessage string
+		if len(successClusters) > 0 {
+			finalMessage = fmt.Sprintf("Applied to %d cluster(s), pending on %d cluster(s): %s",
+				len(successClusters), len(pendingClusters), strings.Join(allUnknownMessages, "; "))
+		} else {
+			finalMessage = fmt.Sprintf("Pending on %d cluster(s): %s",
+				len(pendingClusters), strings.Join(allUnknownMessages, "; "))
+		}
 		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypePending,
 			mrav1beta1.ReasonProcessing, finalMessage)
 	}
