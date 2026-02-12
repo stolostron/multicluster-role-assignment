@@ -1145,7 +1145,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypePending)))
-			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("unavailable status"))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("is unavailable"))
 		})
 
 		It("should include success cluster count in error message when some clusters succeed and others fail", func() {
@@ -2071,7 +2071,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(readyCondition).NotTo(BeNil())
 			Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAssignmentsPending)))
-			Expect(readyCondition.Message).To(Equal("2 out of 2 role assignments pending"))
+			Expect(readyCondition.Message).To(Equal("2 out of 2 role assignment(s) pending"))
 		})
 
 		It("Should cleanup ClusterPermissions when cluster removed from all assignments", func() {
@@ -2513,7 +2513,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
 				Expect(reason).To(Equal(mrav1beta1.ReasonAssignmentsFailure))
-				Expect(message).To(Equal("1 out of 2 role assignments failed"))
+				Expect(message).To(Equal("1 out of 2 role assignment(s) failed"))
 			})
 
 			It("Should return False with combined message when role assignments are in error and pending", func() {
@@ -2531,7 +2531,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
 				Expect(reason).To(Equal(mrav1beta1.ReasonAssignmentsFailure))
-				Expect(message).To(Equal("1 out of 2 role assignments failed, 1 out of 2 role assignments pending"))
+				Expect(message).To(Equal("1 out of 2 role assignment(s) failed, 1 out of 2 role assignment(s) pending"))
 			})
 
 			It("Should return Pending when some role assignments are pending", func() {
@@ -2540,14 +2540,14 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionFalse))
 				Expect(reason).To(Equal(mrav1beta1.ReasonAssignmentsPending))
-				Expect(message).To(Equal("1 out of 2 role assignments pending"))
+				Expect(message).To(Equal("1 out of 2 role assignment(s) pending"))
 			})
 
 			It("Should return True when all role assignments are applied", func() {
 				status, reason, message := reconciler.calculateReadyCondition(mra)
 				Expect(status).To(Equal(metav1.ConditionTrue))
 				Expect(reason).To(Equal(mrav1beta1.ReasonAssignmentsReady))
-				Expect(message).To(Equal("2 out of 2 role assignments ready"))
+				Expect(message).To(Equal("2 out of 2 role assignment(s) ready"))
 			})
 
 			It("Should return Unknown when status cannot be determined", func() {
@@ -2584,7 +2584,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Expect(status.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonApplicationFailed)))
 						Expect(status.Message).To(Equal(fmt.Sprintf(
-							"Failed on 2/2 clusters: cluster %s: %s; cluster %s: %s",
+							"Failed on 2/2 cluster(s): cluster %s: %s; cluster %s: %s",
 							cluster1Name, "connection timeout", cluster2Name, "permission denied")))
 						found = true
 						break
@@ -3491,7 +3491,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonSuccessfullyApplied)))
 						Expect(status.Message).To(SatisfyAll(
 							ContainSubstring("Applied to"),
-							ContainSubstring("clusters"),
+							ContainSubstring("cluster(s)"),
 						))
 						found = true
 						break
@@ -3523,7 +3523,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					if condition.Type == string(mrav1beta1.ConditionTypeApplied) {
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 						Expect(condition.Reason).To(Equal(string(mrav1beta1.ReasonApplyFailed)))
-						Expect(condition.Message).To(ContainSubstring("ClusterPermission applications failed"))
+						Expect(condition.Message).To(ContainSubstring("ClusterPermission(s) application failed"))
 						appliedFound = true
 						break
 					}
@@ -3537,7 +3537,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonApplicationFailed)))
 						Expect(status.Message).To(SatisfyAll(
 							ContainSubstring("Failed on"),
-							ContainSubstring("clusters"),
+							ContainSubstring("cluster(s)"),
 						))
 						Expect(status.Message).To(ContainSubstring(nonExistentCluster))
 						roleAssignmentFound = true
@@ -3573,7 +3573,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					if condition.Type == string(mrav1beta1.ConditionTypeApplied) {
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 						Expect(condition.Reason).To(Equal(string(mrav1beta1.ReasonApplyFailed)))
-						Expect(condition.Message).To(Equal("1 out of 2 ClusterPermission applications failed"))
+						Expect(condition.Message).To(Equal("1 out of 2 ClusterPermission(s) application failed"))
 						appliedFound = true
 						break
 					}
@@ -3585,10 +3585,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					if status.Name == mra.Spec.RoleAssignments[0].Name {
 						Expect(status.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
 						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonApplicationFailed)))
-						Expect(status.Message).To(ContainSubstring("Failed on"))
 						Expect(status.Message).To(SatisfyAll(
 							ContainSubstring("Failed on"),
-							ContainSubstring("clusters"),
+							ContainSubstring("cluster(s)"),
 							ContainSubstring(nonExistentCluster),
 						))
 						roleAssignmentFound = true
