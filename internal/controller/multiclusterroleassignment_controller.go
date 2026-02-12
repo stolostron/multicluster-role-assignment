@@ -530,24 +530,24 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateReadyCondition(
 	}
 
 	if errorCount > 0 && pendingCount > 0 {
-		message := formatStatusMessage(errorCount, totalRoleAssignments, "role assignments failed") + ", " +
-			formatStatusMessage(pendingCount, totalRoleAssignments, "role assignments pending")
+		message := formatStatusMessage(errorCount, totalRoleAssignments, "role assignment(s) failed") + ", " +
+			formatStatusMessage(pendingCount, totalRoleAssignments, "role assignment(s) pending")
 		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsFailure, message
 	}
 
 	if errorCount > 0 {
 		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsFailure, formatStatusMessage(
-			errorCount, totalRoleAssignments, "role assignments failed")
+			errorCount, totalRoleAssignments, "role assignment(s) failed")
 	}
 
 	if pendingCount > 0 {
 		return metav1.ConditionFalse, mrav1beta1.ReasonAssignmentsPending, formatStatusMessage(
-			pendingCount, totalRoleAssignments, "role assignments pending")
+			pendingCount, totalRoleAssignments, "role assignment(s) pending")
 	}
 
 	if activeCount == totalRoleAssignments && totalRoleAssignments > 0 {
 		return metav1.ConditionTrue, mrav1beta1.ReasonAssignmentsReady, formatStatusMessage(
-			activeCount, totalRoleAssignments, "role assignments ready")
+			activeCount, totalRoleAssignments, "role assignment(s) ready")
 	}
 
 	return metav1.ConditionUnknown, mrav1beta1.ReasonAssignmentsPending, "Status cannot be determined"
@@ -618,10 +618,10 @@ func (r *MulticlusterRoleAssignmentReconciler) processClusterPermissions(
 
 	if successCount == totalClusters {
 		r.setCondition(mra, mrav1beta1.ConditionTypeApplied, metav1.ConditionTrue, mrav1beta1.ReasonApplied,
-			formatStatusMessage(successCount, totalClusters, "ClusterPermissions applied successfully"))
+			formatStatusMessage(successCount, totalClusters, "ClusterPermission(s) applied successfully"))
 	} else {
 		r.setCondition(mra, mrav1beta1.ConditionTypeApplied, metav1.ConditionFalse, mrav1beta1.ReasonApplyFailed,
-			formatStatusMessage(totalClusters-successCount, totalClusters, "ClusterPermission applications failed"))
+			formatStatusMessage(totalClusters-successCount, totalClusters, "ClusterPermission(s) application failed"))
 	}
 
 	return state.FailedClusters
@@ -666,7 +666,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
 				err := state.FailedClusters[cluster]
 				errorParts = append(errorParts, fmt.Sprintf("cluster %s: %v", cluster, err))
 			}
-			finalMessage := fmt.Sprintf("Failed on %d/%d clusters: %s", len(failedClustersForRA),
+			finalMessage := fmt.Sprintf("Failed on %d/%d cluster(s): %s", len(failedClustersForRA),
 				len(failedClustersForRA)+len(successClustersForRA), strings.Join(errorParts, "; "))
 
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
@@ -674,7 +674,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
 		} else if len(successClustersForRA) > 0 {
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeActive,
 				mrav1beta1.ReasonSuccessfullyApplied,
-				fmt.Sprintf("Applied to %d clusters", len(successClustersForRA)))
+				fmt.Sprintf("Applied to %d cluster(s)", len(successClustersForRA)))
 		}
 	}
 }
@@ -810,7 +810,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 
 		if len(bindingsMap) == 0 {
 			pendingClusters[cluster] = true
-			allUnknownMessages = append(allUnknownMessages, fmt.Sprintf("cluster %s is in unavailable status", cluster))
+			allUnknownMessages = append(allUnknownMessages, fmt.Sprintf("%s is unavailable", cluster))
 			continue
 		}
 

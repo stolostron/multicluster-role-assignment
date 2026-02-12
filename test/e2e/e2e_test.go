@@ -3137,7 +3137,7 @@ var _ = Describe("Manager", Ordered, func() {
 					for _, cond := range mraObj.Status.Conditions {
 						if cond.Type == string(mrav1beta1.ConditionTypeReady) {
 							if cond.Status == metav1.ConditionFalse &&
-								strings.Contains(cond.Message, "role assignments failed") {
+								strings.Contains(cond.Message, "role assignment(s) failed") {
 								found = true
 							}
 						}
@@ -3698,13 +3698,13 @@ func validateMRASuccessConditions(mra *mrav1beta1.MulticlusterRoleAssignment) {
 	Expect(readyCondition).NotTo(BeNil())
 	Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
 	Expect(readyCondition.Reason).To(Equal(string(mrav1beta1.ReasonAssignmentsReady)))
-	Expect(readyCondition.Message).To(ContainSubstring("role assignments ready"))
+	Expect(readyCondition.Message).To(ContainSubstring("role assignment(s) ready"))
 
 	appliedCondition := findCondition(mra.Status.Conditions, string(mrav1beta1.ConditionTypeApplied))
 	Expect(appliedCondition).NotTo(BeNil())
 	Expect(appliedCondition.Status).To(Equal(metav1.ConditionTrue))
 	Expect(appliedCondition.Reason).To(Equal(string(mrav1beta1.ReasonApplied)))
-	Expect(appliedCondition.Message).To(ContainSubstring("ClusterPermissions applied successfully"))
+	Expect(appliedCondition.Message).To(ContainSubstring("ClusterPermission(s) applied successfully"))
 }
 
 // findCondition finds a condition by type in a slice of conditions.
