@@ -107,6 +107,20 @@ sed -i "s/release-${OLD_RELEASE}/release-${NEW_RELEASE}/g" \
   .tekton/multicluster-role-assignment-acm-${NEW_VERSION}-push.yaml
 ```
 
+### Step 6: Update Dockerfile CPE Version
+
+Update the CPE (Common Platform Enumeration) identifier in `Dockerfile.rhtap`:
+
+The CPE line contains the ACM version and needs to be updated:
+- `cpe:/a:redhat:acm:${OLD_RELEASE}::el9` → `cpe:/a:redhat:acm:${NEW_RELEASE}::el9`
+
+Use sed to update:
+
+```bash
+sed -i "s/cpe:\/a:redhat:acm:${OLD_RELEASE}::el9/cpe:\/a:redhat:acm:${NEW_RELEASE}::el9/g" \
+  Dockerfile.rhtap
+```
+
 ## Verification
 
 After making changes:
@@ -174,11 +188,16 @@ sed -i "s/acm-${OLD_VERSION}/acm-${NEW_VERSION}/g" \
 sed -i "s/release-${OLD_RELEASE}/release-${NEW_RELEASE}/g" \
   .tekton/multicluster-role-assignment-acm-${NEW_VERSION}-push.yaml
 
+# Update Dockerfile.rhtap CPE version
+sed -i "s/cpe:\/a:redhat:acm:${OLD_RELEASE}::el9/cpe:\/a:redhat:acm:${NEW_RELEASE}::el9/g" \
+  Dockerfile.rhtap
+
 echo "Done! Review changes with: git status && git diff --cached"
 ```
 
 ## Notes
 
-- This process only handles the `.tekton/` directory files
+- This process handles the `.tekton/` directory files and `Dockerfile.rhtap`
 - Other files in the diff (go.mod, cmd/main.go, controller files) are separate changes and should not be modified as part of the version bump
 - The version numbering follows the pattern: 3-digit ACM version (e.g., 217) maps to release version (e.g., 2.17)
+- The CPE (Common Platform Enumeration) identifier in Dockerfile.rhtap must match the ACM release version
