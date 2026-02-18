@@ -97,6 +97,22 @@ spec:
               - list
               - watch
             - apiGroups:
+              - storage.k8s.io
+              resources:
+              - storageclasses
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - config.openshift.io
+              resources:
+              - clusteroperators
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
               - project.openshift.io
               resources:
               - projects
@@ -214,6 +230,22 @@ spec:
               - volumesnapshotclasses
               - volumesnapshotcontents
               - volumesnapshots
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - storage.k8s.io
+              resources:
+              - storageclasses
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - config.openshift.io
+              resources:
+              - clusteroperators
               verbs:
               - get
               - list
