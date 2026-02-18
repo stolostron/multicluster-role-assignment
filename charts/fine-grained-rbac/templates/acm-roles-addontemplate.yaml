@@ -298,11 +298,6 @@ spec:
               - clusterview.open-cluster-management.io
               resources:
               - kubevirtprojects
-              verbs:
-              - list
-            - apiGroups:
-              - clusterview.open-cluster-management.io
-              resources:
               - userpermissions
               verbs:
               - list
@@ -352,11 +347,6 @@ spec:
               - clusterview.open-cluster-management.io
               resources:
               - kubevirtprojects
-              verbs:
-              - list
-            - apiGroups:
-              - clusterview.open-cluster-management.io
-              resources:
               - userpermissions
               verbs:
               - list
