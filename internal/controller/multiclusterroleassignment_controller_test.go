@@ -1260,6 +1260,88 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Applied to 1 cluster(s), failed on 1 cluster(s)"))
 		})
 
+		It("should set ReasonMissingNamespaces when binding failure is due to missing namespaces", func() {
+			mraName := "test-mra-missing-namespaces"
+			raName := "testRoleAssignmentMissingNs"
+			clusterRoleName := testViewRole
+			targetCluster := cluster1
+			namespace1 := "target-ns"
+
+			mra := &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mraName,
+					Namespace: multiclusterRoleAssignmentNamespace,
+				},
+				Spec: mrav1beta1.MulticlusterRoleAssignmentSpec{
+					Subject: rbacv1.Subject{
+						Kind:     "User",
+						APIGroup: "rbac.authorization.k8s.io",
+						Name:     "test-user",
+					},
+					RoleAssignments: []mrav1beta1.RoleAssignment{
+						{
+							Name:            raName,
+							ClusterRole:     clusterRoleName,
+							TargetNamespaces: []string{namespace1},
+							ClusterSelection: mrav1beta1.ClusterSelection{
+								Type: "placements",
+							},
+						},
+					},
+				},
+				Status: mrav1beta1.MulticlusterRoleAssignmentStatus{
+					RoleAssignments: []mrav1beta1.RoleAssignmentStatus{
+						{Name: raName, Status: string(mrav1beta1.StatusTypePending), Reason: string(mrav1beta1.ReasonProcessing), Message: "Resolved 1 target clusters"},
+					},
+				},
+			}
+
+			r := &MulticlusterRoleAssignmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			bindingName := r.generateBindingName(mra, raName, clusterRoleName, namespace1)
+
+			cp := &cpv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterPermissionManagedName,
+					Namespace: targetCluster,
+					Labels: map[string]string{
+						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+					},
+				},
+				Status: cpv1alpha1.ClusterPermissionStatus{
+					ResourceStatus: &cpv1alpha1.ResourceStatus{
+						RoleBindings: []cpv1alpha1.RoleBindingStatus{
+							{
+								Name:      bindingName,
+								Namespace: namespace1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    "Applied",
+										Status:  metav1.ConditionFalse,
+										Reason:  "NamespaceNotFound",
+										Message: "namespace target-ns does not exist on cluster",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(mra, cp).Build()
+			r.Client = fakeClient
+
+			roleAssignmentClusters := map[string][]string{raName: {targetCluster}}
+			allClusters := []string{targetCluster}
+
+			err := r.updateRoleAssignmentStatusesFromClusterPermission(context.Background(), mra, roleAssignmentClusters, allClusters)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mra.Status.RoleAssignments[0].Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+			Expect(mra.Status.RoleAssignments[0].Reason).To(Equal(string(mrav1beta1.ReasonMissingNamespaces)))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("Failed on 1 cluster(s):"))
+			Expect(mra.Status.RoleAssignments[0].Message).To(ContainSubstring("namespace target-ns does not exist"))
+		})
+
 		It("should include success cluster count in pending message when some clusters succeed and others are pending", func() {
 			mraName := "test-mra-success-and-pending"
 			raName := "testRoleAssignmentSuccessAndPending"
@@ -2591,6 +2673,66 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					}
 				}
 				Expect(found).To(BeTrue(), "Role assignment should have accumulated error messages")
+			})
+
+			It("Should set ReasonMissingNamespaces when all cluster failures are due to missing namespaces", func() {
+				reconciler.initializeRoleAssignmentStatuses(mra)
+
+				state := &ClusterPermissionProcessingState{
+					FailedClusters: map[string]error{
+						cluster1Name: fmt.Errorf("namespaces [foo, bar] not found on cluster"),
+						cluster2Name: fmt.Errorf("namespace target-ns does not exist"),
+					},
+				}
+
+				roleAssignmentClusters := map[string][]string{
+					mra.Spec.RoleAssignments[0].Name: {cluster1Name, cluster2Name},
+				}
+
+				reconciler.updateRoleAssignmentStatuses(
+					mra, []string{cluster1Name, cluster2Name}, state, roleAssignmentClusters)
+
+				found := false
+				for _, status := range mra.Status.RoleAssignments {
+					if status.Name == mra.Spec.RoleAssignments[0].Name {
+						Expect(status.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonMissingNamespaces)))
+						Expect(status.Message).To(ContainSubstring("Failed on 2/2 cluster(s):"))
+						Expect(status.Message).To(ContainSubstring("not found"))
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Role assignment should have ReasonMissingNamespaces")
+			})
+
+			It("Should set ReasonApplicationFailed when only some cluster failures are due to missing namespaces", func() {
+				reconciler.initializeRoleAssignmentStatuses(mra)
+
+				state := &ClusterPermissionProcessingState{
+					FailedClusters: map[string]error{
+						cluster1Name: fmt.Errorf("namespace foo not found"),
+						cluster2Name: fmt.Errorf("permission denied"),
+					},
+				}
+
+				roleAssignmentClusters := map[string][]string{
+					mra.Spec.RoleAssignments[0].Name: {cluster1Name, cluster2Name},
+				}
+
+				reconciler.updateRoleAssignmentStatuses(
+					mra, []string{cluster1Name, cluster2Name}, state, roleAssignmentClusters)
+
+				found := false
+				for _, status := range mra.Status.RoleAssignments {
+					if status.Name == mra.Spec.RoleAssignments[0].Name {
+						Expect(status.Status).To(Equal(string(mrav1beta1.StatusTypeError)))
+						Expect(status.Reason).To(Equal(string(mrav1beta1.ReasonApplicationFailed)))
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Role assignment should have ReasonApplicationFailed when failures are mixed")
 			})
 
 			It("Should preserve existing error status from placement resolution", func() {

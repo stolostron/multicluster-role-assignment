@@ -109,4 +109,7 @@ const (
 
 	// ReasonApplicationFailed indicates the role assignment application failed.
 	ReasonApplicationFailed RoleAssignmentStatusReason = "ApplicationFailed"
+
+	// ReasonMissingNamespaces indicates the role assignment application failed because some namespaces are missing.
+	ReasonMissingNamespaces RoleAssignmentStatusReason = "MissingNamespaces"
 )

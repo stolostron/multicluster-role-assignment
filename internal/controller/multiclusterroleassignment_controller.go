@@ -662,21 +662,55 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatuses(
 
 		if len(failedClustersForRA) > 0 {
 			var errorParts []string
+			allMissingNamespaces := true
 			for _, cluster := range failedClustersForRA {
 				err := state.FailedClusters[cluster]
 				errorParts = append(errorParts, fmt.Sprintf("cluster %s: %v", cluster, err))
+				if !isMissingNamespacesError(err) {
+					allMissingNamespaces = false
+				}
 			}
 			finalMessage := fmt.Sprintf("Failed on %d/%d cluster(s): %s", len(failedClustersForRA),
 				len(failedClustersForRA)+len(successClustersForRA), strings.Join(errorParts, "; "))
 
+			reason := mrav1beta1.ReasonApplicationFailed
+			if allMissingNamespaces {
+				reason = mrav1beta1.ReasonMissingNamespaces
+			}
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
-				mrav1beta1.ReasonApplicationFailed, finalMessage)
+				reason, finalMessage)
 		} else if len(successClustersForRA) > 0 {
 			r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeActive,
 				mrav1beta1.ReasonSuccessfullyApplied,
 				fmt.Sprintf("Applied to %d cluster(s)", len(successClustersForRA)))
 		}
 	}
+}
+
+// isMissingNamespacesError returns true if the error indicates failure due to missing namespaces
+// (e.g. namespace not found, namespaces do not exist). Used to set ReasonMissingNamespaces when applicable.
+func isMissingNamespacesError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "namespace") &&
+		(strings.Contains(s, "not found") || strings.Contains(s, "missing") || strings.Contains(s, "does not exist"))
+}
+
+// isMissingNamespacesCondition returns true if the binding condition indicates failure due to missing namespaces.
+// ClusterPermission may set Reason or Message when RoleBindings cannot be applied because target namespaces are missing.
+func isMissingNamespacesCondition(cond *metav1.Condition) bool {
+	if cond == nil {
+		return false
+	}
+	reasonLower := strings.ToLower(cond.Reason)
+	msgLower := strings.ToLower(cond.Message)
+	namespaceRelated := strings.Contains(reasonLower, "namespace") || strings.Contains(msgLower, "namespace")
+	missingRelated := strings.Contains(reasonLower, "notfound") || strings.Contains(reasonLower, "missing") ||
+		strings.Contains(msgLower, "not found") || strings.Contains(msgLower, "missing") ||
+		strings.Contains(msgLower, "does not exist")
+	return namespaceRelated && missingRelated
 }
 
 // analyzeBindingCondition inspects a condition and returns whether it is a failure or unknown/pending state.
@@ -800,6 +834,7 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 	failedClusters := make(map[string]bool)
 	pendingClusters := make(map[string]bool)
 	successClusters := make(map[string]bool)
+	allErrorsMissingNamespaces := true
 
 	// Loop all clusters in targetClusters and gather all Error and Unknown messages
 	for _, cluster := range targetClusters {
@@ -814,10 +849,13 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			continue
 		}
 
-		clusterErrors, clusterUnknowns := r.checkBindingStatusForCluster(mra, raSpec, cluster, bindingsMap)
+		clusterErrors, clusterUnknowns, errorsAreMissingNamespaces := r.checkBindingStatusForCluster(mra, raSpec, cluster, bindingsMap)
 		if len(clusterErrors) > 0 {
 			failedClusters[cluster] = true
 			allErrorMessages = append(allErrorMessages, clusterErrors...)
+			if !errorsAreMissingNamespaces {
+				allErrorsMissingNamespaces = false
+			}
 		} else if len(clusterUnknowns) > 0 {
 			pendingClusters[cluster] = true
 			allUnknownMessages = append(allUnknownMessages, clusterUnknowns...)
@@ -825,6 +863,9 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			// No errors and no unknowns means bindings are successfully applied
 			successClusters[cluster] = true
 		}
+	}
+	if len(allErrorMessages) == 0 {
+		allErrorsMissingNamespaces = false
 	}
 
 	// If the status is already in error state, append new CP binding errors/unknowns to the existing message
@@ -834,8 +875,12 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			allIssues := append(allErrorMessages, allUnknownMessages...)
 			additionalMessage := fmt.Sprintf("Additional binding issues: %s",
 				strings.Join(allIssues, "; "))
+			reason := mrav1beta1.ReasonApplicationFailed
+			if allErrorsMissingNamespaces && len(allErrorMessages) > 0 {
+				reason = mrav1beta1.ReasonMissingNamespaces
+			}
 			r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
-				mrav1beta1.ReasonApplicationFailed, raStatus.Message+". "+additionalMessage)
+				reason, raStatus.Message+". "+additionalMessage)
 		}
 		// Don't overwrite existing error with pending/success - keep the error state
 		return
@@ -855,8 +900,12 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 			finalMessage = fmt.Sprintf("Failed on %d cluster(s): %s",
 				len(failedClusters), strings.Join(allErrorMessages, "; "))
 		}
+		reason := mrav1beta1.ReasonApplicationFailed
+		if allErrorsMissingNamespaces {
+			reason = mrav1beta1.ReasonMissingNamespaces
+		}
 		r.setRoleAssignmentStatus(mra, raStatus.Name, mrav1beta1.StatusTypeError,
-			mrav1beta1.ReasonApplicationFailed, finalMessage)
+			reason, finalMessage)
 		return
 	}
 
@@ -875,13 +924,13 @@ func (r *MulticlusterRoleAssignmentReconciler) processRoleAssignmentStatus(
 }
 
 // checkBindingStatusForCluster checks if any bindings for the RoleAssignment on a specific cluster are in Error or
-// Unknown state.
+// Unknown state. The third return value is true when there are errors and all of them are due to missing namespaces.
 func (r *MulticlusterRoleAssignmentReconciler) checkBindingStatusForCluster(
 	mra *mrav1beta1.MulticlusterRoleAssignment,
 	raSpec *mrav1beta1.RoleAssignment,
 	cluster string,
 	bindingsMap map[string]*metav1.Condition,
-) ([]string, []string) {
+) ([]string, []string, bool) {
 	if len(raSpec.TargetNamespaces) == 0 {
 		return r.checkClusterRoleBindingStatus(mra, raSpec, cluster, bindingsMap)
 	}
@@ -889,15 +938,16 @@ func (r *MulticlusterRoleAssignmentReconciler) checkBindingStatusForCluster(
 }
 
 // checkClusterRoleBindingStatus checks the status of a ClusterRoleBinding and returns
-// slices of error messages and unknown/pending messages.
+// slices of error messages and unknown/pending messages, and whether all errors are due to missing namespaces.
 func (r *MulticlusterRoleAssignmentReconciler) checkClusterRoleBindingStatus(
 	mra *mrav1beta1.MulticlusterRoleAssignment,
 	raSpec *mrav1beta1.RoleAssignment,
 	cluster string,
 	bindingsMap map[string]*metav1.Condition,
-) ([]string, []string) {
+) ([]string, []string, bool) {
 	var allErrorMsg []string
 	var allUnknownMsg []string
+	allErrorsMissingNamespaces := true
 
 	bindingName := r.generateBindingName(mra, raSpec.Name, raSpec.ClusterRole)
 	key := "CRB:" + bindingName
@@ -906,22 +956,30 @@ func (r *MulticlusterRoleAssignmentReconciler) checkClusterRoleBindingStatus(
 		isError, isUnknown, msg := r.analyzeBindingCondition(cond, bindingName, "", cluster)
 		if isError {
 			allErrorMsg = append(allErrorMsg, msg)
+			if !isMissingNamespacesCondition(cond) {
+				allErrorsMissingNamespaces = false
+			}
 		} else if isUnknown {
 			allUnknownMsg = append(allUnknownMsg, msg)
 		}
 	}
-	return allErrorMsg, allUnknownMsg
+	if len(allErrorMsg) == 0 {
+		allErrorsMissingNamespaces = false
+	}
+	return allErrorMsg, allUnknownMsg, allErrorsMissingNamespaces
 }
 
 // checkRoleBindingStatus checks the status of RoleBindings for all target namespaces.
+// The third return value is true when there are errors and all of them are due to missing namespaces.
 func (r *MulticlusterRoleAssignmentReconciler) checkRoleBindingStatus(
 	mra *mrav1beta1.MulticlusterRoleAssignment,
 	raSpec *mrav1beta1.RoleAssignment,
 	cluster string,
 	bindingsMap map[string]*metav1.Condition,
-) ([]string, []string) {
+) ([]string, []string, bool) {
 	var allErrorMsg []string
 	var allUnknownMsg []string
+	allErrorsMissingNamespaces := true
 
 	for _, namespace := range raSpec.TargetNamespaces {
 		bindingName := r.generateBindingName(mra, raSpec.Name, raSpec.ClusterRole, namespace)
@@ -931,12 +989,18 @@ func (r *MulticlusterRoleAssignmentReconciler) checkRoleBindingStatus(
 			isError, isUnknown, msg := r.analyzeBindingCondition(cond, bindingName, namespace, cluster)
 			if isError {
 				allErrorMsg = append(allErrorMsg, msg)
+				if !isMissingNamespacesCondition(cond) {
+					allErrorsMissingNamespaces = false
+				}
 			} else if isUnknown {
 				allUnknownMsg = append(allUnknownMsg, msg)
 			}
 		}
 	}
-	return allErrorMsg, allUnknownMsg
+	if len(allErrorMsg) == 0 {
+		allErrorsMissingNamespaces = false
+	}
+	return allErrorMsg, allUnknownMsg, allErrorsMissingNamespaces
 }
 
 // ensureClusterPermission creates or updates the ClusterPermission for a specific cluster.
