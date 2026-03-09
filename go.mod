@@ -5,9 +5,9 @@ go 1.25.0
 require (
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
-	k8s.io/api v0.35.1
-	k8s.io/apimachinery v0.35.1
-	k8s.io/client-go v0.35.1
+	k8s.io/api v0.35.2
+	k8s.io/apimachinery v0.35.2
+	k8s.io/client-go v0.35.2
 	open-cluster-management.io/api v1.2.0
 	open-cluster-management.io/cluster-permission v0.16.1-0.20251223064118-28a3fb8c91bd
 	sigs.k8s.io/controller-runtime v0.23.3
