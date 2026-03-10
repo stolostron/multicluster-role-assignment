@@ -44,7 +44,7 @@ spec:
     - name: konflux-application-name
       value: release-acm-217
     - name: slack-member-id
-      value: U0608EFFZB2 # @mshort, The slack member id of the current component owner.
+      value: U02CRCBPXK4 # @zhujian7, The slack member id of the current component owner.
   pipelineRef:
     resolver: git
     params:
