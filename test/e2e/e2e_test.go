@@ -3098,8 +3098,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should manually fail the ClusterPermission", func() {
 				By("updating ClusterPermission status to Failed")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName,
 						clusterNamespace,
 						metav1.ConditionFalse,
@@ -3172,8 +3172,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should manually update ClusterPermission status to Unknown", func() {
 				By("updating ClusterPermission status to Unknown")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName,
 						clusterNamespace,
 						metav1.ConditionUnknown,
@@ -3252,8 +3252,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should update ClusterPermission status to Failed and verify both MRAs reflect failure", func() {
 				By("setting ClusterPermission status to Failed (affects all bindings)")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName, clusterNamespace,
 						metav1.ConditionFalse, "ApplyFailed", "Simulated failure for shared CP test",
 					)
@@ -3266,8 +3266,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should recover both MRAs when ClusterPermission status becomes True", func() {
 				By("setting ClusterPermission status back to True")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName, clusterNamespace,
 						metav1.ConditionTrue, "Applied", "Recovered for shared CP test",
 					)
@@ -3323,8 +3323,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should fail when ClusterPermission status becomes Failed", func() {
 				By("updating ClusterPermission status to Failed")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName, clusterNamespace,
 						metav1.ConditionFalse, "ApplyFailed", "Temporary failure for recovery test",
 					)
@@ -3350,8 +3350,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should recover when ClusterPermission status becomes True again", func() {
 				By("updating ClusterPermission status back to True (simulating recovery)")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatus(
+				Eventually(func() error {
+					return updateClusterPermissionStatus(
 						cpName, clusterNamespace,
 						metav1.ConditionTrue, "Applied", "Recovery successful",
 					)
@@ -3492,10 +3492,14 @@ var _ = Describe("Manager", Ordered, func() {
 				}
 
 				By("injecting mixed statuses into ClusterPermissions")
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster01", statusMapCluster1)
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster02", statusMapCluster2)
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster03", statusMapCluster3)
+				Eventually(func() error {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", statusMapCluster1); err != nil {
+						return err
+					}
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", statusMapCluster2); err != nil {
+						return err
+					}
+					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", statusMapCluster3)
 				}, 1*time.Minute, 1*time.Second).Should(Succeed())
 
 				By("verifying MRA statuses")
@@ -3568,10 +3572,14 @@ var _ = Describe("Manager", Ordered, func() {
 					},
 				}
 
-				Eventually(func(g Gomega) {
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster01", successMap)
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster02", successMap)
-					updateClusterPermissionStatusByOwner(cpName, "managedcluster03", successMap)
+				Eventually(func() error {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", successMap); err != nil {
+						return err
+					}
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", successMap); err != nil {
+						return err
+					}
+					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", successMap)
 				}, 1*time.Minute, 1*time.Second).Should(Succeed())
 
 				By("verifying all MRAs recover to Active")
@@ -3653,12 +3661,12 @@ func validateClusterPermissionBindings(clusterPermission cpv1alpha1.ClusterPermi
 // re-fetched version after reconciliation.
 func simulateClusterPermissionSuccess(mra *mrav1beta1.MulticlusterRoleAssignment) {
 	for _, cluster := range mra.Status.AppliedClusters {
-		Eventually(func(g Gomega) {
-			updateClusterPermissionStatus(
+		Eventually(func() error {
+			return updateClusterPermissionStatus(
 				"mra-managed-permissions", cluster,
 				metav1.ConditionTrue, "AppliedManifestComplete", "Apply manifest complete",
 			)
-		}).Should(Succeed())
+		}, 30*time.Second, 1*time.Second).Should(Succeed())
 	}
 
 	// Wait for the controller to reconcile with the updated ClusterPermission status
@@ -4202,8 +4210,9 @@ func verifyMRAHasRoleAssignmentStatus(mraName, raName string, expectedStatus mra
 }
 
 // updateClusterPermissionStatus updates the status of a ClusterPermission to simulate success or failure.
+// Returns an error instead of using Expect so callers wrapped in Eventually can retry on conflicts.
 func updateClusterPermissionStatus(
-	name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) {
+	name, namespace string, conditionStatus metav1.ConditionStatus, reason, message string) error {
 	// Fetch the latest version first
 	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
 	var cp cpv1alpha1.ClusterPermission
@@ -4298,7 +4307,6 @@ func updateClusterPermissionStatus(
 		}
 	}
 
-	// Marshall back to JSON and apply status update
 	cpBytes, err := json.Marshal(cp)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -4307,8 +4315,11 @@ func updateClusterPermissionStatus(
 	Expect(err).NotTo(HaveOccurred())
 
 	cmd := exec.Command("kubectl", "apply", "-f", tmpFile, "--subresource=status", "--server-side")
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
+	if _, err := utils.Run(cmd); err != nil {
+		return fmt.Errorf("failed to apply status update: %w", err)
+	}
+
+	return nil
 }
 
 // StatusDetails holds the status details for a binding or MRA
@@ -4319,8 +4330,9 @@ type StatusDetails struct {
 }
 
 // updateClusterPermissionStatusByOwner updates bindings with statuses based on the owning MRA name.
+// Returns an error instead of using Expect so callers wrapped in Eventually can retry on conflicts.
 func updateClusterPermissionStatusByOwner(
-	name, namespace string, statusMap map[string]StatusDetails) {
+	name, namespace string, statusMap map[string]StatusDetails) error {
 
 	// Fetch the latest version first
 	cpJSON := fetchK8sResourceJSON("clusterpermissions", name, namespace)
@@ -4442,7 +4454,6 @@ func updateClusterPermissionStatusByOwner(
 		}
 	}
 
-	// Marshall back to JSON and apply status update
 	cpBytes, err := json.Marshal(cp)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -4451,8 +4462,11 @@ func updateClusterPermissionStatusByOwner(
 	Expect(err).NotTo(HaveOccurred())
 
 	cmd := exec.Command("kubectl", "apply", "-f", tmpFile, "--subresource=status", "--server-side")
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
+	if _, err := utils.Run(cmd); err != nil {
+		return fmt.Errorf("failed to apply status update: %w", err)
+	}
+
+	return nil
 }
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
