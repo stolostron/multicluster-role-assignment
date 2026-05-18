@@ -20,7 +20,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install yq
-        run: go install github.com/mikefarah/yq/v4@latest
+        run: go install github.com/mikefarah/yq/v4@v4.53.2
 
       - name: Run make manifests
         run: make manifests
