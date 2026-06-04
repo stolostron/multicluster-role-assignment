@@ -9,7 +9,7 @@ require (
 	k8s.io/apimachinery v0.35.5
 	k8s.io/client-go v0.35.5
 	open-cluster-management.io/api v1.3.0
-	open-cluster-management.io/cluster-permission v0.16.1-0.20251223064118-28a3fb8c91bd
+	open-cluster-management.io/cluster-permission v0.16.2
 	sigs.k8s.io/controller-runtime v0.23.3
 )
 
@@ -32,7 +32,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
-	github.com/go-openapi/jsonreference v0.21.5 // indirect
+	github.com/go-openapi/jsonreference v0.21.6 // indirect
 	github.com/go-openapi/swag v0.26.0 // indirect
 	github.com/go-openapi/swag/cmdutils v0.26.0 // indirect
 	github.com/go-openapi/swag/conv v0.26.0 // indirect
@@ -61,13 +61,13 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
+	github.com/prometheus/common v0.68.1 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0 // indirect
