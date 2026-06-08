@@ -1,6 +1,5 @@
 ---
 description: Build commands, testing, code generation, CI, and repo-specific development guidance
-globs:
 alwaysApply: false
 ---
 

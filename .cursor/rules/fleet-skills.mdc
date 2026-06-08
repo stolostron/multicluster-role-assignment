@@ -1,6 +1,5 @@
 ---
 description: Fleet Engineering skills catalog — fetch and apply when a task matches a skill domain
-globs:
 alwaysApply: false
 ---
 
