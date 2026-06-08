@@ -1,0 +1,7 @@
+---
+description: System architecture, data flows, and module layout for the MRA operator
+globs:
+alwaysApply: false
+---
+
+@docs/ARCHITECTURE.md
