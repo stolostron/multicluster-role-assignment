@@ -1,0 +1,58 @@
+---
+description: Build commands, testing, code generation, CI, and repo-specific development guidance
+alwaysApply: false
+---
+
+# Development Guide
+
+## Build / test / lint commands
+
+```bash
+make build                  # Build manager binary to bin/manager
+make test                   # Unit tests (envtest, all packages except e2e)
+make test-e2e               # E2E tests (requires Kind pre-installed)
+make cleanup-test-e2e       # Tear down Kind cluster
+make lint                   # golangci-lint v2 (config: .golangci.yml)
+make lint-fix               # Lint with auto-fix
+make manifests              # Regenerate CRDs + RBAC from kubebuilder markers
+make generate               # Regenerate deepcopy methods
+make fmt                    # go fmt
+make vet                    # go vet
+```
+
+### Running a single test
+
+```bash
+go test ./internal/controller/ -run TestSpecificName -v
+KUBECONFIG=$HOME/.kube/config go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="pattern"
+```
+
+## CRD and CEL validation
+
+CEL validation rules use `self.__namespace__` (double-underscore syntax) for OLMv1 compatibility — `namespace` is a reserved keyword in newer CEL/OLMv1. String literals in CEL rules use double quotes (`"User"`, `"Group"`).
+
+After modifying `XValidation` markers in `api/v1beta1/multiclusterroleassignment_types.go`, always run `make manifests` to regenerate the CRD YAML.
+
+## RBAC sync
+
+RBAC rules are defined via kubebuilder markers in the controller and synced to the Helm chart by `hack/sync-rbac-rules.sh`. The `validate-rbac` GitHub Action ensures they stay in sync. The sync script runs automatically as part of `make manifests`.
+
+## CI systems
+
+- **GitHub Actions:** lint, unit tests, e2e tests, RBAC validation (`.github/workflows/`)
+- **Prow:** OpenShift CI for release branches (config in `openshift/release` repo)
+- **Konflux/Tekton:** RHTAP pipelines per ACM version (`.tekton/`)
+- **Dependabot + Renovate:** Automated dependency updates
+
+## Release branches
+
+Release branches follow `release-X.YY` (e.g., `release-2.17`). Each has corresponding Tekton pipeline files in `.tekton/`. Use the `/update-acm-version` Claude command when adding a new release version.
+
+## Dockerfile variants
+
+- `Dockerfile` — standard multi-stage build (`golang:1.25` → distroless runtime)
+- `Dockerfile.rhtap` — Red Hat build with FIPS compliance (`GOEXPERIMENT=strictfipsruntime`), UBI-based runtime, CPE labels
+
+## Personal configuration
+
+Read `.claude/user.local.md` at the start of any task that needs an assignee, email, or project key. If the file does not exist, ask the user.
