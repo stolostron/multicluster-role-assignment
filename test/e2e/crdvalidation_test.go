@@ -89,7 +89,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 				}
 			},
 			// Valid cases
-			Entry("should accept lowercase alphanumeric names", []string{defaultNS}, true),
+			Entry("should accept lowercase alphanumeric names", []string{"default"}, true),
 			Entry("should accept names with hyphens", []string{"my-namespace"}, true),
 			Entry("should accept names with numbers", []string{"namespace-123"}, true),
 			Entry("should accept single character names", []string{"a"}, true),
@@ -97,7 +97,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 			Entry("should accept all numbers", []string{"123456"}, true),
 			Entry("should accept mixed alphanumeric with hyphens", []string{"my-app-namespace-1"}, true),
 			Entry("should accept names up to 63 characters", []string{strings.Repeat("a", 63)}, true),
-			Entry("should accept multiple valid namespaces", []string{defaultNS, kubeSystemNS, "my-app-ns"}, true),
+			Entry("should accept multiple valid namespaces", []string{"default", "kube-system", "my-app-ns"}, true),
 
 			// Invalid cases
 			Entry("should reject names with uppercase characters", []string{"MyNamespace"}, false),
@@ -109,7 +109,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 			Entry("should reject names with spaces", []string{"my namespace"}, false),
 			Entry("should reject empty names", []string{""}, false),
 			Entry("should reject names exceeding 63 characters", []string{strings.Repeat("a", 64)}, false),
-			Entry("should reject if any namespace in list is invalid", []string{defaultNS, "Invalid-NS", "my-app-ns"}, false),
+			Entry("should reject if any namespace in list is invalid", []string{"default", "Invalid-NS", "my-app-ns"}, false),
 		)
 	})
 
@@ -166,7 +166,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 				}
 			},
 			// Valid cases
-			Entry("should accept lowercase alphanumeric names", defaultNS, true),
+			Entry("should accept lowercase alphanumeric names", "default", true),
 			Entry("should accept names with hyphens", "my-namespace", true),
 			Entry("should accept names with numbers", "namespace-123", true),
 			Entry("should accept single character names", "a", true),
@@ -217,7 +217,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 			Entry("should reject lowercase user kind",
 				noAPIGroup, "user", "test-user", noNamespace, false),
 			Entry("should reject User with non-empty namespace",
-				noAPIGroup, userKind, "test-user", defaultNS, false),
+				noAPIGroup, userKind, "test-user", "default", false),
 			Entry("should reject empty string User name",
 				noAPIGroup, userKind, "", noNamespace, false),
 
@@ -236,14 +236,14 @@ var _ = Describe("CRD Validation", Ordered, func() {
 			Entry("should reject lowercase group kind",
 				noAPIGroup, "group", "test-group", noNamespace, false),
 			Entry("should reject Group with non-empty namespace",
-				noAPIGroup, groupKind, "test-group", defaultNS, false),
+				noAPIGroup, groupKind, "test-group", "default", false),
 
 			// ServiceAccount Kind
 			// Valid cases
 			Entry("should accept ServiceAccount with empty apiGroup",
 				noAPIGroup, serviceAccountKind, "test-sa", "test-ns", true),
 			Entry("should accept the default ServiceAccount",
-				noAPIGroup, serviceAccountKind, defaultNS, defaultNS, true),
+				noAPIGroup, serviceAccountKind, "default", "default", true),
 			Entry("should accept ServiceAccount with single character namespace",
 				noAPIGroup, serviceAccountKind, "test-sa", "a", true),
 			Entry("should accept ServiceAccount with hyphenated namespace",
@@ -251,7 +251,7 @@ var _ = Describe("CRD Validation", Ordered, func() {
 
 			// Invalid cases
 			Entry("should reject ServiceAccount with non-empty apiGroup",
-				rbacAPIGroup, serviceAccountKind, "test-sa", defaultNS, false),
+				rbacAPIGroup, serviceAccountKind, "test-sa", "default", false),
 			Entry("should reject ServiceAccount with empty namespace",
 				noAPIGroup, serviceAccountKind, "test-sa", noNamespace, false),
 			Entry("should reject ServiceAccount namespace with dots",
@@ -302,7 +302,7 @@ func buildMRAYAML(
 		setSubjectApiGroup = *subjectAPIGroup
 	}
 
-	setSubjectKind := userKind
+	setSubjectKind := "User"
 	if subjectKind != nil {
 		setSubjectKind = *subjectKind
 	}
@@ -410,7 +410,7 @@ func expectMRAApplyToSucceed(yamlPath string) {
 // cleanupCRDValidationTestMRA deletes the test MulticlusterRoleAssignment if it exists.
 func cleanupCRDValidationTestMRA() {
 	cmd := exec.Command(
-		"kubectl", "delete", "multiclusterroleassignment", "-n", defaultNS, "crd-validation-test",
+		"kubectl", "delete", "multiclusterroleassignment", "-n", "default", "crd-validation-test",
 		"--ignore-not-found=true")
 	_, _ = utils.Run(cmd)
 }

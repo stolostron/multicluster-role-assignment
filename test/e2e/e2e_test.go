@@ -73,34 +73,6 @@ const testMulticlusterRoleAssignmentMultiple1Name = "test-multicluster-role-assi
 // assignments - #2
 const testMulticlusterRoleAssignmentMultiple2Name = "test-multicluster-role-assignment-multiple-2"
 
-const (
-	managedCluster01 = "managedcluster01"
-	managedCluster02 = "managedcluster02"
-	managedCluster03 = "managedcluster03"
-
-	placementCluster0102   = "placement-cluster-01-02"
-	placementCluster010203 = "placement-cluster-01-02-03"
-	placementCluster0203   = "placement-cluster-02-03"
-	placementCluster0103   = "placement-cluster-01-03"
-
-	defaultNS       = "default"
-	kubeSystemNS    = "kube-system"
-	monitoringNS    = "monitoring"
-	observabilityNS = "observability"
-	loggingNS       = "logging"
-	developmentNS   = "development"
-
-	adminRole      = "admin"
-	placementsType = "placements"
-
-	sampleMultiple2Manifest = "config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml"
-	sampleMultiple1Manifest = "config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml"
-	sampleSingle2Manifest   = "config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml"
-	sampleSingle1Manifest   = "config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml"
-
-	adminAssignmentCluster1 = "admin-assignment-cluster-1"
-)
-
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
 	var logLineCountBeforeTest int
@@ -155,13 +127,13 @@ var _ = Describe("Manager", Ordered, func() {
 			name     string
 			clusters []string
 		}{
-			{"placement-cluster-01", []string{managedCluster01}},
-			{"placement-cluster-02", []string{managedCluster02}},
-			{"placement-cluster-03", []string{managedCluster03}},
-			{placementCluster0102, []string{managedCluster01, managedCluster02}},
-			{placementCluster010203, []string{managedCluster01, managedCluster02, managedCluster03}},
-			{placementCluster0203, []string{managedCluster02, managedCluster03}},
-			{placementCluster0103, []string{managedCluster01, managedCluster03}},
+			{"placement-cluster-01", []string{"managedcluster01"}},
+			{"placement-cluster-02", []string{"managedcluster02"}},
+			{"placement-cluster-03", []string{"managedcluster03"}},
+			{"placement-cluster-01-02", []string{"managedcluster01", "managedcluster02"}},
+			{"placement-cluster-01-02-03", []string{"managedcluster01", "managedcluster02", "managedcluster03"}},
+			{"placement-cluster-02-03", []string{"managedcluster02", "managedcluster03"}},
+			{"placement-cluster-01-03", []string{"managedcluster01", "managedcluster03"}},
 		}
 
 		for _, p := range placements {
@@ -197,10 +169,10 @@ var _ = Describe("Manager", Ordered, func() {
 			"placement-cluster-01",
 			"placement-cluster-02",
 			"placement-cluster-03",
-			placementCluster0102,
-			placementCluster010203,
-			placementCluster0203,
-			placementCluster0103,
+			"placement-cluster-01-02",
+			"placement-cluster-01-02-03",
+			"placement-cluster-02-03",
+			"placement-cluster-01-03",
 		}
 
 		for _, placementName := range placementNames {
@@ -430,7 +402,7 @@ var _ = Describe("Manager", Ordered, func() {
 			var mra mrav1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("resource creation and fetching", func() {
@@ -438,7 +410,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-					applyK8sManifest(sampleSingle1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -451,7 +423,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should fetch ClusterPermission", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
-						"mra-managed-permissions", managedCluster01)
+						"mra-managed-permissions", "managedcluster01")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -506,7 +478,7 @@ var _ = Describe("Manager", Ordered, func() {
 			var mra mrav1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("resource creation and modification", func() {
@@ -514,7 +486,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and modify MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one RoleAssignment")
-					applyK8sManifest(sampleSingle1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("fetching the initial MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -537,7 +509,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should fetch updated ClusterPermission", func() {
 					By("waiting for updated ClusterPermission to be fetched")
 					clusterPermissionJSON = fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", managedCluster01)
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
 
 					By("unmarshaling updated ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -593,7 +565,7 @@ var _ = Describe("Manager", Ordered, func() {
 			var mra mrav1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{managedCluster02})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
 			})
 
 			Context("resource creation and fetching", func() {
@@ -601,7 +573,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
-					applyK8sManifest(sampleSingle2Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -614,7 +586,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should fetch ClusterPermission", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
-						"mra-managed-permissions", managedCluster02)
+						"mra-managed-permissions", "managedcluster02")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -630,11 +602,11 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
@@ -671,12 +643,12 @@ var _ = Describe("Manager", Ordered, func() {
 
 		Context("should delete ClusterPermission when MulticlusterRoleAssignment is deleted", func() {
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{managedCluster02})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
 			})
 
 			It("should create and delete MulticlusterRoleAssignment", func() {
 				By("creating a MulticlusterRoleAssignment with one namespaced RoleAssignment")
-				applyK8sManifest(sampleSingle2Manifest)
+				applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml")
 
 				By("deleting the MulticlusterRoleAssignment")
 				deleteK8sMRA(testMulticlusterRoleAssignmentSingleRBName)
@@ -684,7 +656,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should verify ClusterPermission is deleted", func() {
 				By("verifying ClusterPermission is deleted")
-				verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", managedCluster02)
+				verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 			})
 
 			It("should verify MulticlusterRoleAssignment no longer exists", func() {
@@ -700,7 +672,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
 			})
 
 			Context("resource creation and fetching", func() {
@@ -709,7 +681,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
-					applyK8sManifest(sampleMultiple1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -743,12 +715,12 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBinding
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -761,10 +733,10 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// RoleBindings
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -780,8 +752,8 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBinding
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -813,7 +785,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName,
 						"view-assignment-namespaced-clusters-1-2")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "edit-assignment-cluster-3")
-					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, adminAssignmentCluster1)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "admin-assignment-cluster-1")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName,
 						"monitoring-assignment-namespaced-all-clusters")
 				})
@@ -831,7 +803,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
-					managedCluster01, managedCluster02, managedCluster03, "newmanagedcluster04"})
+					"managedcluster01", "managedcluster02", "managedcluster03", "newmanagedcluster04"})
 
 				By("cleaning up placement-newcluster-04")
 				cmd := exec.Command("kubectl", "delete", "placementdecision", "placement-newcluster-04-decision-1",
@@ -851,7 +823,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create initial MRA and managed cluster", func() {
 					By("creating a MulticlusterRoleAssignment with multiple RoleAssignments")
-					applyK8sManifest(sampleMultiple1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("creating newmanagedcluster04 namespace")
 					cmd := exec.Command("kubectl", "create", "ns", "newmanagedcluster04")
@@ -872,7 +844,7 @@ var _ = Describe("Manager", Ordered, func() {
 						Name:        "cluster04-assignment",
 						ClusterRole: "view",
 						ClusterSelection: mrav1beta1.ClusterSelection{
-							Type: placementsType,
+							Type: "placements",
 							Placements: []mrav1beta1.PlacementRef{
 								{
 									Name:      "placement-newcluster-04",
@@ -880,7 +852,7 @@ var _ = Describe("Manager", Ordered, func() {
 								},
 							},
 						},
-						TargetNamespaces: []string{defaultNS, kubeSystemNS},
+						TargetNamespaces: []string{"default", "kube-system"},
 					}
 					mra.Spec.RoleAssignments = append(mra.Spec.RoleAssignments, newRoleAssignment)
 					patchK8sResource(
@@ -910,8 +882,8 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(*clusterPermission.Spec.RoleBindings).To(HaveLen(2))
 
 					expectedBindings := []ExpectedBinding{
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
@@ -993,7 +965,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateRoleAssignmentSuccessStatus(
 						roleAssignmentsByName, "edit-assignment-cluster-3")
 					validateRoleAssignmentSuccessStatus(
-						roleAssignmentsByName, adminAssignmentCluster1)
+						roleAssignmentsByName, "admin-assignment-cluster-1")
 					validateRoleAssignmentSuccessStatus(
 						roleAssignmentsByName, "monitoring-assignment-namespaced-all-clusters")
 				})
@@ -1013,11 +985,11 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{managedCluster02})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("resource creation and fetching", func() {
@@ -1027,10 +999,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
 					manifestFiles := []string{
-						sampleMultiple2Manifest,
-						sampleMultiple1Manifest,
-						sampleSingle2Manifest,
-						sampleSingle1Manifest,
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -1079,18 +1051,18 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -1106,19 +1078,19 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -1135,12 +1107,12 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -1175,7 +1147,7 @@ var _ = Describe("Manager", Ordered, func() {
 					Expect(mras[0].Status.RoleAssignments).To(HaveLen(6))
 					roleAssignmentsByName1 := mapRoleAssignmentsByName(mras[0])
 					assignmentNames1 := []string{
-						adminAssignmentCluster1,
+						"admin-assignment-cluster-1",
 						"view-assignment-all-clusters",
 						"edit-assignment-single-namespace",
 						"monitoring-assignment-multi-namespace-single-cluster",
@@ -1193,7 +1165,7 @@ var _ = Describe("Manager", Ordered, func() {
 					assignmentNames2 := []string{
 						"view-assignment-namespaced-clusters-1-2",
 						"edit-assignment-cluster-3",
-						adminAssignmentCluster1,
+						"admin-assignment-cluster-1",
 						"monitoring-assignment-namespaced-all-clusters",
 					}
 					for _, name := range assignmentNames2 {
@@ -1230,11 +1202,11 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{managedCluster02})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("resource creation and comprehensive modification", func() {
@@ -1245,10 +1217,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and comprehensively modify all MulticlusterRoleAssignments", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
 					manifestFiles := []string{
-						sampleMultiple2Manifest,
-						sampleMultiple1Manifest,
-						sampleSingle2Manifest,
-						sampleSingle1Manifest,
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -1294,7 +1266,7 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[2].Spec.RoleAssignments[0].Name = "modified-test-role-assignment-namespaced"
 					mras[2].Spec.RoleAssignments[0].ClusterSelection.Placements = []mrav1beta1.PlacementRef{
 						{
-							Name:      placementCluster010203,
+							Name:      "placement-cluster-01-02-03",
 							Namespace: openClusterManagementGlobalSetNamespace,
 						},
 					}
@@ -1307,11 +1279,11 @@ var _ = Describe("Manager", Ordered, func() {
 					mras[3].Spec.Subject.Name = "modified-group-single-clusterrolebinding"
 					mras[3].Spec.Subject.Kind = groupSubjectKind
 					mras[3].Spec.RoleAssignments[0].Name = "modified-test-role-assignment"
-					mras[3].Spec.RoleAssignments[0].ClusterRole = adminRole
-					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{defaultNS, kubeSystemNS, "applications"}
+					mras[3].Spec.RoleAssignments[0].ClusterRole = "admin"
+					mras[3].Spec.RoleAssignments[0].TargetNamespaces = []string{"default", "kube-system", "applications"}
 					mras[3].Spec.RoleAssignments[0].ClusterSelection.Placements = []mrav1beta1.PlacementRef{
 						{
-							Name:      placementCluster010203,
+							Name:      "placement-cluster-01-02-03",
 							Namespace: openClusterManagementGlobalSetNamespace,
 						},
 					}
@@ -1354,26 +1326,26 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "edit", Namespace: "", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "view", Namespace: "", SubjectName: "modified-group-multiple-2"},
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "admin2", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "admin2", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "admin2", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "metrics", SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: adminRole, Namespace: defaultNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: kubeSystemNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -1389,26 +1361,26 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "modified-group-multiple-2"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "modified-group-multiple-2"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "edit", Namespace: "new-dev-ns", SubjectName: "modified-group-multiple-2"},
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "admin2", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "admin2", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "admin2", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin2", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "metrics", SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: adminRole, Namespace: defaultNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: kubeSystemNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -1425,23 +1397,23 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "view", Namespace: "", SubjectName: "modified-group-multiple-2"},
 						{RoleName: "cluster-admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "modified-group-multiple-2"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "modified-group-multiple-2"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "metrics", SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "modified-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "staging", SubjectName: "modified-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "prod", SubjectName: "modified-user-single-rolebinding"},
-						{RoleName: adminRole, Namespace: defaultNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: kubeSystemNS, SubjectName: "modified-group-single-clusterrolebinding"},
-						{RoleName: adminRole, Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "default", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
+						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -1534,7 +1506,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
 			})
 
 			Context("resource creation and rapid patching", func() {
@@ -1543,7 +1515,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create MRA and apply many overlapping PATCH operations", func() {
 					By("creating MulticlusterRoleAssignment using multiple_2.yaml")
-					applyK8sManifest(sampleMultiple2Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml")
 
 					By("fetching initial MulticlusterRoleAssignment")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -1555,8 +1527,8 @@ var _ = Describe("Manager", Ordered, func() {
 					patches := []map[string]any{
 						// Patch 1
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": adminAssignmentCluster1, "clusterRole": "edit",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+							{"name": "admin-assignment-cluster-1", "clusterRole": "edit",
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
@@ -1564,34 +1536,34 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{},
 							{"name": "view-assignment-all-clusters", "clusterRole": "view",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0102, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 3
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {},
 							{"name": "edit-assignment-single-namespace", "clusterRole": "edit",
-								"targetNamespaces": []string{defaultNS, "rapid-dev-1"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"targetNamespaces": []string{"default", "rapid-dev-1"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 4
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {},
-							{"name": "monitoring-assignment-multi-namespace-single-cluster", "clusterRole": adminRole,
-								"targetNamespaces": []string{monitoringNS, observabilityNS},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+							{"name": "monitoring-assignment-multi-namespace-single-cluster", "clusterRole": "admin",
+								"targetNamespaces": []string{"monitoring", "observability"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 5
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {}, {},
-							{"name": "dev-assignment-single-namespace-multi-cluster", "clusterRole": adminRole,
+							{"name": "dev-assignment-single-namespace-multi-cluster", "clusterRole": "admin",
 								"targetNamespaces": []string{"rapid-admin-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
@@ -1599,9 +1571,9 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{}, {}, {}, {}, {},
 							{"name": "logging-assignment-multi-namespace-multi-cluster", "clusterRole": "view",
-								"targetNamespaces": []string{developmentNS, "rapid-staging"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0102, "namespace": "open-cluster-management-global-set"},
+								"targetNamespaces": []string{"development", "rapid-staging"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 7
@@ -1609,40 +1581,40 @@ var _ = Describe("Manager", Ordered, func() {
 						// Patch 8
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "new-admin-assignment", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "new-edit-assignment", "clusterRole": "edit",
-								"targetNamespaces": []string{defaultNS, "rapid-dev-1", "rapid-dev-2"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"targetNamespaces": []string{"default", "rapid-dev-1", "rapid-dev-2"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 9
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "temp-admin", "clusterRole": adminRole,
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+							{"name": "temp-admin", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "temp-view", "clusterRole": "view",
 								"targetNamespaces": []string{"temp-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "temp-edit", "clusterRole": "edit",
 								"targetNamespaces": []string{"temp-edit-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 10
 						{"spec": map[string]any{"subject": map[string]any{"kind": "Group"}}},
 						// Patch 11
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "dynamic-admin", "clusterRole": adminRole,
+							{"name": "dynamic-admin", "clusterRole": "admin",
 								"targetNamespaces": []string{"dynamic-ns-1", "dynamic-ns-2"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0102, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 12
@@ -1651,26 +1623,26 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "complex-assignment-1", "clusterRole": "view",
 								"targetNamespaces": []string{"complex-ns-1"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "complex-assignment-2", "clusterRole": "edit",
 								"targetNamespaces": []string{"complex-ns-2", "complex-ns-3"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
-							{"name": "complex-assignment-3", "clusterRole": adminRole,
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+							{"name": "complex-assignment-3", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 14
-						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-3", "kind": userKind}}},
+						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-user-3", "kind": "User"}}},
 						// Patch 15
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "override-assignment", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster010203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 16
@@ -1679,7 +1651,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"roleAssignments": []map[string]any{
 								{"name": "combo-assignment", "clusterRole": "edit",
 									"targetNamespaces": []string{"combo-ns"},
-									"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+									"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 										{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 									}}},
 							},
@@ -1688,25 +1660,25 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "penultimate-assignment", "clusterRole": "view",
 								"targetNamespaces": []string{"penultimate-ns-1", "penultimate-ns-2"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0103, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 18
 						{"spec": map[string]any{"subject": map[string]any{"name": "rapid-group-temp"}}},
 						// Patch 19
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "pre-final-assignment", "clusterRole": adminRole,
+							{"name": "pre-final-assignment", "clusterRole": "admin",
 								"targetNamespaces": []string{"pre-final-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 20
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-assignment-20", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-ns-20"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
@@ -1714,20 +1686,20 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-21"}}},
 						// Patch 22
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "chaos-22-admin", "clusterRole": adminRole,
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0102, "namespace": "open-cluster-management-global-set"},
+							{"name": "chaos-22-admin", "clusterRole": "admin",
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-22-edit", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-22-ns1", "chaos-22-ns2"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 23
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": adminAssignmentCluster1, "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+							{"name": "admin-assignment-cluster-1", "clusterRole": "cluster-admin",
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
@@ -1737,38 +1709,38 @@ var _ = Describe("Manager", Ordered, func() {
 							"roleAssignments": []map[string]any{
 								{"name": "chaos-24-view", "clusterRole": "view",
 									"targetNamespaces": []string{"chaos-24-ns"},
-									"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-										{"name": placementCluster0203, "namespace": "open-cluster-management-global-set"},
+									"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
 									}}},
 							},
 						}},
 						// Patch 25
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-25-1", "clusterRole": "view", "clusterSelection": map[string]any{
-								"type": placementsType, placementsType: []map[string]any{
+								"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-25-2", "clusterRole": "edit", "clusterSelection": map[string]any{
-								"type": placementsType, placementsType: []map[string]any{
+								"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
-							{"name": "chaos-25-3", "clusterRole": adminRole, "clusterSelection": map[string]any{
-								"type": placementsType, placementsType: []map[string]any{
+							{"name": "chaos-25-3", "clusterRole": "admin", "clusterSelection": map[string]any{
+								"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-25-4", "clusterRole": "view", "targetNamespaces": []string{"chaos-25-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster010203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 26
-						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-26", "kind": userKind}}},
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-26", "kind": "User"}}},
 						// Patch 27
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-27-assignment", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-27-ns1", "chaos-27-ns2", "chaos-27-ns3"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0103, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 28
@@ -1778,20 +1750,20 @@ var _ = Describe("Manager", Ordered, func() {
 							{"name": "chaos-29-multi-ns", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-29-ns1", "chaos-29-ns2", "chaos-29-ns3",
 									"chaos-29-ns4", "chaos-29-ns5"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 30
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-30-cluster", "clusterRole": "cluster-admin",
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
-							{"name": "chaos-30-namespaced", "clusterRole": adminRole,
+							{"name": "chaos-30-namespaced", "clusterRole": "admin",
 								"targetNamespaces": []string{"chaos-30-ns"}, "clusterSelection": map[string]any{
-									"type": placementsType, placementsType: []map[string]any{
-										{"name": placementCluster0203, "namespace": "open-cluster-management-global-set"},
+									"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-02-03", "namespace": "open-cluster-management-global-set"},
 									}}},
 						}}},
 						// Patch 31
@@ -1800,25 +1772,25 @@ var _ = Describe("Manager", Ordered, func() {
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-32-single", "clusterRole": "edit",
 								"targetNamespaces": []string{"chaos-32-single-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster010203, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 33
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "chaos-33-admin", "clusterRole": adminRole, "clusterSelection": map[string]any{
-								"type": placementsType, placementsType: []map[string]any{
+							{"name": "chaos-33-admin", "clusterRole": "admin", "clusterSelection": map[string]any{
+								"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-33-edit-ns", "clusterRole": "edit", "targetNamespaces": []string{
 								"chaos-33-ns1", "chaos-33-ns2"}, "clusterSelection": map[string]any{
-								"type": placementsType, placementsType: []map[string]any{
+								"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-33-view-multi", "clusterRole": "view",
 								"targetNamespaces": []string{"chaos-33-ns3"}, "clusterSelection": map[string]any{
-									"type": placementsType, placementsType: []map[string]any{
-										{"name": placementCluster0103, "namespace": "open-cluster-management-global-set"},
+									"type": "placements", "placements": []map[string]any{
+										{"name": "placement-cluster-01-03", "namespace": "open-cluster-management-global-set"},
 									}}},
 						}}},
 						// Patch 34
@@ -1826,7 +1798,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"subject": map[string]any{"name": "chaos-group-34", "kind": "Group"},
 							"roleAssignments": []map[string]any{
 								{"name": "chaos-34-simple", "clusterRole": "view", "clusterSelection": map[string]any{
-									"type": placementsType, placementsType: []map[string]any{
+									"type": "placements", "placements": []map[string]any{
 										{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 									}}},
 							},
@@ -1834,26 +1806,26 @@ var _ = Describe("Manager", Ordered, func() {
 						// Patch 35
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
 							{"name": "chaos-35-1", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-1"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-01", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-35-2", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-2"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 							{"name": "chaos-35-3", "clusterRole": "view", "targetNamespaces": []string{"chaos-35-3"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
 									{"name": "placement-cluster-03", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 36
-						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-36", "kind": userKind}}},
+						{"spec": map[string]any{"subject": map[string]any{"name": "chaos-user-36", "kind": "User"}}},
 						// Patch 37
 						{"spec": map[string]any{"roleAssignments": []map[string]any{
-							{"name": "chaos-37-duplicate", "clusterRole": adminRole,
+							{"name": "chaos-37-duplicate", "clusterRole": "admin",
 								"targetNamespaces": []string{"chaos-37-ns"},
-								"clusterSelection": map[string]any{"type": placementsType, placementsType: []map[string]any{
-									{"name": placementCluster0102, "namespace": "open-cluster-management-global-set"},
+								"clusterSelection": map[string]any{"type": "placements", "placements": []map[string]any{
+									{"name": "placement-cluster-01-02", "namespace": "open-cluster-management-global-set"},
 								}}},
 						}}},
 						// Patch 38
@@ -1894,13 +1866,13 @@ var _ = Describe("Manager", Ordered, func() {
 					finalMRA.Spec.Subject.Kind = "Group"
 					finalMRA.Spec.RoleAssignments = []mrav1beta1.RoleAssignment{
 						{
-							Name:        adminAssignmentCluster1,
+							Name:        "admin-assignment-cluster-1",
 							ClusterRole: "view",
 							ClusterSelection: mrav1beta1.ClusterSelection{
-								Type: placementsType,
+								Type: "placements",
 								Placements: []mrav1beta1.PlacementRef{
 									{
-										Name:      placementCluster010203,
+										Name:      "placement-cluster-01-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
 									},
 								},
@@ -1909,12 +1881,12 @@ var _ = Describe("Manager", Ordered, func() {
 						{
 							Name:             "edit-assignment-single-namespace",
 							ClusterRole:      "edit",
-							TargetNamespaces: []string{defaultNS, "rapid-dev-1", "rapid-dev-2", "rapid-final-ns"},
+							TargetNamespaces: []string{"default", "rapid-dev-1", "rapid-dev-2", "rapid-final-ns"},
 							ClusterSelection: mrav1beta1.ClusterSelection{
-								Type: placementsType,
+								Type: "placements",
 								Placements: []mrav1beta1.PlacementRef{
 									{
-										Name:      placementCluster0203,
+										Name:      "placement-cluster-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
 									},
 								},
@@ -1922,10 +1894,10 @@ var _ = Describe("Manager", Ordered, func() {
 						},
 						{
 							Name:             "monitoring-assignment-multi-namespace-single-cluster",
-							ClusterRole:      adminRole,
-							TargetNamespaces: []string{monitoringNS, observabilityNS},
+							ClusterRole:      "admin",
+							TargetNamespaces: []string{"monitoring", "observability"},
 							ClusterSelection: mrav1beta1.ClusterSelection{
-								Type: placementsType,
+								Type: "placements",
 								Placements: []mrav1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-03",
@@ -1936,10 +1908,10 @@ var _ = Describe("Manager", Ordered, func() {
 						},
 						{
 							Name:             "dev-assignment-single-namespace-multi-cluster",
-							ClusterRole:      adminRole,
+							ClusterRole:      "admin",
 							TargetNamespaces: []string{"rapid-admin-ns"},
 							ClusterSelection: mrav1beta1.ClusterSelection{
-								Type: placementsType,
+								Type: "placements",
 								Placements: []mrav1beta1.PlacementRef{
 									{
 										Name:      "placement-cluster-01",
@@ -1952,12 +1924,12 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:        "logging-assignment-multi-namespace-multi-cluster",
 							ClusterRole: "view",
 							TargetNamespaces: []string{
-								developmentNS, "rapid-staging", loggingNS, kubeSystemNS, "rapid-prod", "rapid-test"},
+								"development", "rapid-staging", "logging", "kube-system", "rapid-prod", "rapid-test"},
 							ClusterSelection: mrav1beta1.ClusterSelection{
-								Type: placementsType,
+								Type: "placements",
 								Placements: []mrav1beta1.PlacementRef{
 									{
-										Name:      placementCluster010203,
+										Name:      "placement-cluster-01-02-03",
 										Namespace: openClusterManagementGlobalSetNamespace,
 									},
 								},
@@ -2000,11 +1972,11 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
 						// RoleBindings
-						{RoleName: adminRole, Namespace: "rapid-admin-ns", SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: developmentNS, SubjectName: "rapid-final-group"},
+						{RoleName: "admin", Namespace: "rapid-admin-ns", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
 					}
@@ -2022,14 +1994,14 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-dev-1", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-dev-2", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-final-ns", SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: developmentNS, SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
 					}
@@ -2047,16 +2019,16 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "rapid-final-group"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "rapid-final-group"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-dev-1", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-dev-2", SubjectName: "rapid-final-group"},
 						{RoleName: "edit", Namespace: "rapid-final-ns", SubjectName: "rapid-final-group"},
-						{RoleName: adminRole, Namespace: monitoringNS, SubjectName: "rapid-final-group"},
-						{RoleName: adminRole, Namespace: observabilityNS, SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: developmentNS, SubjectName: "rapid-final-group"},
+						{RoleName: "admin", Namespace: "monitoring", SubjectName: "rapid-final-group"},
+						{RoleName: "admin", Namespace: "observability", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "development", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-staging", SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "rapid-final-group"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "rapid-final-group"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-prod", SubjectName: "rapid-final-group"},
 						{RoleName: "view", Namespace: "rapid-test", SubjectName: "rapid-final-group"},
 					}
@@ -2113,10 +2085,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and DELETE operations")
 					manifestFiles := []string{
-						sampleMultiple2Manifest,
-						sampleMultiple1Manifest,
-						sampleSingle2Manifest,
-						sampleSingle1Manifest,
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -2170,13 +2142,13 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 						// RoleBindings
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -2189,15 +2161,15 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// RoleBindings
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -2213,8 +2185,8 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -2256,7 +2228,7 @@ var _ = Describe("Manager", Ordered, func() {
 					assignmentNames1 := []string{
 						"view-assignment-namespaced-clusters-1-2",
 						"edit-assignment-cluster-3",
-						adminAssignmentCluster1,
+						"admin-assignment-cluster-1",
 						"monitoring-assignment-namespaced-all-clusters",
 					}
 					for _, name := range assignmentNames1 {
@@ -2309,7 +2281,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should verify all ClusterPermissions are deleted", func() {
 					By("verifying all managed ClusterPermissions are deleted")
-					clusterNames := []string{managedCluster01, managedCluster02, managedCluster03}
+					clusterNames := []string{"managedcluster01", "managedcluster02", "managedcluster03"}
 
 					for _, clusterName := range clusterNames {
 						By(fmt.Sprintf("verifying ClusterPermission is deleted in %s", clusterName))
@@ -2326,13 +2298,13 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName,
-					[]string{managedCluster01, managedCluster02})
+					[]string{"managedcluster01", "managedcluster02"})
 			})
 
 			Context("Create MRA with single cluster setup", func() {
 				It("should create MRA referencing Placement targeting only managedcluster01", func() {
 					By("creating MRA referencing Placement targeting only managedcluster01")
-					applyK8sManifest(sampleSingle1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MRA to be created and fetching it")
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2347,13 +2319,13 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("PlacementDecision adds cluster02", func() {
 				It("should update PlacementDecision to include managedcluster02", func() {
 					By("updating PlacementDecision to add managedcluster02")
-					addedClusters := []string{managedCluster01, managedCluster02}
+					addedClusters := []string{"managedcluster01", "managedcluster02"}
 					updatePlacementDecision("placement-cluster-01", addedClusters)
 				})
 
 				It("should create ClusterPermission on managedcluster02", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster02)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct ClusterRoleBinding")
@@ -2375,7 +2347,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should preserve ClusterPermission on managedcluster01", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster01)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission still has correct ClusterRoleBinding")
@@ -2416,18 +2388,18 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("PlacementDecision removes cluster01", func() {
 				It("should update PlacementDecision to keep only managedcluster02", func() {
 					By("updating PlacementDecision to remove managedcluster01")
-					remainingClusters := []string{managedCluster02}
+					remainingClusters := []string{"managedcluster02"}
 					updatePlacementDecision("placement-cluster-01", remainingClusters)
 				})
 
 				It("should delete ClusterPermission from managedcluster01", func() {
 					By("verifying ClusterPermission is deleted from managedcluster01")
-					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", managedCluster01)
+					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster01")
 				})
 
 				It("should preserve ClusterPermission on managedcluster02", func() {
 					By("fetching ClusterPermission from managedcluster02")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster02)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission still has correct ClusterRoleBinding")
@@ -2467,7 +2439,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should delete ClusterPermission from managedcluster02", func() {
 					By("verifying ClusterPermission is deleted from managedcluster02")
-					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", managedCluster02)
+					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 				})
 
 				It("should have MRA status reflecting no active clusters", func() {
@@ -2488,7 +2460,7 @@ var _ = Describe("Manager", Ordered, func() {
 					By("patching the MRA to reference non-existent Placement")
 					spec := mrav1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: mrav1beta1.Subject{
-							Kind:     userKind,
+							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
@@ -2497,7 +2469,7 @@ var _ = Describe("Manager", Ordered, func() {
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
 								ClusterSelection: mrav1beta1.ClusterSelection{
-									Type: placementsType,
+									Type: "placements",
 									Placements: []mrav1beta1.PlacementRef{
 										{
 											Name:      "non-existent-placement",
@@ -2531,7 +2503,7 @@ var _ = Describe("Manager", Ordered, func() {
 					By("patching the MRA to reference valid Placement again")
 					spec := mrav1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: mrav1beta1.Subject{
-							Kind:     userKind,
+							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
@@ -2540,7 +2512,7 @@ var _ = Describe("Manager", Ordered, func() {
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
 								ClusterSelection: mrav1beta1.ClusterSelection{
-									Type: placementsType,
+									Type: "placements",
 									Placements: []mrav1beta1.PlacementRef{
 										{
 											Name:      "placement-cluster-01",
@@ -2558,12 +2530,12 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("ensuring PlacementDecision has clusters")
 					updatePlacementDecision("placement-cluster-01",
-						[]string{managedCluster01, managedCluster02})
+						[]string{"managedcluster01", "managedcluster02"})
 				})
 
 				It("should create ClusterPermissions after restoration", func() {
 					By("waiting for ClusterPermission on managedcluster01")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster01)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct binding")
@@ -2574,7 +2546,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 
 					By("waiting for ClusterPermission on managedcluster02")
-					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster02)
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct binding")
@@ -2606,17 +2578,17 @@ var _ = Describe("Manager", Ordered, func() {
 				BeforeAll(func() {
 					// Clean up previous MRA to ensure test isolation
 					cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName,
-						[]string{managedCluster01, managedCluster02})
+						[]string{"managedcluster01", "managedcluster02"})
 				})
 
 				AfterAll(func() {
 					cleanupTestResources("test-multicluster-role-assignment-multiple-1",
-						[]string{managedCluster01, managedCluster02, managedCluster03, "managedcluster04"})
+						[]string{"managedcluster01", "managedcluster02", "managedcluster03", "managedcluster04"})
 				})
 
 				It("should create MRA with multiple roleAssignments referencing different placements", func() {
 					By("applying MRA with 4 roleAssignments with cluster01 targeted by 3 of them")
-					applyK8sManifest(sampleMultiple1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml")
 
 					By("fetching MRA")
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2633,13 +2605,13 @@ var _ = Describe("Manager", Ordered, func() {
 					roleAssignmentsByName := mapRoleAssignmentsByName(mra)
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "view-assignment-namespaced-clusters-1-2")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "edit-assignment-cluster-3")
-					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, adminAssignmentCluster1)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "admin-assignment-cluster-1")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "monitoring-assignment-namespaced-all-clusters")
 				})
 
 				It("should have merged bindings on overlapping cluster", func() {
 					By("fetching ClusterPermission on managedcluster01 (targeted by admin, view, and monitoring)")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster01)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has bindings from all roleAssignments targeting this cluster")
@@ -2648,12 +2620,12 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBinding
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 				})
@@ -2665,7 +2637,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("updating placement-cluster-03 to add managedcluster04")
 					updatePlacementDecision("placement-cluster-03",
-						[]string{managedCluster03, "managedcluster04"})
+						[]string{"managedcluster03", "managedcluster04"})
 
 					By("fetching updated MRA")
 					mraJSON := fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2681,7 +2653,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 					By("verifying other roleAssignments are still Active (unaffected)")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "view-assignment-namespaced-clusters-1-2")
-					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, adminAssignmentCluster1)
+					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "admin-assignment-cluster-1")
 					validateRoleAssignmentSuccessStatus(roleAssignmentsByName, "monitoring-assignment-namespaced-all-clusters")
 				})
 
@@ -2702,12 +2674,12 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("Single RoleAssignment with multiple overlapping Placements", func() {
 				BeforeAll(func() {
 					// Create the MRA that was cleaned up by the previous context
-					applyK8sManifest(sampleSingle1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 				})
 
 				AfterAll(func() {
 					cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName,
-						[]string{managedCluster01, managedCluster02})
+						[]string{"managedcluster01", "managedcluster02"})
 				})
 
 				It("should patch MRA to reference multiple overlapping placements", func() {
@@ -2715,14 +2687,14 @@ var _ = Describe("Manager", Ordered, func() {
 					// placement-cluster-01 → managedcluster01
 					// placement-cluster-01-02 → managedcluster01, managedcluster02
 					// managedcluster01 is in BOTH - should be deduplicated
-					updatePlacementDecision("placement-cluster-01", []string{managedCluster01})
-					updatePlacementDecision(placementCluster0102,
-						[]string{managedCluster01, managedCluster02})
+					updatePlacementDecision("placement-cluster-01", []string{"managedcluster01"})
+					updatePlacementDecision("placement-cluster-01-02",
+						[]string{"managedcluster01", "managedcluster02"})
 
 					By("patching MRA to reference TWO overlapping placements in one roleAssignment")
 					spec := mrav1beta1.MulticlusterRoleAssignmentSpec{
 						Subject: mrav1beta1.Subject{
-							Kind:     userKind,
+							Kind:     "User",
 							Name:     "test-user-single-clusterrolebinding",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
@@ -2731,14 +2703,14 @@ var _ = Describe("Manager", Ordered, func() {
 								Name:        "test-role-assignment",
 								ClusterRole: "view",
 								ClusterSelection: mrav1beta1.ClusterSelection{
-									Type: placementsType,
+									Type: "placements",
 									Placements: []mrav1beta1.PlacementRef{
 										{
 											Name:      "placement-cluster-01",
 											Namespace: openClusterManagementGlobalSetNamespace,
 										},
 										{
-											Name:      placementCluster0102,
+											Name:      "placement-cluster-01-02",
 											Namespace: openClusterManagementGlobalSetNamespace,
 										},
 									},
@@ -2754,7 +2726,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should aggregate and deduplicate clusters from multiple placements", func() {
 					By("fetching ClusterPermission on managedcluster01 (from BOTH placements)")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster01)
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has exactly 1 binding (deduplicated)")
@@ -2765,7 +2737,7 @@ var _ = Describe("Manager", Ordered, func() {
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 
 					By("fetching ClusterPermission on managedcluster02 (from placement-cluster-01-02 only)")
-					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", managedCluster02)
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission on managedcluster02 has correct binding")
@@ -2799,7 +2771,7 @@ var _ = Describe("Manager", Ordered, func() {
 			var initialCPGeneration int64
 
 			AfterAll(func() {
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("MRA creation and resource fetching", func() {
@@ -2807,7 +2779,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should create and fetch MulticlusterRoleAssignment", func() {
 					By("creating a MulticlusterRoleAssignment with one ClusterRoleBinding")
-					applyK8sManifest(sampleSingle1Manifest)
+					applyK8sManifest("config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml")
 
 					By("waiting for MulticlusterRoleAssignment to be created and fetching it")
 					mraJSON = fetchK8sResourceJSON("multiclusterroleassignment",
@@ -2820,7 +2792,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should fetch initial ClusterPermission", func() {
 					By("waiting for ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", managedCluster01)
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -2841,7 +2813,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("fetch ClusterPermission and validate generation change", func() {
 					By("fetching final reconciled ClusterPermission")
 					reconciledJSON := fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", managedCluster01)
+						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
 					unmarshalJSON(reconciledJSON, &clusterPermission)
 
 					By("verifying generation incremented after manual modification")
@@ -2878,11 +2850,11 @@ var _ = Describe("Manager", Ordered, func() {
 
 			AfterAll(func() {
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple2Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
 				cleanupTestResources(testMulticlusterRoleAssignmentMultiple1Name, []string{
-					managedCluster01, managedCluster02, managedCluster03})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{managedCluster02})
-				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{managedCluster01})
+					"managedcluster01", "managedcluster02", "managedcluster03"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleRBName, []string{"managedcluster02"})
+				cleanupTestResources(testMulticlusterRoleAssignmentSingleCRBName, []string{"managedcluster01"})
 			})
 
 			Context("MRA creation and resource fetching", func() {
@@ -2892,10 +2864,10 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially")
 					manifestFiles := []string{
-						sampleMultiple2Manifest,
-						sampleMultiple1Manifest,
-						sampleSingle2Manifest,
-						sampleSingle1Manifest,
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+						"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 					}
 					for _, manifestFile := range manifestFiles {
 						applyK8sManifest(manifestFile)
@@ -2941,7 +2913,7 @@ var _ = Describe("Manager", Ordered, func() {
 				It("should manually modify ClusterPermissions with various drift scenarios", func() {
 					By("modifying managedcluster01 ClusterPermission")
 					(*clusterPermissions[0].Spec.ClusterRoleBindings)[0].RoleRef.Name = "cluster-admin"
-					(*clusterPermissions[0].Spec.RoleBindings)[0].RoleRef.Name = adminRole
+					(*clusterPermissions[0].Spec.RoleBindings)[0].RoleRef.Name = "admin"
 					*clusterPermissions[0].Spec.ClusterRoleBindings = slices.Delete(
 						*clusterPermissions[0].Spec.ClusterRoleBindings, 1, 2)
 
@@ -2952,7 +2924,7 @@ var _ = Describe("Manager", Ordered, func() {
 							Name:     "cluster-admin",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
-						Subjects: []rbacv1.Subject{{Kind: userKind, Name: "orphaned-user"}},
+						Subjects: []rbacv1.Subject{{Kind: "User", Name: "orphaned-user"}},
 					}
 
 					*clusterPermissions[0].Spec.ClusterRoleBindings = append(
@@ -2968,13 +2940,13 @@ var _ = Describe("Manager", Ordered, func() {
 
 					orphanedRoleBinding := cpv1alpha1.RoleBinding{
 						Name:      "orphaned-rolebinding",
-						Namespace: defaultNS,
+						Namespace: "default",
 						RoleRef: cpv1alpha1.RoleRef{
 							Kind:     "ClusterRole",
 							Name:     "cluster-admin",
 							APIGroup: "rbac.authorization.k8s.io",
 						},
-						Subjects: []rbacv1.Subject{{Kind: userKind, Name: "orphaned-user"}},
+						Subjects: []rbacv1.Subject{{Kind: "User", Name: "orphaned-user"}},
 					}
 
 					*clusterPermissions[1].Spec.RoleBindings = append(
@@ -3015,18 +2987,18 @@ var _ = Describe("Manager", Ordered, func() {
 
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-2"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
-						{RoleName: adminRole, Namespace: "", SubjectName: "test-user-multiple-1"},
+						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
 				})
@@ -3042,19 +3014,19 @@ var _ = Describe("Manager", Ordered, func() {
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						// RoleBindings
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "edit", Namespace: developmentNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: defaultNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: defaultNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: kubeSystemNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: monitoringNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: observabilityNS, SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: loggingNS, SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
+						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
+						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
+						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
 				})
@@ -3071,12 +3043,12 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
 						// RoleBindings
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: loggingNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: kubeSystemNS, SubjectName: "test-user-multiple-2"},
-						{RoleName: "system:mon", Namespace: monitoringNS, SubjectName: "test-user-multiple-1"},
-						{RoleName: "system:mon", Namespace: observabilityNS, SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
+						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
+						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
+						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
 					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
 				})
@@ -3102,18 +3074,18 @@ var _ = Describe("Manager", Ordered, func() {
 				testMRAName       = "test-mra-failure"
 				testPlacementName = "placement-failure"
 				cpName            = "mra-managed-permissions"
-				clusterNamespace  = managedCluster01
+				clusterNamespace  = "managedcluster01"
 			)
 
 			BeforeAll(func() {
 				By("creating a placement for failure test")
 				createPlacement(testPlacementName)
-				createPlacementDecision(testPlacementName, []string{managedCluster01})
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
 				By("cleaning up failure test resources")
-				cleanupTestResources(testMRAName, []string{managedCluster01})
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
 			})
 
 			It("should create MRA and wait for it to be ready", func() {
@@ -3176,18 +3148,18 @@ var _ = Describe("Manager", Ordered, func() {
 				testMRAName       = "test-mra-unknown"
 				testPlacementName = "placement-unknown"
 				cpName            = "mra-managed-permissions"
-				clusterNamespace  = managedCluster01
+				clusterNamespace  = "managedcluster01"
 			)
 
 			BeforeAll(func() {
 				By("creating a placement for unknown status test")
 				createPlacement(testPlacementName)
-				createPlacementDecision(testPlacementName, []string{managedCluster01})
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
 				By("cleaning up unknown status test resources")
-				cleanupTestResources(testMRAName, []string{managedCluster01})
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
 			})
 
 			It("should create MRA and wait for it to be ready", func() {
@@ -3249,21 +3221,21 @@ var _ = Describe("Manager", Ordered, func() {
 		Context("Multiple MRAs with shared ClusterPermission - status propagation", func() {
 			var (
 				cpName           = "mra-managed-permissions"
-				clusterNamespace = managedCluster01
+				clusterNamespace = "managedcluster01"
 			)
 
 			BeforeAll(func() {
 				By("creating placements for shared CP test")
 				createPlacement("placement-shared-1")
-				createPlacementDecision("placement-shared-1", []string{managedCluster01})
+				createPlacementDecision("placement-shared-1", []string{"managedcluster01"})
 				createPlacement("placement-shared-2")
-				createPlacementDecision("placement-shared-2", []string{managedCluster01})
+				createPlacementDecision("placement-shared-2", []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
 				By("cleaning up shared CP test resources")
-				cleanupTestResources("test-mra-shared-1", []string{managedCluster01})
-				cleanupTestResources("test-mra-shared-2", []string{managedCluster01})
+				cleanupTestResources("test-mra-shared-1", []string{"managedcluster01"})
+				cleanupTestResources("test-mra-shared-2", []string{"managedcluster01"})
 			})
 
 			It("should create two MRAs targeting the same cluster (shared ClusterPermission)", func() {
@@ -3312,19 +3284,19 @@ var _ = Describe("Manager", Ordered, func() {
 				testMRAName            = "test-mra-recovery"
 				testPlacementName      = "placement-recovery"
 				cpName                 = "mra-managed-permissions"
-				clusterNamespace       = managedCluster01
+				clusterNamespace       = "managedcluster01"
 				recoveryRoleAssignment = "recovery-role-assignment"
 			)
 
 			BeforeAll(func() {
 				By("creating placement for recovery test")
 				createPlacement(testPlacementName)
-				createPlacementDecision(testPlacementName, []string{managedCluster01})
+				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
 			})
 
 			AfterAll(func() {
 				By("cleaning up recovery test resources")
-				cleanupTestResources(testMRAName, []string{managedCluster01})
+				cleanupTestResources(testMRAName, []string{"managedcluster01"})
 			})
 
 			It("should create MRA and wait for it to be ready", func() {
@@ -3423,10 +3395,10 @@ var _ = Describe("Manager", Ordered, func() {
 			BeforeAll(func() {
 				By("creating all sample MulticlusterRoleAssignments")
 				manifestFiles := []string{
-					sampleMultiple2Manifest,
-					sampleMultiple1Manifest,
-					sampleSingle2Manifest,
-					sampleSingle1Manifest,
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_2.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_multiple_1.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_single_2.yaml",
+					"config/samples/rbac_v1beta1_multiclusterroleassignment_single_1.yaml",
 				}
 				for _, manifestFile := range manifestFiles {
 					applyK8sManifest(manifestFile)
@@ -3521,20 +3493,20 @@ var _ = Describe("Manager", Ordered, func() {
 
 				By("injecting mixed statuses into ClusterPermissions")
 				Eventually(func() error {
-					if err := updateClusterPermissionStatusByOwner(cpName, managedCluster01, statusMapCluster1); err != nil {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", statusMapCluster1); err != nil {
 						return err
 					}
-					if err := updateClusterPermissionStatusByOwner(cpName, managedCluster02, statusMapCluster2); err != nil {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", statusMapCluster2); err != nil {
 						return err
 					}
-					return updateClusterPermissionStatusByOwner(cpName, managedCluster03, statusMapCluster3)
+					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", statusMapCluster3)
 				}, 1*time.Minute, 1*time.Second).Should(Succeed())
 
 				By("verifying MRA statuses")
 				// MRA 1: Error (due to Cluster 1 failure, despite Cluster 2 unknown)
 				verifyMRAHasRoleAssignmentStatus(
 					testMulticlusterRoleAssignmentMultiple1Name,
-					adminAssignmentCluster1,
+					"admin-assignment-cluster-1",
 					mrav1beta1.StatusTypeError,
 				)
 				verifyMRAHasRoleAssignmentStatus(
@@ -3556,7 +3528,7 @@ var _ = Describe("Manager", Ordered, func() {
 				)
 				verifyMRAHasRoleAssignmentStatus(
 					testMulticlusterRoleAssignmentMultiple2Name,
-					adminAssignmentCluster1,
+					"admin-assignment-cluster-1",
 					mrav1beta1.StatusTypeActive,
 				)
 
@@ -3601,19 +3573,19 @@ var _ = Describe("Manager", Ordered, func() {
 				}
 
 				Eventually(func() error {
-					if err := updateClusterPermissionStatusByOwner(cpName, managedCluster01, successMap); err != nil {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", successMap); err != nil {
 						return err
 					}
-					if err := updateClusterPermissionStatusByOwner(cpName, managedCluster02, successMap); err != nil {
+					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", successMap); err != nil {
 						return err
 					}
-					return updateClusterPermissionStatusByOwner(cpName, managedCluster03, successMap)
+					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", successMap)
 				}, 1*time.Minute, 1*time.Second).Should(Succeed())
 
 				By("verifying all MRAs recover to Active")
 				verifyMRAHasRoleAssignmentStatus(
 					testMulticlusterRoleAssignmentMultiple1Name,
-					adminAssignmentCluster1,
+					"admin-assignment-cluster-1",
 					mrav1beta1.StatusTypeActive,
 				)
 				verifyMRAHasRoleAssignmentStatus(
