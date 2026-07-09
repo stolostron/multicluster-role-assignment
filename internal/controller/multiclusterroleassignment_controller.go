@@ -70,6 +70,13 @@ const (
 	placementIndexField  = "spec.roleAssignments.clusterSelection.placements"
 )
 
+// deletionTimestampSetPredicate passes any update event where the object's
+// DeletionTimestamp is non-zero, ensuring deletion reconciliation fires even
+// when the generation has not changed (metadata-only update).
+var deletionTimestampSetPredicate = predicate.NewPredicateFuncs(func(obj client.Object) bool {
+	return !obj.GetDeletionTimestamp().IsZero()
+})
+
 // SetupIndexes configures field indexes for efficient lookups.
 // This should be called before setting up the controller.
 func SetupIndexes(ctx context.Context, mgr ctrl.Manager) error {
@@ -1485,7 +1492,10 @@ func (r *MulticlusterRoleAssignmentReconciler) findMRAsForPlacementDecision(
 func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mrav1beta1.MulticlusterRoleAssignment{},
-			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+			builder.WithPredicates(predicate.Or(
+				predicate.GenerationChangedPredicate{},
+				deletionTimestampSetPredicate,
+			))).
 		Watches(
 			&cpv1alpha1.ClusterPermission{},
 			&clusterPermissionEventHandler{},
