@@ -34,6 +34,8 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mrav1beta1 "github.com/stolostron/multicluster-role-assignment/api/v1beta1"
@@ -1919,6 +1921,60 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			}
 			shouldReconcile := !equality.Semantic.DeepEqual(oldPD.Status.Decisions, newPD.Status.Decisions)
 			Expect(shouldReconcile).To(BeTrue())
+		})
+	})
+
+	Context("MRA update event predicate logic", func() {
+		var mraOld, mraNewSameGen, mraNewWithDeletion, mraNewHigherGen *mrav1beta1.MulticlusterRoleAssignment
+		now := metav1.Now()
+
+		BeforeEach(func() {
+			mraOld = &mrav1beta1.MulticlusterRoleAssignment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "pred-test-mra",
+					Namespace:  multiclusterRoleAssignmentNamespace,
+					Generation: 1,
+				},
+			}
+			mraNewSameGen = mraOld.DeepCopy()
+			mraNewWithDeletion = mraOld.DeepCopy()
+			mraNewWithDeletion.DeletionTimestamp = &now
+			mraNewWithDeletion.Finalizers = []string{finalizerName}
+			mraNewHigherGen = mraOld.DeepCopy()
+			mraNewHigherGen.Generation = 2
+		})
+
+		It("should not trigger reconcile on status-only updates (same generation, no DeletionTimestamp)", func() {
+			pred := predicate.Or(
+				predicate.GenerationChangedPredicate{},
+				deletionTimestampSetPredicate,
+			)
+			Expect(pred.Update(event.UpdateEvent{
+				ObjectOld: mraOld,
+				ObjectNew: mraNewSameGen,
+			})).To(BeFalse(), "status-only update without DeletionTimestamp should not trigger reconcile")
+		})
+
+		It("should trigger reconcile when DeletionTimestamp is set (generation unchanged)", func() {
+			pred := predicate.Or(
+				predicate.GenerationChangedPredicate{},
+				deletionTimestampSetPredicate,
+			)
+			Expect(pred.Update(event.UpdateEvent{
+				ObjectOld: mraOld,
+				ObjectNew: mraNewWithDeletion,
+			})).To(BeTrue(), "setting DeletionTimestamp should trigger reconcile even without generation change")
+		})
+
+		It("should trigger reconcile when spec changes (generation increments)", func() {
+			pred := predicate.Or(
+				predicate.GenerationChangedPredicate{},
+				deletionTimestampSetPredicate,
+			)
+			Expect(pred.Update(event.UpdateEvent{
+				ObjectOld: mraOld,
+				ObjectNew: mraNewHigherGen,
+			})).To(BeTrue(), "spec change (generation increment) should trigger reconcile")
 		})
 	})
 
