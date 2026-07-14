@@ -35,7 +35,12 @@ linters:
       - linters:
           - dupl
           - lll
+          - prealloc
         path: internal/*
+      - linters:
+          - goconst
+          - prealloc
+        path: _test\.go$
     paths:
       - third_party$
       - builtin$
