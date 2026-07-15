@@ -1,6 +1,6 @@
 module github.com/stolostron/multicluster-role-assignment
 
-go 1.25.0
+go 1.25.6
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.1
