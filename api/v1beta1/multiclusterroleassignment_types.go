@@ -98,7 +98,9 @@ type PlacementRef struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Name string `json:"name"`
 
-	// Namespace of the Placement resource. Must be a valid Kubernetes namespace name (DNS label).
+	// Namespace of the Placement resource. Must be a valid Kubernetes namespace name (DNS label). Must match the
+	// namespace of the MulticlusterRoleAssignment; references to Placements in other namespaces are rejected during
+	// reconciliation.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63

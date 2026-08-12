@@ -285,8 +285,10 @@ spec:
                                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                 type: string
                               namespace:
-                                description: Namespace of the Placement resource.
-                                  Must be a valid Kubernetes namespace name (DNS label).
+                                description: |-
+                                  Namespace of the Placement resource. Must be a valid Kubernetes namespace name (DNS label). Must match the
+                                  namespace of the MulticlusterRoleAssignment; references to Placements in other namespaces are rejected during
+                                  reconciliation.
                                 maxLength: 63
                                 minLength: 1
                                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$

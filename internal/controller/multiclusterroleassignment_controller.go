@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -69,6 +70,13 @@ const (
 	finalizerName        = "finalizer.rbac.open-cluster-management.io/multiclusterroleassignment"
 	placementIndexField  = "spec.roleAssignments.clusterSelection.placements"
 )
+
+// errPlacementNamespaceMismatch indicates a PlacementRef points to a namespace other than the
+// MulticlusterRoleAssignment's own namespace. Cross-namespace Placement references are rejected: the controller's
+// service account has broad, cluster-wide read access to Placement/PlacementDecision resources, so resolving a
+// Placement in an arbitrary namespace would let an MRA author drive cluster selection (and therefore RBAC granted
+// on spoke clusters) from a Placement they may have no access to themselves.
+var errPlacementNamespaceMismatch = errors.New("placement namespace must match the MulticlusterRoleAssignment namespace")
 
 // deletionTimestampSetPredicate passes any update event where the object's
 // DeletionTimestamp is non-zero, ensuring deletion reconciliation fires even
@@ -303,11 +311,17 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 				mrav1beta1.ReasonProcessing, "Resolving target clusters")
 		}
 
-		clustersInRA, err := r.resolveAllPlacementClusters(ctx, roleAssignment.ClusterSelection.Placements)
+		clustersInRA, err := r.resolveAllPlacementClusters(ctx, mra.Namespace, roleAssignment.ClusterSelection.Placements)
 		if err != nil {
 			log.Error(err, "Failed to resolve placement clusters", "roleAssignment", roleAssignment.Name)
 
-			if apierrors.IsNotFound(err) {
+			if errors.Is(err, errPlacementNamespaceMismatch) {
+				// Persistent error: the referenced Placement is not in the same namespace as the MRA (user must fix
+				// this). It is safe to continue processing other RoleAssignments.
+				r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
+					mrav1beta1.ReasonInvalidReference, fmt.Sprintf("Invalid placement reference: %v", err))
+				continue
+			} else if apierrors.IsNotFound(err) {
 				// Persistent error: Placement doesn't exist (user must fix this). It is safe to continue processing
 				// other RoleAssignments
 				r.setRoleAssignmentStatus(mra, roleAssignment.Name, mrav1beta1.StatusTypeError,
@@ -348,9 +362,15 @@ func (r *MulticlusterRoleAssignmentReconciler) aggregateClusters(
 }
 
 // resolvePlacementClusters resolves a Placement reference to a list of cluster names by querying PlacementDecision
-// resources.
+// resources. mraNamespace is the namespace of the owning MulticlusterRoleAssignment; the Placement reference must
+// be in that same namespace, otherwise errPlacementNamespaceMismatch is returned without querying the API server.
 func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
-	ctx context.Context, placementRef mrav1beta1.PlacementRef) ([]string, error) {
+	ctx context.Context, mraNamespace string, placementRef mrav1beta1.PlacementRef) ([]string, error) {
+
+	if placementRef.Namespace != mraNamespace {
+		return nil, fmt.Errorf("%w: placement %s/%s referenced from MulticlusterRoleAssignment in namespace %s",
+			errPlacementNamespaceMismatch, placementRef.Namespace, placementRef.Name, mraNamespace)
+	}
 
 	var placement clusterv1beta1.Placement
 	err := r.Get(ctx, client.ObjectKey{
@@ -390,14 +410,14 @@ func (r *MulticlusterRoleAssignmentReconciler) resolvePlacementClusters(
 }
 
 // resolveAllPlacementClusters resolves all Placement references in a RoleAssignment to a deduplicated list of cluster
-// names.
+// names. mraNamespace is the namespace of the owning MulticlusterRoleAssignment; see resolvePlacementClusters.
 func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
-	ctx context.Context, placements []mrav1beta1.PlacementRef) ([]string, error) {
+	ctx context.Context, mraNamespace string, placements []mrav1beta1.PlacementRef) ([]string, error) {
 
 	allClustersMap := make(map[string]bool)
 
 	for _, placementRef := range placements {
-		clusters, err := r.resolvePlacementClusters(ctx, placementRef)
+		clusters, err := r.resolvePlacementClusters(ctx, mraNamespace, placementRef)
 		if err != nil {
 			return nil, err
 		}
