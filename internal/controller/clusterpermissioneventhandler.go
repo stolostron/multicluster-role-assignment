@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,7 +106,35 @@ func findAffectedMRAs(oldCP, newCP *cpv1alpha1.ClusterPermission) map[string]boo
 		return extractAllOwners(newCP)
 	}
 
+	// Validation conditions are ClusterPermission-wide, not per-binding. Enqueue every
+	// owner so MRAs with spec.validate=true can sync role-existence status.
+	if validationConditionsChanged(oldCP, newCP) {
+		for owner := range extractAllOwners(newCP) {
+			affectedMRAs[owner] = true
+		}
+	}
+
 	return affectedMRAs
+}
+
+// validationConditionsChanged reports whether ClusterPermission role-existence
+// validation conditions were added, removed, or updated.
+func validationConditionsChanged(oldCP, newCP *cpv1alpha1.ClusterPermission) bool {
+	return !equality.Semantic.DeepEqual(filterValidationConditions(oldCP), filterValidationConditions(newCP))
+}
+
+func filterValidationConditions(cp *cpv1alpha1.ClusterPermission) []metav1.Condition {
+	if cp == nil {
+		return nil
+	}
+	var conds []metav1.Condition
+	for _, cond := range cp.Status.Conditions {
+		if cond.Type == cpv1alpha1.ConditionTypeValidateRolesExist ||
+			cond.Type == cpv1alpha1.ConditionTypeValidateClusterRolesExist {
+			conds = append(conds, cond)
+		}
+	}
+	return conds
 }
 
 // buildClusterRoleBindingMap creates a map of binding name -> binding

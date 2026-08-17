@@ -374,6 +374,13 @@ spec:
                 - message: A namespace is required when subject kind is ServiceAccount
                   rule: self.kind != "ServiceAccount" || (has(self.__namespace__)
                     && size(self.__namespace__) > 0)
+              validate:
+                description: |-
+                  Validate, when true, sets validate=true on the generated ClusterPermission so
+                  ClusterPermission checks via ManifestWork that referenced ClusterRoles exist
+                  on each target cluster. Validation failures for this MRA's ClusterRoles are
+                  surfaced on the corresponding role assignment status. Defaults to false.
+                type: boolean
             required:
             - roleAssignments
             - subject

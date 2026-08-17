@@ -22,6 +22,14 @@ import (
 
 // MulticlusterRoleAssignmentSpec defines the desired state of MulticlusterRoleAssignment.
 type MulticlusterRoleAssignmentSpec struct {
+	// Validate, when true, sets validate=true on the generated ClusterPermission so
+	// ClusterPermission checks via ManifestWork that referenced ClusterRoles exist
+	// on each target cluster. Validation failures for this MRA's ClusterRoles are
+	// surfaced on the corresponding role assignment status. Defaults to false.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Validate *bool `json:"validate,omitempty"`
+
 	// Subject defines the user, group, or service account for all role assignments.
 	// +kubebuilder:validation:Required
 	Subject Subject `json:"subject"`

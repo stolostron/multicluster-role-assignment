@@ -116,6 +116,65 @@ func TestFindAffectedMRAs_Status(t *testing.T) {
 			),
 			expectedMRAs: []string{"default/mra2"},
 		},
+		{
+			name: "validation condition change enqueues all owners",
+			oldCP: func() *cpv1alpha1.ClusterPermission {
+				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
+				cp := createCPStatus(
+					createStatus("default/mra1", "", "binding1", applied),
+					createStatus("default/mra2", "", "binding2", applied),
+				)
+				cp.Status.Conditions = []metav1.Condition{
+					createCondition(
+						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
+				}
+				return cp
+			}(),
+			newCP: func() *cpv1alpha1.ClusterPermission {
+				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
+				cp := createCPStatus(
+					createStatus("default/mra1", "", "binding1", applied),
+					createStatus("default/mra2", "", "binding2", applied),
+				)
+				cp.Status.Conditions = []metav1.Condition{
+					createCondition(
+						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+						metav1.ConditionFalse, "ClusterRolesNotFound",
+						"The following cluster roles were not found: missing-role"),
+				}
+				return cp
+			}(),
+			expectedMRAs: []string{"default/mra1", "default/mra2"},
+		},
+		{
+			name: "unchanged validation conditions do not enqueue owners",
+			oldCP: func() *cpv1alpha1.ClusterPermission {
+				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
+				cp := createCPStatus(
+					createStatus("default/mra1", "", "binding1", applied),
+				)
+				cp.Status.Conditions = []metav1.Condition{
+					createCondition(
+						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
+				}
+				return cp
+			}(),
+			newCP: func() *cpv1alpha1.ClusterPermission {
+				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
+				cp := createCPStatus(
+					createStatus("default/mra1", "", "binding1", applied),
+				)
+				cp.Status.Conditions = []metav1.Condition{
+					createCondition(
+						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
+				}
+				return cp
+			}(),
+			expectedMRAs: []string{},
+		},
 		// ClusterRoleBinding tests (empty namespace triggers CRB path)
 		{
 			name: "CRB: no changes - no MRAs should be affected",
@@ -515,6 +574,61 @@ func TestGeneral(t *testing.T) {
 			t.Error("should detect orphaned RoleBinding")
 		}
 	})
+}
+
+func TestRoleNameInValidationMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		message  string
+		roleName string
+		want     bool
+	}{
+		{
+			name:     "single missing cluster role",
+			message:  "The following cluster roles were not found: does-not-exist",
+			roleName: "does-not-exist",
+			want:     true,
+		},
+		{
+			name:     "role in a list",
+			message:  "The following cluster roles were not found: role-a, role-b, role-c",
+			roleName: "role-b",
+			want:     true,
+		},
+		{
+			name:     "does not match substring of another role",
+			message:  "The following cluster roles were not found: cluster-admin",
+			roleName: "admin",
+			want:     false,
+		},
+		{
+			name:     "different role in the list",
+			message:  "The following cluster roles were not found: does-not-exist, cluster-admin",
+			roleName: "view",
+			want:     false,
+		},
+		{
+			name:     "empty role name",
+			message:  "The following cluster roles were not found: view",
+			roleName: "",
+			want:     false,
+		},
+		{
+			name:     "unrelated message",
+			message:  "Apply manifest complete",
+			roleName: "view",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := roleNameInValidationMessage(tt.message, tt.roleName)
+			if got != tt.want {
+				t.Errorf("roleNameInValidationMessage(%q, %q) = %v, want %v", tt.message, tt.roleName, got, tt.want)
+			}
+		})
+	}
 }
 
 // binding represents a single RBAC binding (ClusterRoleBinding or RoleBinding).
