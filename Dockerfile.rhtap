@@ -18,7 +18,7 @@ ENV GOFLAGS="-mod=readonly"
 RUN go build -tags ${BUILD_TAGS} -a -o manager cmd/main.go
 
 # Build actual image below
-FROM registry.redhat.io/ubi9/ubi-minimal:latest
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 
 LABEL \
     name="rhacm2/multicluster-role-assignment-rhel9" \
