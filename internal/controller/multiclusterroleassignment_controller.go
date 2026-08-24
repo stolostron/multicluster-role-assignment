@@ -751,6 +751,16 @@ func (r *MulticlusterRoleAssignmentReconciler) buildClusterBindingsStatusMap(
 
 		bindingMap := make(map[string]*metav1.Condition)
 
+		// ClusterPermission-level validation conditions live on status.conditions, independent of
+		// per-binding ResourceStatus. Copy each condition so later loop iterations cannot alias.
+		for i := range cp.Status.Conditions {
+			cond := cp.Status.Conditions[i]
+			if cond.Type == cpv1alpha1.ConditionTypeValidateRolesExist ||
+				cond.Type == cpv1alpha1.ConditionTypeValidateClusterRolesExist {
+				bindingMap["VALIDATE:"+cond.Type] = &cond
+			}
+		}
+
 		// Case caused by no available managed cluster that clusterpermission is trying to apply manifest work for
 		if cp.Status.ResourceStatus == nil {
 			clusterBindingsStatus[cluster] = bindingMap
@@ -917,6 +927,11 @@ func (r *MulticlusterRoleAssignmentReconciler) checkClusterRoleBindingStatus(
 			allUnknownMsg = append(allUnknownMsg, msg)
 		}
 	}
+
+	valErrs, valUnknowns := checkClusterRoleValidation(raSpec, cluster, bindingsMap)
+	allErrorMsg = append(allErrorMsg, valErrs...)
+	allUnknownMsg = append(allUnknownMsg, valUnknowns...)
+
 	return allErrorMsg, allUnknownMsg
 }
 
@@ -943,7 +958,65 @@ func (r *MulticlusterRoleAssignmentReconciler) checkRoleBindingStatus(
 			}
 		}
 	}
+
+	// Namespaced RoleBindings still reference a ClusterRole, so check ClusterRole existence.
+	valErrs, valUnknowns := checkClusterRoleValidation(raSpec, cluster, bindingsMap)
+	allErrorMsg = append(allErrorMsg, valErrs...)
+	allUnknownMsg = append(allUnknownMsg, valUnknowns...)
+
 	return allErrorMsg, allUnknownMsg
+}
+
+// checkClusterRoleValidation reports errors or pending messages from ClusterPermission
+// ValidateClusterRolesExist. Failures are attributed only when this assignment's
+// ClusterRole is listed in the condition message, because multiple MRAs share one
+// ClusterPermission.
+func checkClusterRoleValidation(
+	raSpec *mrav1beta1.RoleAssignment,
+	cluster string,
+	bindingsMap map[string]*metav1.Condition,
+) ([]string, []string) {
+	cond := bindingsMap["VALIDATE:"+cpv1alpha1.ConditionTypeValidateClusterRolesExist]
+	if cond == nil || cond.Status == metav1.ConditionUnknown {
+		msg := fmt.Sprintf("ClusterRole validation pending on %s", cluster)
+		if cond != nil && cond.Message != "" {
+			msg = fmt.Sprintf("ClusterRole validation pending on %s: %s", cluster, cond.Message)
+		}
+		return nil, []string{msg}
+	}
+
+	if cond.Status == metav1.ConditionFalse && roleNameInValidationMessage(cond.Message, raSpec.ClusterRole) {
+		return []string{
+			fmt.Sprintf("ClusterRole %q was not found on cluster %s", raSpec.ClusterRole, cluster),
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// roleNameInValidationMessage reports whether roleName is listed in a ClusterPermission
+// validation failure message of the form:
+// "The following cluster roles were not found: role-a, role-b"
+func roleNameInValidationMessage(message, roleName string) bool {
+	const marker = "not found: "
+	idx := strings.Index(message, marker)
+	if idx < 0 || roleName == "" {
+		return false
+	}
+
+	for _, name := range strings.Split(message[idx+len(marker):], ", ") {
+		if strings.TrimSpace(name) == roleName {
+			return true
+		}
+	}
+	return false
+}
+
+// applyClusterPermissionValidate sets ClusterPermission.spec.validate to true so
+// ClusterPermission checks via ManifestWork that referenced ClusterRoles exist on spokes.
+func applyClusterPermissionValidate(newSpec *cpv1alpha1.ClusterPermissionSpec) {
+	enabled := true
+	newSpec.Validate = &enabled
 }
 
 // ensureClusterPermission creates or updates the ClusterPermission for a specific cluster.
@@ -1014,6 +1087,7 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 
 		log.Info("Creating new ClusterPermission", "name", clusterPermissionManagedName, "namespace", cluster)
 
+		applyClusterPermissionValidate(&newSpec)
 		cp := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterPermissionManagedName,
@@ -1052,6 +1126,8 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 		}
 		return nil
 	}
+
+	applyClusterPermissionValidate(&newSpec)
 
 	specChanged := !equality.Semantic.DeepEqual(existingCP.Spec, newSpec)
 	annotationsChanged := !equality.Semantic.DeepEqual(existingCP.Annotations, newAnnotations)
@@ -1509,7 +1585,11 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 							if oldCP.Generation != newCP.Generation {
 								return true
 							}
-							return !equality.Semantic.DeepEqual(oldCP.Status.ResourceStatus, newCP.Status.ResourceStatus)
+							if !equality.Semantic.DeepEqual(oldCP.Status.ResourceStatus, newCP.Status.ResourceStatus) {
+								return true
+							}
+							// Also trigger reconciliation when validation conditions change (e.g., role existence status)
+							return validationConditionsChanged(oldCP, newCP)
 						},
 						CreateFunc: func(e event.CreateEvent) bool {
 							return true
