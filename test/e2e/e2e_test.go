@@ -92,14 +92,12 @@ var _ = Describe("Manager", Ordered, func() {
 	// and deploying the controller.
 	BeforeAll(func() {
 		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
+		ensureNamespace(namespace)
 
 		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		cmd := exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
 			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
+		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
 		By("installing the external CRDs required for all tests")
@@ -108,18 +106,14 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By(fmt.Sprintf("creating the %s namespace", openClusterManagementGlobalSetNamespace))
-		cmd = exec.Command("kubectl", "create", "ns", openClusterManagementGlobalSetNamespace)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		ensureNamespace(openClusterManagementGlobalSetNamespace)
 
 		By("creating managed cluster namespaces")
 		for i := 1; i <= 3; i++ {
 			clusterName := fmt.Sprintf("managedcluster%02d", i)
 
 			By(fmt.Sprintf("creating the %s namespace", clusterName))
-			cmd = exec.Command("kubectl", "create", "ns", clusterName)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
+			ensureNamespace(clusterName)
 		}
 
 		By("creating Placements and PlacementDecisions")
@@ -310,16 +304,19 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
-			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=multicluster-role-assignment-metrics-reader",
-				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
-			)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
+			cmd := exec.Command("kubectl", "get", "clusterrolebinding", metricsRoleBindingName)
+			if _, err := utils.Run(cmd); err != nil {
+				cmd = exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
+					"--clusterrole=multicluster-role-assignment-metrics-reader",
+					fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
+				)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
+			}
 
 			By("validating that the metrics service is available")
 			cmd = exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
-			_, err = utils.Run(cmd)
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
 
 			By("getting the service account token")
@@ -3606,6 +3603,8 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 	})
+
+	registerClusterPermissionValidationSpecs()
 })
 
 // ExpectedBinding represents a role binding that we expect to find in a ClusterPermission.
@@ -3817,6 +3816,18 @@ func verifyK8sResourceDeleted(resourceType, resourceName, namespace string) {
 // waitForController sleeps for 1 seccond.
 func waitForController() {
 	time.Sleep(1 * time.Second)
+}
+
+// ensureNamespace creates namespace if it does not already exist. This lets e2e
+// re-runs succeed after a failed suite skipped AfterAll cleanup.
+func ensureNamespace(name string) {
+	cmd := exec.Command("kubectl", "get", "ns", name)
+	if _, err := utils.Run(cmd); err == nil {
+		return
+	}
+	cmd = exec.Command("kubectl", "create", "ns", name)
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create namespace %s", name)
 }
 
 // cleanupTestResources cleans up MulticlusterRoleAssignment and ClusterPermissions for a test. Skips cleanup if the
@@ -4307,6 +4318,11 @@ func updateClusterPermissionStatus(
 		}
 	}
 
+	// Kind e2e has no ClusterPermission operator. Always mark ClusterRole
+	// validation as successful so MRA status is not left Pending.
+	setClusterPermissionCondition(&cp, cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+		metav1.ConditionTrue, "AllClusterRolesFound", "All referenced cluster roles exist")
+
 	cpBytes, err := json.Marshal(cp)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -4453,6 +4469,9 @@ func updateClusterPermissionStatusByOwner(
 			}
 		}
 	}
+
+	setClusterPermissionCondition(&cp, cpv1alpha1.ConditionTypeValidateClusterRolesExist,
+		metav1.ConditionTrue, "AllClusterRolesFound", "All referenced cluster roles exist")
 
 	cpBytes, err := json.Marshal(cp)
 	Expect(err).NotTo(HaveOccurred())
