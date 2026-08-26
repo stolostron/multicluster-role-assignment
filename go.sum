@@ -256,8 +256,6 @@ open-cluster-management.io/api v1.3.0 h1:Q3miH38BE3N5+PesHQ0kcFi5nhX5350m7OJWapZ
 open-cluster-management.io/api v1.3.0/go.mod h1:t0DsBv4gjIo9ojd7GYfA2tcEMpNf0h5Ix68pFDXwNSk=
 open-cluster-management.io/cluster-permission v0.17.0 h1:SGgzjxmbCNfBbB4o9PavtbSypGwYJ2MDPouZW8Kh20M=
 open-cluster-management.io/cluster-permission v0.17.0/go.mod h1:NlRs8bgXL+09hOP6bN3P+JT5zXKuVwnCSb95ovar47U=
-open-cluster-management.io/managed-serviceaccount v0.7.0 h1:OShodBB3i+rMXjR9xEF6ySp9yBeiiLlEOAKvPA2v3i4=
-open-cluster-management.io/managed-serviceaccount v0.7.0/go.mod h1:NNKqC+cePQ9HH0r7mb9CYSk/hXGsNYu9+K4YfcZTwAk=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.1 h1:Ac6yUpjm3TIUHrG6+aaacSJ/UzsCGFIj6C9VYNfCOMk=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.1/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
 sigs.k8s.io/controller-runtime v0.23.3 h1:VjB/vhoPoA9l1kEKZHBMnQF33tdCLQKJtydy4iqwZ80=
