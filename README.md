@@ -36,7 +36,6 @@ The operator uses annotation-based ownership tracking to support multiple Multic
 ### Installation
 
 1. **Install the operator**:
-
    ```bash
    kubectl apply -k config/default
    ```
@@ -54,47 +53,46 @@ The `MulticlusterRoleAssignment` custom resource defines role assignments across
 
 #### Spec Fields
 
-| Field             | Type               | Description                                                  | Required |
-| ----------------- | ------------------ | ------------------------------------------------------------ | -------- |
-| `subject`         | `Subject`          | The user, group, or service account for all role assignments | Yes      |
-| `roleAssignments` | `[]RoleAssignment` | List of role assignments for different clusters              | Yes      |
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `subject` | `Subject` | The user, group, or service account for all role assignments | Yes |
+| `roleAssignments` | `[]RoleAssignment` | List of role assignments for different clusters | Yes |
 
 #### Subject Fields
 
-| Field       | Type     | Description                                                                                                                           | Required                                |
-| ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `apiGroup`  | `string` | API group of the subject. Must be empty or `rbac.authorization.k8s.io` for User/Group. Must be empty (or omitted) for ServiceAccount. | No                                      |
-| `kind`      | `string` | Kind of subject (User, Group, or ServiceAccount)                                                                                      | Yes                                     |
-| `name`      | `string` | Name of the subject                                                                                                                   | Yes                                     |
-| `namespace` | `string` | Namespace of the subject. Must NOT be set for User/Group. Must be set for ServiceAccount.                                             | No (except required for ServiceAccount) |
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `apiGroup` | `string` | API group of the subject. Must be empty or `rbac.authorization.k8s.io` for User/Group. Must be empty (or omitted) for ServiceAccount. | No |
+| `kind` | `string` | Kind of subject (User, Group, or ServiceAccount) | Yes |
+| `name` | `string` | Name of the subject | Yes |
+| `namespace` | `string` | Namespace of the subject. Must NOT be set for User/Group. Must be set for ServiceAccount. | No (except required for ServiceAccount) |
 
 #### RoleAssignment Fields
 
-| Field              | Type               | Description                                          | Required |
-| ------------------ | ------------------ | ---------------------------------------------------- | -------- |
-| `name`             | `string`           | Name of the role assignment                          | Yes      |
-| `clusterRole`      | `string`           | Name of the cluster role to assign                   | Yes      |
-| `targetNamespaces` | `[]string`         | Namespaces to apply the role (cluster-wide if empty) | No       |
-| `clusterSelection` | `ClusterSelection` | Cluster selection criteria                           | Yes      |
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `name` | `string` | Name of the role assignment | Yes |
+| `clusterRole` | `string` | Name of the cluster role to assign | Yes |
+| `targetNamespaces` | `[]string` | Namespaces to apply the role (cluster-wide if empty) | No |
+| `clusterSelection` | `ClusterSelection` | Cluster selection criteria | Yes |
 
 #### ClusterSelection Fields
 
-| Field        | Type             | Description                                              | Required |
-| ------------ | ---------------- | -------------------------------------------------------- | -------- |
-| `type`       | `string`         | Type of cluster selection (currently only `placements`)  | Yes      |
-| `placements` | `[]PlacementRef` | List of Placement resources to use for cluster selection | Yes      |
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `type` | `string` | Type of cluster selection (currently only `placements`) | Yes |
+| `placements` | `[]PlacementRef` | List of Placement resources to use for cluster selection | Yes |
 
 #### PlacementRef Fields
 
-| Field       | Type     | Description                         | Required |
-| ----------- | -------- | ----------------------------------- | -------- |
-| `name`      | `string` | Name of the Placement resource      | Yes      |
-| `namespace` | `string` | Namespace of the Placement resource | Yes      |
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `name` | `string` | Name of the Placement resource | Yes |
+| `namespace` | `string` | Namespace of the Placement resource | Yes |
 
 #### Status
 
 The operator reports the status of each role assignment, including:
-
 - Overall conditions for the `MulticlusterRoleAssignment`
 - Individual status for each role assignment (Pending, Active, Error)
 - Detailed messages for troubleshooting
@@ -115,20 +113,19 @@ spec:
     name: jane.developer
     apiGroup: rbac.authorization.k8s.io
   roleAssignments:
-    - name: view-access
-      clusterRole: view
-      targetNamespaces:
-        - development
-        - staging
-      clusterSelection:
-        type: placements
-        placements:
-          - name: dev-clusters
-            namespace: open-cluster-management-global-set
+  - name: view-access
+    clusterRole: view
+    targetNamespaces:
+    - development
+    - staging
+    clusterSelection:
+      type: placements
+      placements:
+      - name: dev-clusters
+        namespace: open-cluster-management-global-set
 ```
 
 This example:
-
 - Grants the user `jane.developer` the `view` cluster role
 - Applies the role to the `development` and `staging` namespaces
 - Targets clusters selected by the `dev-clusters` Placement resource
@@ -146,24 +143,24 @@ spec:
     kind: User
     name: admin-user
   roleAssignments:
-    - name: prod-admin
-      clusterRole: admin
-      targetNamespaces:
-        - production
-      clusterSelection:
-        type: placements
-        placements:
-          - name: prod-clusters
-            namespace: open-cluster-management-global-set
-    - name: dev-edit
-      clusterRole: edit
-      targetNamespaces:
-        - development
-      clusterSelection:
-        type: placements
-        placements:
-          - name: dev-clusters
-            namespace: open-cluster-management-global-set
+  - name: prod-admin
+    clusterRole: admin
+    targetNamespaces:
+    - production
+    clusterSelection:
+      type: placements
+      placements:
+      - name: prod-clusters
+        namespace: open-cluster-management-global-set
+  - name: dev-edit
+    clusterRole: edit
+    targetNamespaces:
+    - development
+    clusterSelection:
+      type: placements
+      placements:
+      - name: dev-clusters
+        namespace: open-cluster-management-global-set
 ```
 
 This example shows how a single MulticlusterRoleAssignment can have many roleAssignments.
@@ -182,16 +179,16 @@ spec:
     name: automation-account
     namespace: automation
   roleAssignments:
-    - name: pod-reader
-      clusterRole: view
-      targetNamespaces:
-        - production
-        - staging
-      clusterSelection:
-        type: placements
-        placements:
-          - name: prod-clusters
-            namespace: open-cluster-management-global-set
+  - name: pod-reader
+    clusterRole: view
+    targetNamespaces:
+    - production
+    - staging
+    clusterSelection:
+      type: placements
+      placements:
+      - name: prod-clusters
+        namespace: open-cluster-management-global-set
 ```
 
 This example grants a ServiceAccount access to view resources in specific namespaces across selected clusters.
@@ -208,20 +205,17 @@ This example grants a ServiceAccount access to view resources in specific namesp
 ### Local Development
 
 1. **Clone the repository**:
-
    ```bash
    git clone https://github.com/stolostron/multicluster-role-assignment.git
    cd multicluster-role-assignment
    ```
 
 2. **Install dependencies**:
-
    ```bash
    go mod download
    ```
 
 3. **Run tests**:
-
    ```bash
    make test
    ```
@@ -236,13 +230,11 @@ This example grants a ServiceAccount access to view resources in specific namesp
 E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) to create an isolated test environment.
 
 1. **Set up Kind cluster**:
-
    ```bash
    make setup-test-e2e
    ```
 
 2. **Run e2e tests**:
-
    ```bash
    make test-e2e
    ```
@@ -255,13 +247,11 @@ E2E tests require [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#install
 ### Building and Deployment
 
 1. **Build the operator image**:
-
    ```bash
    make docker-build IMG=<your-registry>/multicluster-role-assignment:latest
    ```
 
 2. **Push the image**:
-
    ```bash
    make docker-push IMG=<your-registry>/multicluster-role-assignment:latest
    ```
