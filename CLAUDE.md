@@ -86,7 +86,7 @@ The operator's RBAC rules are defined via kubebuilder markers in the controller 
 
 ## Dockerfile variants
 
-- `Dockerfile` — standard multi-stage build (`golang:1.25` → distroless runtime)
+- `Dockerfile` — standard multi-stage build (`golang:1.26` → distroless runtime)
 - `Dockerfile.rhtap` — Red Hat build with FIPS compliance (`GOEXPERIMENT=strictfipsruntime`), UBI-based runtime, CPE labels
 
 ## Personal configuration

@@ -27,7 +27,7 @@ The operator uses annotation-based ownership tracking to support multiple Multic
 
 ### Prerequisites
 
-- Kubernetes cluster (1.25+)
+- Kubernetes cluster (1.26+)
 - [Open Cluster Management](https://open-cluster-management.io/) hub cluster
 - Managed clusters registered with the hub
 - `kubectl` configured to access your cluster
@@ -197,7 +197,7 @@ This example grants a ServiceAccount access to view resources in specific namesp
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - [yq](https://github.com/mikefarah/yq) v4+ - `go install github.com/mikefarah/yq/v4@latest`
 - Kubernetes cluster for testing
 - [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for e2e tests)
