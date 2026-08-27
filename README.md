@@ -159,7 +159,7 @@ spec:
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - [yq](https://github.com/mikefarah/yq) v4+ - `go install github.com/mikefarah/yq/v4@latest`
 - Kubernetes cluster for testing
 - [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for e2e tests)
