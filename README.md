@@ -27,7 +27,7 @@ The operator uses annotation-based ownership tracking to support multiple Multic
 
 ### Prerequisites
 
-- Kubernetes cluster (1.25+)
+- Kubernetes cluster (1.26+)
 - [Open Cluster Management](https://open-cluster-management.io/) hub cluster
 - Managed clusters registered with the hub
 - `kubectl` configured to access your cluster
