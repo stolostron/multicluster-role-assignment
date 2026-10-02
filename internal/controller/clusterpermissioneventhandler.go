@@ -56,9 +56,32 @@ func (h *clusterPermissionEventHandler) Create(ctx context.Context, e event.Type
 func (h *clusterPermissionEventHandler) Update(ctx context.Context, e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
+	oldCP := e.ObjectOld.(*cpv1alpha1.ClusterPermission)
 	newCP := e.ObjectNew.(*cpv1alpha1.ClusterPermission)
-	// For the new model, any change to a dedicated ClusterPermission should trigger reconciliation
-	// of its owning MRA. The MRA will read the status and update accordingly.
+
+	// Get old and new owner annotations
+	oldOwner := ""
+	newOwner := ""
+	if oldCP.Annotations != nil {
+		oldOwner = oldCP.Annotations[clusterPermissionMRAOwnerAnn]
+	}
+	if newCP.Annotations != nil {
+		newOwner = newCP.Annotations[clusterPermissionMRAOwnerAnn]
+	}
+
+	// If ownership changed, enqueue BOTH the old and new owner MRAs.
+	// This ensures the original owner is notified when its CP is stolen or its owner annotation removed.
+	if oldOwner != newOwner {
+		if oldOwner != "" {
+			enqueueMRA(ctx, oldOwner, q)
+		}
+		if newOwner != "" {
+			enqueueMRA(ctx, newOwner, q)
+		}
+		return
+	}
+
+	// For normal updates (no ownership change), just enqueue the current owner
 	enqueueOwner(ctx, newCP, q)
 }
 

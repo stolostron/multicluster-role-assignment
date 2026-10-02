@@ -409,13 +409,14 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 }
 
 // getClusterPermission fetches the dedicated ClusterPermission for an MRA in a specific cluster namespace.
-// Returns nil if not found. Returns error if found but not managed by this controller.
+// Returns nil if not found. Returns error if found but not managed by this controller or owned by a different MRA.
 func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
 	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment, clusterNamespace string,
 ) (*cpv1alpha1.ClusterPermission, error) {
 
 	log := logf.FromContext(ctx)
 	cpName := r.generateClusterPermissionName(mra)
+	mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
 
 	var clusterPermission cpv1alpha1.ClusterPermission
 	err := r.Get(ctx, client.ObjectKey{
@@ -431,10 +432,23 @@ func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
 		return nil, fmt.Errorf("failed to get ClusterPermission: %w", err)
 	}
 
+	// Verify this CP is managed by our controller
 	if !r.isClusterPermissionManaged(&clusterPermission) {
 		err := fmt.Errorf("ClusterPermission found but not managed by this controller in namespace %s with name %s",
 			clusterNamespace, cpName)
 		log.Error(err, "ClusterPermission conflict detected", "namespace", clusterNamespace, "name", cpName)
+		return nil, err
+	}
+
+	// Verify this CP is owned by this MRA (prevents hash collision issues)
+	if clusterPermission.Annotations != nil && clusterPermission.Annotations[clusterPermissionMRAOwnerAnn] != "" &&
+		clusterPermission.Annotations[clusterPermissionMRAOwnerAnn] != mraIdentifier {
+		err := fmt.Errorf("ClusterPermission %s/%s exists but is owned by different MRA: %s (expected %s)",
+			clusterNamespace, cpName, clusterPermission.Annotations[clusterPermissionMRAOwnerAnn], mraIdentifier)
+		log.Error(err, "ClusterPermission ownership conflict detected",
+			"namespace", clusterNamespace, "name", cpName,
+			"actualOwner", clusterPermission.Annotations[clusterPermissionMRAOwnerAnn],
+			"expectedOwner", mraIdentifier)
 		return nil, err
 	}
 
@@ -1165,10 +1179,9 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 				return err
 			}
 		} else {
-			// Successfully created - now clean up legacy bindings
-			if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
-				return err
-			}
+			// Successfully created - DO NOT cleanup legacy bindings yet.
+			// Wait until dedicated CP bindings are confirmed applied on the managed cluster.
+			// Legacy cleanup happens in cleanupLegacyBindingsIfDedicatedApplied() called later.
 			return nil
 		}
 	}
@@ -1197,9 +1210,15 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 		}
 	}
 
-	// After successful dedicated CP update, clean up legacy bindings
-	if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
-		return err
+	// Only clean up legacy bindings if the dedicated CP's bindings are confirmed applied.
+	// This ensures we don't remove working grants before the replacement is ready.
+	if r.areDedicatedCPBindingsApplied(existingCP, mra, cluster, roleAssignmentClusters) {
+		if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
+			return err
+		}
+	} else {
+		log.V(1).Info("Deferring legacy cleanup until dedicated CP bindings are applied",
+			"name", cpName, "namespace", cluster)
 	}
 
 	return nil
@@ -1408,6 +1427,76 @@ func (r *MulticlusterRoleAssignmentReconciler) isRoleAssignmentTargetingCluster(
 	}
 
 	return slices.Contains(clusters, cluster)
+}
+
+// areDedicatedCPBindingsApplied checks if all bindings in the dedicated ClusterPermission have been
+// successfully applied on the managed cluster. This is used to determine when it's safe to remove
+// legacy bindings - we don't want to remove working grants before the replacement is confirmed.
+func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
+	cp *cpv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment,
+	cluster string, roleAssignmentClusters map[string][]string) bool {
+
+	if cp == nil || cp.Status.ResourceStatus == nil {
+		return false
+	}
+
+	// Get the expected binding names from the MRA spec
+	expectedBindings := make(map[string]bool)
+	for _, ra := range mra.Spec.RoleAssignments {
+		if !r.isRoleAssignmentTargetingCluster(ra, cluster, roleAssignmentClusters) {
+			continue
+		}
+		if len(ra.TargetNamespaces) == 0 {
+			bindingName := r.generateBindingName(mra, ra.Name, ra.ClusterRole)
+			expectedBindings[bindingName] = false
+		} else {
+			for _, ns := range ra.TargetNamespaces {
+				bindingName := r.generateBindingName(mra, ra.Name, ra.ClusterRole, ns)
+				expectedBindings[bindingName] = false
+			}
+		}
+	}
+
+	if len(expectedBindings) == 0 {
+		// No bindings expected, nothing to verify
+		return true
+	}
+
+	// Check ClusterRoleBindings
+	if cp.Status.ResourceStatus.ClusterRoleBindings != nil {
+		for _, crbStatus := range cp.Status.ResourceStatus.ClusterRoleBindings {
+			if _, expected := expectedBindings[crbStatus.Name]; expected {
+				for _, cond := range crbStatus.Conditions {
+					if cond.Type == "Applied" && cond.Status == metav1.ConditionTrue {
+						expectedBindings[crbStatus.Name] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Check RoleBindings
+	if cp.Status.ResourceStatus.RoleBindings != nil {
+		for _, rbStatus := range cp.Status.ResourceStatus.RoleBindings {
+			if _, expected := expectedBindings[rbStatus.Name]; expected {
+				for _, cond := range rbStatus.Conditions {
+					if cond.Type == "Applied" && cond.Status == metav1.ConditionTrue {
+						expectedBindings[rbStatus.Name] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// All expected bindings must be applied
+	for _, applied := range expectedBindings {
+		if !applied {
+			return false
+		}
+	}
+	return true
 }
 
 // clearStaleStatus clears status information that may be stale due to spec changes.
@@ -1661,8 +1750,21 @@ func (r *MulticlusterRoleAssignmentReconciler) SetupWithManager(mgr ctrl.Manager
 							if !equality.Semantic.DeepEqual(oldCP.Status.ResourceStatus, newCP.Status.ResourceStatus) {
 								return true
 							}
-							// Also trigger reconciliation when validation conditions change (e.g., role existence status)
-							return validationConditionsChanged(oldCP, newCP)
+							// Trigger reconciliation when validation conditions change (e.g., role existence status)
+							if validationConditionsChanged(oldCP, newCP) {
+								return true
+							}
+							// Trigger reconciliation when ownership annotation changes.
+							// This ensures the original MRA is notified if its CP's owner is removed or changed.
+							oldOwner := ""
+							newOwner := ""
+							if oldCP.Annotations != nil {
+								oldOwner = oldCP.Annotations[clusterPermissionMRAOwnerAnn]
+							}
+							if newCP.Annotations != nil {
+								newOwner = newCP.Annotations[clusterPermissionMRAOwnerAnn]
+							}
+							return oldOwner != newOwner
 						},
 						CreateFunc: func(e event.CreateEvent) bool {
 							return true

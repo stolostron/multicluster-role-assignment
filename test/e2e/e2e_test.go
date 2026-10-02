@@ -433,9 +433,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch ClusterPermission", func() {
-					By("waiting for ClusterPermission to be created and fetching it")
+					By("waiting for dedicated ClusterPermission to be created and fetching it")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
-						"mra-managed-permissions", "managedcluster01")
+						dedicatedCPName, "managedcluster01")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -519,9 +520,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch updated ClusterPermission", func() {
-					By("waiting for updated ClusterPermission to be fetched")
+					By("waiting for updated dedicated ClusterPermission to be fetched")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
 					clusterPermissionJSON = fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+						"clusterpermissions", dedicatedCPName, "managedcluster01")
 
 					By("unmarshaling updated ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -596,9 +598,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch ClusterPermission", func() {
-					By("waiting for ClusterPermission to be created and fetching it")
+					By("waiting for dedicated ClusterPermission to be created and fetching it")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
 					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions",
-						"mra-managed-permissions", "managedcluster02")
+						dedicatedCPName, "managedcluster02")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -3660,9 +3663,15 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = utils.Run(cmd)
 			})
 
-			It("should migrate bindings from legacy CP to dedicated CP", func() {
-				By("pre-creating a legacy mra-managed-permissions ClusterPermission with existing bindings")
-				// This simulates an existing legacy CP from before the dedicated model was introduced
+			It("should migrate MRA's bindings from legacy CP to dedicated CP when dedicated CP bindings are applied", func() {
+				mraIdentifier := fmt.Sprintf("%s/%s", openClusterManagementGlobalSetNamespace, mraName)
+				// Generate the expected binding name that the controller would use
+				// Format: mra-<sanitized-mra-name>-<subject-kind>-<subject-name>-<cluster-role>-<hash>
+				// For simplicity, we'll create a binding with a known name pattern
+
+				By("pre-creating a legacy mra-managed-permissions ClusterPermission with this MRA's binding")
+				// Simulate an existing legacy CP where this MRA has a binding
+				// Use the actual MRA identifier as the owner annotation value
 				legacyCPYAML := fmt.Sprintf(`apiVersion: rbac.open-cluster-management.io/v1alpha1
 kind: ClusterPermission
 metadata:
@@ -3671,21 +3680,29 @@ metadata:
   labels:
     %s: %s
   annotations:
-    owner/legacy-binding-1: "true"
-    owner/legacy-binding-2: "true"
+    owner/legacy-mra-binding: "%s"
+    owner/other-mra-binding: "other-namespace/other-mra"
 spec:
   clusterRoleBindings:
-    - clusterRoleName: view
-      clusterRole:
-        rules:
-          - apiGroups: [""]
-            resources: ["pods"]
-            verbs: ["get", "list"]
-      subject:
-        kind: User
-        name: legacy-user
+    - name: legacy-mra-binding
+      roleRef:
+        kind: ClusterRole
+        name: edit
         apiGroup: rbac.authorization.k8s.io
-`, legacyClusterPermissionName, clusterNamespace, clusterPermissionManagedByLabel, clusterPermissionManagedByValue)
+      subjects:
+        - kind: User
+          name: migration-user
+          apiGroup: rbac.authorization.k8s.io
+    - name: other-mra-binding
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+      subjects:
+        - kind: User
+          name: other-user
+          apiGroup: rbac.authorization.k8s.io
+`, legacyClusterPermissionName, clusterNamespace, clusterPermissionManagedByLabel, clusterPermissionManagedByValue, mraIdentifier)
 
 				legacyCPFile := "/tmp/legacy-cp-migration.yaml"
 				err := os.WriteFile(legacyCPFile, []byte(legacyCPYAML), 0644)
@@ -3695,12 +3712,13 @@ spec:
 				_, err = utils.Run(cmd)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("verifying legacy CP exists before MRA creation")
+				By("verifying legacy CP exists with both bindings before MRA creation")
 				Eventually(func(g Gomega) {
 					cpJSON := fetchK8sResourceJSON("clusterpermissions", legacyClusterPermissionName, clusterNamespace)
 					var cp cpv1alpha1.ClusterPermission
 					unmarshalJSON(cpJSON, &cp)
 					g.Expect(cp.Name).To(Equal(legacyClusterPermissionName))
+					g.Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(2))
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 				By("creating MRA that will use dedicated CP model")
@@ -3715,31 +3733,27 @@ spec:
 				By("verifying dedicated CP has MRA's binding")
 				verifyDedicatedCPBindingCount(mraName, clusterNamespace, 1, 0)
 
-				By("verifying the legacy CP still exists (preserves other MRAs' bindings)")
-				// The legacy CP should remain because it has bindings owned by other MRAs
-				// (the owner/legacy-binding-1 and owner/legacy-binding-2 annotations)
+				By("verifying the legacy CP was cleaned up - this MRA's binding removed, other MRA's binding preserved")
+				// After the dedicated CP's bindings are applied and migration runs,
+				// the legacy CP should have this MRA's binding removed
 				Eventually(func(g Gomega) {
 					cpJSON := fetchK8sResourceJSON("clusterpermissions", legacyClusterPermissionName, clusterNamespace)
 					var cp cpv1alpha1.ClusterPermission
 					unmarshalJSON(cpJSON, &cp)
 					g.Expect(cp.Name).To(Equal(legacyClusterPermissionName))
-					// Legacy CP should still have its original bindings
-					g.Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
-				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
-				By("verifying MRA's bindings are NOT in the legacy CP (they're in the dedicated CP)")
-				cpJSON := fetchK8sResourceJSON("clusterpermissions", legacyClusterPermissionName, clusterNamespace)
-				var legacyCP cpv1alpha1.ClusterPermission
-				unmarshalJSON(cpJSON, &legacyCP)
+					// Should only have the other MRA's binding left
+					g.Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(1))
+					g.Expect((*cp.Spec.ClusterRoleBindings)[0].Name).To(Equal("other-mra-binding"))
 
-				// The legacy CP should not have the MRA owner annotation
-				if legacyCP.Annotations != nil {
-					Expect(legacyCP.Annotations).NotTo(HaveKey(clusterPermissionMRAOwnerAnn),
-						"Legacy CP should not have MRA owner annotation")
-				}
+					// The owner annotation for this MRA's binding should be gone
+					g.Expect(cp.Annotations).NotTo(HaveKey("owner/legacy-mra-binding"))
+					// The other MRA's owner annotation should still be there
+					g.Expect(cp.Annotations).To(HaveKeyWithValue("owner/other-mra-binding", "other-namespace/other-mra"))
+				}, 60*time.Second, 1*time.Second).Should(Succeed())
 			})
 
-			It("should not interfere with legacy bindings when MRA is deleted", func() {
+			It("should not interfere with other MRAs' legacy bindings when MRA is deleted", func() {
 				By("deleting the MRA")
 				cmd := exec.Command("kubectl", "delete", "multiclusterroleassignment", mraName,
 					"-n", openClusterManagementGlobalSetNamespace)
@@ -3749,13 +3763,14 @@ spec:
 				By("verifying dedicated CP is deleted")
 				verifyDedicatedCPNotExists(mraName, clusterNamespace)
 
-				By("verifying legacy CP still exists with its bindings")
+				By("verifying legacy CP still exists with other MRA's binding")
 				Eventually(func(g Gomega) {
 					cpJSON := fetchK8sResourceJSON("clusterpermissions", legacyClusterPermissionName, clusterNamespace)
 					var cp cpv1alpha1.ClusterPermission
 					unmarshalJSON(cpJSON, &cp)
 					g.Expect(cp.Name).To(Equal(legacyClusterPermissionName))
-					g.Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
+					g.Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(1))
+					g.Expect((*cp.Spec.ClusterRoleBindings)[0].Name).To(Equal("other-mra-binding"))
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 			})
 		})
@@ -4395,72 +4410,72 @@ func getTargetedClustersFromMRA(mra mrav1beta1.MulticlusterRoleAssignment) []str
 	return uniqueClusters
 }
 
-// validateMRAOwnerAnnotations validates that this ClusterPermission contains the correct number of owner annotations
-// for this MulticlusterRoleAssignment, with proper MRA identifier values, and no unexpected annotations.
+// validateMRAOwnerAnnotations validates that this ClusterPermission has the correct owner annotation
+// for the dedicated ClusterPermission model (single mra-owner annotation).
 func validateMRAOwnerAnnotations(cp cpv1alpha1.ClusterPermission, mra mrav1beta1.MulticlusterRoleAssignment) {
 	mraNamespaceAndName := fmt.Sprintf("%s/%s", mra.Namespace, mra.Name)
-	clusterName := cp.Namespace
 
-	expectedAnnotationCount := 0
-	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		clusters := getClustersFromPlacements(roleAssignment.ClusterSelection.Placements)
-		if !slices.Contains(clusters, clusterName) {
-			continue
-		}
+	// For dedicated CPs, verify the single owner annotation
+	Expect(cp.Annotations).NotTo(BeNil(),
+		fmt.Sprintf("Expected ClusterPermission %s/%s to have annotations", cp.Namespace, cp.Name))
+	Expect(cp.Annotations).To(HaveKeyWithValue(clusterPermissionMRAOwnerAnn, mraNamespaceAndName),
+		fmt.Sprintf("Expected ClusterPermission %s/%s to be owned by MRA %s",
+			cp.Namespace, cp.Name, mraNamespaceAndName))
 
-		if len(roleAssignment.TargetNamespaces) == 0 {
-			expectedAnnotationCount++
-		} else {
-			expectedAnnotationCount += len(roleAssignment.TargetNamespaces)
-		}
-	}
-
-	actualAnnotationCount := 0
-	if cp.Annotations != nil {
-		for annotationKey, annotationValue := range cp.Annotations {
-			if strings.HasPrefix(annotationKey, clusterPermissionOwnerAnnotationPrefix) &&
-				annotationValue == mraNamespaceAndName {
-				actualAnnotationCount++
-			}
-		}
-	}
-
-	Expect(actualAnnotationCount).To(Equal(expectedAnnotationCount),
-		fmt.Sprintf("Expected %d owner annotations for MRA %s on ClusterPermission %s/%s, but found %d",
-			expectedAnnotationCount, mraNamespaceAndName, cp.Namespace, cp.Name, actualAnnotationCount))
+	// Verify managed-by label
+	Expect(cp.Labels).To(HaveKeyWithValue(clusterPermissionManagedByLabel, clusterPermissionManagedByValue),
+		fmt.Sprintf("Expected ClusterPermission %s/%s to have managed-by label", cp.Namespace, cp.Name))
 }
 
-// validateBindingConsistency validates that each owner annotation references a ClusterPermission binding whose
-// properties (subject, role, namespace) are consistent with what exists on the referenced MRA.
+// validateBindingConsistency validates that the ClusterPermission's bindings are consistent with the owning MRA.
+// For dedicated CPs, this verifies that all bindings belong to the single owning MRA.
 func validateBindingConsistency(cp cpv1alpha1.ClusterPermission, mras []mrav1beta1.MulticlusterRoleAssignment) {
-	for annotationKey, annotationValue := range cp.Annotations {
-		if !strings.HasPrefix(annotationKey, clusterPermissionOwnerAnnotationPrefix) {
-			continue
+	// Get the owner MRA from the annotation
+	ownerMRAIdentifier := cp.Annotations[clusterPermissionMRAOwnerAnn]
+	Expect(ownerMRAIdentifier).NotTo(BeEmpty(),
+		fmt.Sprintf("ClusterPermission %s/%s should have owner annotation", cp.Namespace, cp.Name))
+
+	// Find the owning MRA
+	var ownerMRA *mrav1beta1.MulticlusterRoleAssignment
+	for i := range mras {
+		mraIdentifier := fmt.Sprintf("%s/%s", mras[i].Namespace, mras[i].Name)
+		if mraIdentifier == ownerMRAIdentifier {
+			ownerMRA = &mras[i]
+			break
 		}
-		referencedMRANamespaceAndName := annotationValue
+	}
+	Expect(ownerMRA).NotTo(BeNil(),
+		fmt.Sprintf("Owner MRA %s not found in provided MRA list for ClusterPermission %s/%s",
+			ownerMRAIdentifier, cp.Namespace, cp.Name))
 
-		bindingName := strings.TrimPrefix(annotationKey, clusterPermissionOwnerAnnotationPrefix)
-
-		var referencedMRA *mrav1beta1.MulticlusterRoleAssignment
-		for _, mra := range mras {
-			if fmt.Sprintf("%s/%s", mra.Namespace, mra.Name) == referencedMRANamespaceAndName {
-				referencedMRA = &mra
-				break
+	// Verify all ClusterRoleBindings belong to this MRA
+	if cp.Spec.ClusterRoleBindings != nil {
+		for _, crb := range *cp.Spec.ClusterRoleBindings {
+			binding := &ExpectedBinding{
+				RoleName:    crb.RoleRef.Name,
+				Namespace:   "",
+				SubjectName: crb.Subjects[0].Name,
 			}
+			exists := checkMRAForBindingExistance(*ownerMRA, *binding, cp.Namespace)
+			Expect(exists).To(BeTrue(),
+				fmt.Sprintf("ClusterRoleBinding %s in ClusterPermission %s/%s doesn't match owner MRA %s",
+					crb.Name, cp.Namespace, cp.Name, ownerMRAIdentifier))
 		}
-		Expect(referencedMRA).NotTo(BeNil(),
-			fmt.Sprintf("MRA %s referenced in ClusterPermission %s/%s annotation not found",
-				referencedMRANamespaceAndName, cp.Namespace, cp.Name))
+	}
 
-		binding := locateClusterPermissionBinding(cp, bindingName)
-		Expect(binding).NotTo(BeNil(),
-			fmt.Sprintf("Binding %s referenced in annotation not found in ClusterPermission %s/%s", bindingName,
-				cp.Namespace, cp.Name))
-
-		exists := checkMRAForBindingExistance(*referencedMRA, *binding, cp.Namespace)
-		Expect(exists).To(BeTrue(),
-			fmt.Sprintf("MRA %s does not contain binding %s in ClusterPermission %s/%s", referencedMRANamespaceAndName,
-				bindingName, cp.Namespace, cp.Name))
+	// Verify all RoleBindings belong to this MRA
+	if cp.Spec.RoleBindings != nil {
+		for _, rb := range *cp.Spec.RoleBindings {
+			binding := &ExpectedBinding{
+				RoleName:    rb.RoleRef.Name,
+				Namespace:   rb.Namespace,
+				SubjectName: rb.Subjects[0].Name,
+			}
+			exists := checkMRAForBindingExistance(*ownerMRA, *binding, cp.Namespace)
+			Expect(exists).To(BeTrue(),
+				fmt.Sprintf("RoleBinding %s in ClusterPermission %s/%s doesn't match owner MRA %s",
+					rb.Name, cp.Namespace, cp.Name, ownerMRAIdentifier))
+		}
 	}
 }
 

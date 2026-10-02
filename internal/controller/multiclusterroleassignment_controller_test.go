@@ -3925,6 +3925,32 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(dedicatedCP.Annotations[clusterPermissionMRAOwnerAnn]).To(Equal(
 					reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)))
 
+				// Simulate the dedicated CP's bindings being applied on the managed cluster
+				// (this would normally come from the ClusterPermission controller)
+				bindingName := reconciler.generateBindingName(mra, mra.Spec.RoleAssignments[0].Name,
+					mra.Spec.RoleAssignments[0].ClusterRole)
+				dedicatedCP.Status.ResourceStatus = &cpv1alpha1.ResourceStatus{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBindingStatus{
+						{
+							Name: bindingName,
+							Conditions: []metav1.Condition{
+								{
+									Type:               "Applied",
+									Status:             metav1.ConditionTrue,
+									Reason:             "Applied",
+									LastTransitionTime: metav1.Now(),
+								},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Status().Update(ctx, dedicatedCP)).To(Succeed())
+
+				// Call ensureClusterPermissionAttempt again - now with applied bindings,
+				// it should clean up the legacy bindings
+				err = reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
+				Expect(err).NotTo(HaveOccurred())
+
 				// Verify legacy ClusterPermission still exists with only other MRA's bindings
 				updatedLegacyCP := &cpv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
@@ -3984,6 +4010,30 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					Name:      dedicatedCPName,
 					Namespace: cluster2Name,
 				}, dedicatedCP)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Simulate the dedicated CP's bindings being applied
+				bindingName := reconciler.generateBindingName(mra, mra.Spec.RoleAssignments[0].Name,
+					mra.Spec.RoleAssignments[0].ClusterRole)
+				dedicatedCP.Status.ResourceStatus = &cpv1alpha1.ResourceStatus{
+					ClusterRoleBindings: []cpv1alpha1.ClusterRoleBindingStatus{
+						{
+							Name: bindingName,
+							Conditions: []metav1.Condition{
+								{
+									Type:               "Applied",
+									Status:             metav1.ConditionTrue,
+									Reason:             "Applied",
+									LastTransitionTime: metav1.Now(),
+								},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Status().Update(ctx, dedicatedCP)).To(Succeed())
+
+				// Call ensureClusterPermissionAttempt again to trigger migration cleanup
+				err = reconciler.ensureClusterPermissionAttempt(ctx, mra, cluster2Name, roleAssignmentClusters)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify legacy ClusterPermission was deleted (no remaining bindings)
