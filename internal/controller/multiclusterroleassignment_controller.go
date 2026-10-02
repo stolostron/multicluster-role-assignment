@@ -1150,6 +1150,16 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 				if getErr := r.Get(ctx, client.ObjectKey{Name: cpName, Namespace: cluster}, &existing); getErr != nil {
 					return getErr
 				}
+				// Verify this CP is managed by us and owned by this MRA
+				if !r.isClusterPermissionManaged(&existing) {
+					return fmt.Errorf("ClusterPermission %s/%s exists but is not managed by this controller",
+						cluster, cpName)
+				}
+				if existing.Annotations != nil && existing.Annotations[clusterPermissionMRAOwnerAnn] != "" &&
+					existing.Annotations[clusterPermissionMRAOwnerAnn] != mraIdentifier {
+					return fmt.Errorf("ClusterPermission %s/%s exists but is owned by different MRA: %s",
+						cluster, cpName, existing.Annotations[clusterPermissionMRAOwnerAnn])
+				}
 				existingCP = &existing
 			} else {
 				return err
