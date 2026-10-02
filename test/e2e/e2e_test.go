@@ -1045,13 +1045,15 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch merged ClusterPermissions for all managed clusters", func() {
+				It("should fetch ClusterPermissions for all managed clusters", func() {
+					// With dedicated model, fetch Multiple2 MRA's CP (targets all 3 clusters)
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
-							"waiting for merged ClusterPermission to be ready and fetching it from %s", clusterName))
+							"waiting for dedicated ClusterPermission to be ready and fetching it from %s", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							"mra-managed-permissions", clusterName)
+							dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
@@ -1317,16 +1319,18 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch updated merged ClusterPermissions for all managed clusters", func() {
+				It("should fetch updated ClusterPermissions for all managed clusters", func() {
+					// With dedicated model, fetch Multiple2 MRA's CP
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf("waiting for comprehensively updated merged ClusterPermission to be ready and "+
+						By(fmt.Sprintf("waiting for updated dedicated ClusterPermission to be ready and "+
 							"fetching it from %s", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON(
-							"clusterpermissions", "mra-managed-permissions", clusterName)
+							"clusterpermissions", dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf(
-							"unmarshaling comprehensively updated ClusterPermission json for %s", clusterName))
+							"unmarshaling updated ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
 					}
 				})
@@ -1966,11 +1970,12 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch final ClusterPermissions from all managed clusters", func() {
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf("fetching final ClusterPermission from %s after rapid patching", clusterName))
+						By(fmt.Sprintf("fetching final dedicated ClusterPermission from %s after rapid patching", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							"mra-managed-permissions", clusterName)
+							dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf("unmarshaling final ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
@@ -2138,12 +2143,14 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch updated ClusterPermissions for all managed clusters", func() {
+					// After deleting Multiple2, use Multiple1's CP
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
-							"waiting for updated ClusterPermission to be ready and fetching it from %s", clusterName))
+							"waiting for dedicated ClusterPermission to be ready and fetching it from %s", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							"mra-managed-permissions", clusterName)
+							dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
@@ -2643,8 +2650,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should have merged bindings on overlapping cluster", func() {
-					By("fetching ClusterPermission on managedcluster01 (targeted by admin, view, and monitoring)")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					dedicatedCPName := generateDedicatedCPName("test-multicluster-role-assignment-multiple-1")
+					By("fetching dedicated ClusterPermission on managedcluster01 (targeted by admin, view, and monitoring)")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has bindings from all roleAssignments targeting this cluster")
@@ -2691,8 +2699,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should create ClusterPermission on newly added cluster", func() {
-					By("verifying ClusterPermission exists on managedcluster04")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster04")
+					dedicatedCPName := generateDedicatedCPName("test-multicluster-role-assignment-multiple-1")
+					By("verifying dedicated ClusterPermission exists on managedcluster04")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster04")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has edit binding from edit-assignment-cluster-3")
@@ -2758,8 +2767,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should aggregate and deduplicate clusters from multiple placements", func() {
-					By("fetching ClusterPermission on managedcluster01 (from BOTH placements)")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleCRBName)
+					By("fetching dedicated ClusterPermission on managedcluster01 (from BOTH placements)")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has exactly 1 binding (deduplicated)")
@@ -2769,8 +2779,8 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 
-					By("fetching ClusterPermission on managedcluster02 (from placement-cluster-01-02 only)")
-					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+					By("fetching dedicated ClusterPermission on managedcluster02 (from placement-cluster-01-02 only)")
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission on managedcluster02 has correct binding")
@@ -2823,9 +2833,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch initial ClusterPermission", func() {
-					By("waiting for ClusterPermission to be created and fetching it")
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleCRBName)
+					By("waiting for dedicated ClusterPermission to be created and fetching it")
 					clusterPermissionJSON = fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+						"clusterpermissions", dedicatedCPName, "managedcluster01")
 
 					By("unmarshaling ClusterPermission json")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -2844,9 +2855,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("fetch ClusterPermission and validate generation change", func() {
-					By("fetching final reconciled ClusterPermission")
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleCRBName)
+					By("fetching final reconciled dedicated ClusterPermission")
 					reconciledJSON := fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", "managedcluster01")
+						"clusterpermissions", dedicatedCPName, "managedcluster01")
 					unmarshalJSON(reconciledJSON, &clusterPermission)
 
 					By("verifying generation incremented after manual modification")
@@ -2925,12 +2937,15 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch initial ClusterPermissions for all managed clusters", func() {
+					// With dedicated model, we fetch one MRA's CP per cluster for drift testing
+					// Using Multiple1 MRA as it targets all 3 clusters
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
-							"waiting for merged ClusterPermission to be ready and fetching it from %s", clusterName))
+							"waiting for dedicated ClusterPermission to be ready and fetching it from %s", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON(
-							"clusterpermissions", "mra-managed-permissions", clusterName)
+							"clusterpermissions", dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
@@ -3000,10 +3015,11 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch ClusterPermissions and validate generation changes", func() {
+					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf("fetching reconciled ClusterPermission from %s", clusterName))
-						reconciledJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", clusterName)
+						By(fmt.Sprintf("fetching reconciled dedicated ClusterPermission from %s", clusterName))
+						reconciledJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, clusterName)
 						unmarshalJSON(reconciledJSON, &clusterPermissions[i-1])
 
 						By(fmt.Sprintf("verifying generation incremented for %s", clusterName))
