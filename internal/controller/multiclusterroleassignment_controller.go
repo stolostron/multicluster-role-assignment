@@ -1263,6 +1263,10 @@ func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermission
 		spec.RoleBindings = &roleBindings
 	}
 
+	// Enable ClusterRole validation on the managed cluster
+	validate := true
+	spec.Validate = &validate
+
 	return spec
 }
 
@@ -1376,7 +1380,7 @@ func (r *MulticlusterRoleAssignmentReconciler) cleanupLegacyBindings(ctx context
 func (r *MulticlusterRoleAssignmentReconciler) extractLegacyOwnedBindingNames(
 	cp *cpv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment) []string {
 
-	if cp.Annotations == nil {
+	if cp == nil || cp.Annotations == nil {
 		return nil
 	}
 
