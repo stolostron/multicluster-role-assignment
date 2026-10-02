@@ -97,7 +97,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		By("Initializing the ClusterPermission")
 		cp = &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: cluster2Name,
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -202,7 +202,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		for _, clusterName := range clusterNames {
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 				},
 			}
@@ -389,7 +389,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			r := &MulticlusterRoleAssignmentReconciler{}
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
 
-			cpName := clusterPermissionManagedName
+			cpName := legacyClusterPermissionName
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      cpName,
@@ -475,7 +475,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			r := &MulticlusterRoleAssignmentReconciler{}
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
 
-			cpName := clusterPermissionManagedName
+			cpName := legacyClusterPermissionName
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      cpName,
@@ -563,7 +563,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			r := &MulticlusterRoleAssignmentReconciler{}
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName, namespace)
 
-			cpName := clusterPermissionManagedName
+			cpName := legacyClusterPermissionName
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      cpName,
@@ -757,7 +757,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Create ClusterPermission for cluster1 with BOTH bindings failed
 			cp1 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: targetCluster1,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -798,7 +798,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Create ClusterPermission for cluster2 with BOTH bindings pending (unknown)
 			cp2 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: targetCluster2,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -916,7 +916,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			createFailedCP := func(clusterName string) *cpv1alpha1.ClusterPermission {
 				return &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      clusterPermissionManagedName,
+						Name:      legacyClusterPermissionName,
 						Namespace: clusterName,
 						Labels: map[string]string{
 							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1025,7 +1025,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			createPendingCP := func(clusterName string) *cpv1alpha1.ClusterPermission {
 				return &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      clusterPermissionManagedName,
+						Name:      legacyClusterPermissionName,
 						Namespace: clusterName,
 						Labels: map[string]string{
 							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1123,7 +1123,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// ClusterPermission exists but has nil ResourceStatus (cluster unavailable)
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1195,7 +1195,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Cluster 1: success (binding Applied=True)
 			cp1 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: successCluster,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1229,7 +1229,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Cluster 2: failure (binding Applied=False)
 			cp2 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: failedCluster,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1321,7 +1321,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Cluster 1: success (binding Applied=True)
 			cp1 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: successCluster,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1355,7 +1355,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// Cluster 2: pending (binding Applied=Unknown)
 			cp2 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: pendingCluster,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1447,7 +1447,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// One binding succeeds, one fails on the same cluster
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: targetCluster,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1569,7 +1569,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// CP for cluster1 - RA1 failed
 			cp1 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster1,
 					Labels:    map[string]string{clusterPermissionManagedByLabel: clusterPermissionManagedByValue},
 				},
@@ -1590,7 +1590,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// CP for cluster2 - RA2 pending
 			cp2 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2,
 					Labels:    map[string]string{clusterPermissionManagedByLabel: clusterPermissionManagedByValue},
 				},
@@ -1611,7 +1611,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// CP for cluster3 - RA3 success
 			cp3 := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster3,
 					Labels:    map[string]string{clusterPermissionManagedByLabel: clusterPermissionManagedByValue},
 				},
@@ -1717,7 +1717,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			// CP has the RoleBinding failing
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: targetCluster,
 					Labels:    map[string]string{clusterPermissionManagedByLabel: clusterPermissionManagedByValue},
 				},
@@ -1793,7 +1793,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1882,7 +1882,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName, namespace)
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -1969,7 +1969,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -2054,7 +2054,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			bindingName := r.generateBindingName(mra, raName, clusterRoleName)
 			cp := &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 					Labels: map[string]string{
 						clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -2411,7 +2411,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			By("Checking that ClusterPermission was created")
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: cluster1Name,
 			}, cp)
 			Expect(err).NotTo(HaveOccurred())
@@ -2511,7 +2511,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			for _, clusterName := range []string{cluster1Name, cluster2Name, cluster3Name} {
 				cp := &cpv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -2553,7 +2553,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			for _, clusterName := range []string{cluster1Name, cluster3Name} {
 				cp := &cpv1alpha1.ClusterPermission{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: clusterName,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -2563,7 +2563,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			Eventually(func() bool {
 				cp := &cpv1alpha1.ClusterPermission{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				return apierrors.IsNotFound(err)
@@ -3426,7 +3426,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("ClusterPermission found but not managed by this controller"))
 				Expect(err.Error()).To(ContainSubstring(cluster2Name))
-				Expect(err.Error()).To(ContainSubstring(clusterPermissionManagedName))
+				Expect(err.Error()).To(ContainSubstring(legacyClusterPermissionName))
 				Expect(cp).To(BeNil())
 			})
 
@@ -3436,7 +3436,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp, err := reconciler.getClusterPermission(ctx, cluster2Name)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cp).NotTo(BeNil())
-				Expect(cp.Name).To(Equal(clusterPermissionManagedName))
+				Expect(cp.Name).To(Equal(legacyClusterPermissionName))
 				Expect(cp.Namespace).To(Equal(cluster2Name))
 			})
 		})
@@ -3599,7 +3599,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -3618,7 +3618,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should update existing ClusterPermission while preserving other MRA contributions", func() {
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "other-binding": "other-namespace/other-mra",
 				}
 				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{
@@ -3642,7 +3642,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -3650,9 +3650,9 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(cp.Spec.ClusterRoleBindings).NotTo(BeNil())
 				Expect(*cp.Spec.ClusterRoleBindings).To(HaveLen(2))
 
-				Expect(cp.Annotations[ownerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
+				Expect(cp.Annotations[legacyOwnerAnnotationPrefix+"other-binding"]).To(Equal("other-namespace/other-mra"))
 				expectedBindingName := reconciler.generateBindingName(mra, "test-assignment-1", "test-role")
-				expectedKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
+				expectedKey := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName)
 				Expect(cp.Annotations[expectedKey]).To(Equal(fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)))
 			})
@@ -3671,7 +3671,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -3682,8 +3682,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				expectedBindingName1 := reconciler.generateBindingName(mra, "namespaced-role", "edit", "namespace1")
 				expectedBindingName2 := reconciler.generateBindingName(mra, "namespaced-role", "edit", "namespace2")
-				expectedKey1 := reconciler.generateOwnerAnnotationKey(expectedBindingName1)
-				expectedKey2 := reconciler.generateOwnerAnnotationKey(expectedBindingName2)
+				expectedKey1 := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName1)
+				expectedKey2 := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName2)
 				expectedValue := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
 
 				Expect(cp.Annotations[expectedKey1]).To(Equal(expectedValue))
@@ -3693,7 +3693,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should fail when unmanaged ClusterPermission exists", func() {
 				unmanagedCP := &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      clusterPermissionManagedName,
+						Name:      legacyClusterPermissionName,
 						Namespace: cluster2Name,
 					},
 				}
@@ -3727,7 +3727,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					DeleteError: apierrors.NewNotFound(schema.GroupResource{
 						Group:    "rbac.open-cluster-management.io",
 						Resource: "clusterpermissions"},
-						clusterPermissionManagedName),
+						legacyClusterPermissionName),
 					ShouldFailDelete: true,
 					TargetResource:   "clusterpermissions",
 				}
@@ -3758,7 +3758,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 					UpdateError: apierrors.NewNotFound(schema.GroupResource{
 						Group:    "rbac.open-cluster-management.io",
 						Resource: "clusterpermissions"},
-						clusterPermissionManagedName),
+						legacyClusterPermissionName),
 					ShouldFailUpdate: true,
 					TargetResource:   "clusterpermissions",
 				}
@@ -3783,7 +3783,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Labels = map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
-				ownerKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
+				ownerKey := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName)
 				ownerID := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
 				cp.Annotations = map[string]string{
 					ownerKey: ownerID,
@@ -3880,7 +3880,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Labels = map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
-				ownerKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
+				ownerKey := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName)
 				ownerID := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
 				cp.Annotations = map[string]string{
 					ownerKey: ownerID,
@@ -3909,7 +3909,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -3924,7 +3924,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				cp.Labels = map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				}
-				ownerKey := reconciler.generateOwnerAnnotationKey(expectedBindingName)
+				ownerKey := reconciler.generateLegacyOwnerAnnotationKey(expectedBindingName)
 				ownerID := reconciler.generateMulticlusterRoleAssignmentIdentifier(mra)
 				cp.Annotations = map[string]string{
 					ownerKey: ownerID,
@@ -3968,7 +3968,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(updateCalled).To(BeFalse())
 
 				err = k8sClient.Get(ctx, types.NamespacedName{
-					Name:      clusterPermissionManagedName,
+					Name:      legacyClusterPermissionName,
 					Namespace: cluster2Name,
 				}, cp)
 				Expect(err).NotTo(HaveOccurred())
@@ -4179,11 +4179,11 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			})
 		})
 
-		Describe("generateOwnerAnnotationKey", func() {
+		Describe("generateLegacyOwnerAnnotationKey", func() {
 			It("Should generate correct annotation key with prefix", func() {
 				bindingName := "mra-abcd1234efgh"
-				key := reconciler.generateOwnerAnnotationKey(bindingName)
-				expected := ownerAnnotationPrefix + bindingName
+				key := reconciler.generateLegacyOwnerAnnotationKey(bindingName)
+				expected := legacyOwnerAnnotationPrefix + bindingName
 				Expect(key).To(Equal(expected))
 			})
 		})
@@ -4199,10 +4199,10 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("extractOwnedBindingNames", func() {
 			It("Should extract owned binding names from annotations", func() {
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "binding1": fmt.Sprintf(
+					legacyOwnerAnnotationPrefix + "binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					ownerAnnotationPrefix + "binding2": "other-namespace/other-mra",
-					ownerAnnotationPrefix + "binding3": fmt.Sprintf(
+					legacyOwnerAnnotationPrefix + "binding2": "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "binding3": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
 					"unrelated-annotation": "value",
 				}
@@ -4313,7 +4313,7 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				Expect(slice.OwnerAnnotations).To(HaveLen(1))
 
 				expectedBindingName := reconciler.generateBindingName(mra, "cluster-admin-role", "cluster-admin")
-				expectedAnnotationKey := ownerAnnotationPrefix + expectedBindingName
+				expectedAnnotationKey := legacyOwnerAnnotationPrefix + expectedBindingName
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
@@ -4339,8 +4339,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				expectedMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 
-				expectedKey1 := ownerAnnotationPrefix + bindingName1
-				expectedKey2 := ownerAnnotationPrefix + bindingName2
+				expectedKey1 := legacyOwnerAnnotationPrefix + bindingName1
+				expectedKey2 := legacyOwnerAnnotationPrefix + bindingName2
 
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey1, expectedMRAIdentifier))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedKey2, expectedMRAIdentifier))
@@ -4388,8 +4388,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				adminBindingName := reconciler.generateBindingName(mra, "admin-role", "cluster-admin")
 				editBindingName := reconciler.generateBindingName(mra, "edit-role", "edit", "development")
 
-				expectedAdminKey := ownerAnnotationPrefix + adminBindingName
-				expectedEditKey := ownerAnnotationPrefix + editBindingName
+				expectedAdminKey := legacyOwnerAnnotationPrefix + adminBindingName
+				expectedEditKey := legacyOwnerAnnotationPrefix + editBindingName
 
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedAdminKey, expectedMRAIdentifier))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(expectedEditKey, expectedMRAIdentifier))
@@ -4399,13 +4399,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 		Describe("extractOthersClusterPermissionSlice", func() {
 			It("Should extract bindings not owned by current MRA", func() {
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "cluster-role-binding1": fmt.Sprintf(
+					legacyOwnerAnnotationPrefix + "cluster-role-binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					ownerAnnotationPrefix + "cluster-role-binding2": "other-namespace/other-mra",
-					ownerAnnotationPrefix + "role-binding1": fmt.Sprintf(
+					legacyOwnerAnnotationPrefix + "cluster-role-binding2": "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "role-binding1": fmt.Sprintf(
 						"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName),
-					ownerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
-					"unrelated-annotation":                  "value",
+					legacyOwnerAnnotationPrefix + "role-binding2": "other-namespace/other-mra",
+					"unrelated-annotation":                        "value",
 				}
 				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "cluster-role-binding1"}, // Owned by current MRA
@@ -4445,8 +4445,8 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 			It("Should exclude orphaned bindings with no ownership annotations", func() {
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
-					"unrelated-annotation":                    "value",
+					legacyOwnerAnnotationPrefix + "tracked-binding": "other-namespace/other-mra",
+					"unrelated-annotation":                          "value",
 				}
 				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "tracked-binding"},   // Has ownership annotation
@@ -4469,13 +4469,13 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 				currentMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
-					ownerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
-					ownerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra1",
-					ownerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra2",
-					ownerAnnotationPrefix + "other-binding3":   "other-namespace/other-mra3",
-					"unrelated-annotation":                     "should-be-preserved",
-					"another-unrelated":                        "also-preserved",
+					legacyOwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					legacyOwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					legacyOwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra1",
+					legacyOwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra2",
+					legacyOwnerAnnotationPrefix + "other-binding3":   "other-namespace/other-mra3",
+					"unrelated-annotation":                           "should-be-preserved",
+					"another-unrelated":                              "also-preserved",
 				}
 				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "current-binding1"},
@@ -4491,29 +4491,29 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(5))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					ownerAnnotationPrefix+"other-binding1", "other-namespace/other-mra1"))
+					legacyOwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra1"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					ownerAnnotationPrefix+"other-binding2", "other-namespace/other-mra2"))
+					legacyOwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra2"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					ownerAnnotationPrefix+"other-binding3", "other-namespace/other-mra3"))
+					legacyOwnerAnnotationPrefix+"other-binding3", "other-namespace/other-mra3"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("unrelated-annotation", "should-be-preserved"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("another-unrelated", "also-preserved"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "current-binding2"))
 			})
 
 			It("Should exclude orphaned annotations that have no corresponding bindings", func() {
 				currentMRAIdentifier := fmt.Sprintf(
 					"%s/%s", multiclusterRoleAssignmentNamespace, multiclusterRoleAssignmentName)
 				cp.Annotations = map[string]string{
-					ownerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
-					ownerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
-					ownerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra",
-					ownerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra",
-					ownerAnnotationPrefix + "missing-binding1": "other-namespace/other-mra",
-					ownerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
-					"non-owner-annotation":                     "preserved",
+					legacyOwnerAnnotationPrefix + "current-binding1": currentMRAIdentifier,
+					legacyOwnerAnnotationPrefix + "current-binding2": currentMRAIdentifier,
+					legacyOwnerAnnotationPrefix + "other-binding1":   "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "other-binding2":   "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "missing-binding1": "other-namespace/other-mra",
+					legacyOwnerAnnotationPrefix + "missing-binding2": "other-namespace/other-mra3",
+					"non-owner-annotation":                           "preserved",
 				}
 				cp.Spec.ClusterRoleBindings = &[]cpv1alpha1.ClusterRoleBinding{
 					{Name: "current-binding1"},
@@ -4533,16 +4533,16 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 
 				Expect(slice.OwnerAnnotations).To(HaveLen(3))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					ownerAnnotationPrefix+"other-binding1", "other-namespace/other-mra"))
+					legacyOwnerAnnotationPrefix+"other-binding1", "other-namespace/other-mra"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue(
-					ownerAnnotationPrefix+"other-binding2", "other-namespace/other-mra"))
+					legacyOwnerAnnotationPrefix+"other-binding2", "other-namespace/other-mra"))
 				Expect(slice.OwnerAnnotations).To(HaveKeyWithValue("non-owner-annotation", "preserved"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "missing-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "missing-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "missing-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "missing-binding2"))
 
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding1"))
-				Expect(slice.OwnerAnnotations).NotTo(HaveKey(ownerAnnotationPrefix + "current-binding2"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "current-binding1"))
+				Expect(slice.OwnerAnnotations).NotTo(HaveKey(legacyOwnerAnnotationPrefix + "current-binding2"))
 			})
 		})
 
@@ -4695,25 +4695,25 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should merge annotations from both slices", func() {
 				others := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						ownerAnnotationPrefix + "binding1": "other/mra1",
-						ownerAnnotationPrefix + "binding2": "other/mra2",
-						"unrelated-annotation":             "value",
+						legacyOwnerAnnotationPrefix + "binding1": "other/mra1",
+						legacyOwnerAnnotationPrefix + "binding2": "other/mra2",
+						"unrelated-annotation":                   "value",
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						ownerAnnotationPrefix + "binding3": "current/mra",
-						ownerAnnotationPrefix + "binding4": "current/mra",
+						legacyOwnerAnnotationPrefix + "binding3": "current/mra",
+						legacyOwnerAnnotationPrefix + "binding4": "current/mra",
 					},
 				}
 
 				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
 
 				Expect(annotations).To(HaveLen(5))
-				Expect(annotations[ownerAnnotationPrefix+"binding1"]).To(Equal("other/mra1"))
-				Expect(annotations[ownerAnnotationPrefix+"binding2"]).To(Equal("other/mra2"))
-				Expect(annotations[ownerAnnotationPrefix+"binding3"]).To(Equal("current/mra"))
-				Expect(annotations[ownerAnnotationPrefix+"binding4"]).To(Equal("current/mra"))
+				Expect(annotations[legacyOwnerAnnotationPrefix+"binding1"]).To(Equal("other/mra1"))
+				Expect(annotations[legacyOwnerAnnotationPrefix+"binding2"]).To(Equal("other/mra2"))
+				Expect(annotations[legacyOwnerAnnotationPrefix+"binding3"]).To(Equal("current/mra"))
+				Expect(annotations[legacyOwnerAnnotationPrefix+"binding4"]).To(Equal("current/mra"))
 				Expect(annotations["unrelated-annotation"]).To(Equal("value"))
 			})
 
@@ -4729,19 +4729,19 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should overwrite duplicate keys with desired values", func() {
 				others := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						ownerAnnotationPrefix + "binding1": "other/mra",
+						legacyOwnerAnnotationPrefix + "binding1": "other/mra",
 					},
 				}
 				desired := ClusterPermissionBindingSlice{
 					OwnerAnnotations: map[string]string{
-						ownerAnnotationPrefix + "binding1": "current/mra",
+						legacyOwnerAnnotationPrefix + "binding1": "current/mra",
 					},
 				}
 
 				annotations := reconciler.mergeClusterPermissionAnnotations(others, desired)
 
 				Expect(annotations).To(HaveLen(1))
-				Expect(annotations[ownerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
+				Expect(annotations[legacyOwnerAnnotationPrefix+"binding1"]).To(Equal("current/mra"))
 			})
 		})
 
@@ -5136,14 +5136,14 @@ var _ = Describe("MulticlusterRoleAssignment Controller", Ordered, func() {
 			It("Should handle deletion cleanup failure", func() {
 				existingCP := &cpv1alpha1.ClusterPermission{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      clusterPermissionManagedName,
+						Name:      legacyClusterPermissionName,
 						Namespace: cluster1Name,
 						Labels: map[string]string{
 							clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 						},
 						Annotations: map[string]string{
-							ownerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
-							ownerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
+							legacyOwnerAnnotationPrefix + "other-binding":          "some-namespace/some-other-mra",
+							legacyOwnerAnnotationPrefix + "error-test-mra-binding": "error-test-namespace/error-test-mra",
 						},
 					},
 					Spec: cpv1alpha1.ClusterPermissionSpec{
@@ -5497,9 +5497,9 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster1",
 			Annotations: map[string]string{
-				ownerAnnotationPrefix +
+				legacyOwnerAnnotationPrefix +
 					bindingNameMra2Assignment1: "open-cluster-management/multiclusterroleassignment-sample2",
-				ownerAnnotationPrefix +
+				legacyOwnerAnnotationPrefix +
 					bindingNameMra1Assignment1: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
@@ -5535,9 +5535,9 @@ func TestHandleMulticlusterRoleAssignmentDeletion(t *testing.T) {
 			Name:      "mra-managed-permissions",
 			Namespace: "cluster2",
 			Annotations: map[string]string{
-				ownerAnnotationPrefix +
+				legacyOwnerAnnotationPrefix +
 					bindingNameMra2Assignment2: "open-cluster-management/multiclusterroleassignment-sample2",
-				ownerAnnotationPrefix +
+				legacyOwnerAnnotationPrefix +
 					bindingNameMra1Assignment2: "open-cluster-management/multiclusterroleassignment-sample1",
 			},
 			Labels: map[string]string{
@@ -6326,7 +6326,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		// Create existing ClusterPermission with no bindings
 		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -6359,7 +6359,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP cpv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: legacyClusterPermissionName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -6396,7 +6396,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		emptyRoleBindings := []cpv1alpha1.RoleBinding{}
 		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -6430,7 +6430,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP cpv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: legacyClusterPermissionName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -6466,7 +6466,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		emptyRoleBindings := []cpv1alpha1.RoleBinding{}
 		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -6500,7 +6500,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var remainingCP cpv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &remainingCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: legacyClusterPermissionName, Namespace: "test-cluster"}, &remainingCP)
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Expected ClusterPermission to be deleted, but it still exists")
 		}
@@ -6556,7 +6556,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
@@ -6588,7 +6588,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 		}
 
 		var updatedCP cpv1alpha1.ClusterPermission
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: clusterPermissionManagedName, Namespace: "test-cluster"}, &updatedCP)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: legacyClusterPermissionName, Namespace: "test-cluster"}, &updatedCP)
 		if err != nil {
 			t.Fatalf("Expected ClusterPermission to be updated, got error: %v", err)
 		}
@@ -6626,7 +6626,7 @@ func TestEnsureClusterPermissionAttemptDeleteLogic(t *testing.T) {
 
 		existingCP := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      legacyClusterPermissionName,
 				Namespace: "test-cluster",
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,

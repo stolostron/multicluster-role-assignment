@@ -5,7 +5,7 @@
 The MulticlusterRoleAssignment (MRA) operator runs on an ACM hub cluster and manages fine-grained RBAC across managed clusters. It translates high-level role assignment intent into per-cluster `ClusterPermission` resources, which the OCM framework propagates to managed clusters to create the actual `RoleBinding` / `ClusterRoleBinding` resources.
 
 ```
-User creates MRA ─→ Controller reconciles ─→ ClusterPermission per cluster ─→ RoleBindings on managed clusters
+User creates MRA ─→ Controller reconciles ─→ Dedicated ClusterPermission per MRA per cluster ─→ RoleBindings on managed clusters
 ```
 
 ## Component layers
@@ -20,11 +20,12 @@ User creates MRA ─→ Controller reconciles ─→ ClusterPermission per clust
 **`MulticlusterRoleAssignmentReconciler`** — the single reconciler handles the full lifecycle:
 
 1. **Cluster resolution:** Reads `PlacementDecision` resources referenced by the MRA's `clusterSelection` to determine target clusters.
-2. **ClusterPermission management:** Creates/updates/deletes `ClusterPermission` resources in each target cluster's namespace on the hub. Each ClusterPermission is named deterministically using a SHA-256 hash of the MRA identity.
+2. **ClusterPermission management:** Creates/updates/deletes **dedicated** `ClusterPermission` resources in each target cluster's namespace on the hub. Each MRA gets its own ClusterPermission per target cluster, named using the pattern `mra-<sanitized-name>-<hash>`. See [CLUSTERPERMISSION-DESIGN.md](CLUSTERPERMISSION-DESIGN.md) for details.
 3. **Status aggregation:** Reads back `ClusterPermission` status from each cluster to compute the MRA's aggregate status (Applied, Pending, Error conditions with per-cluster detail).
-4. **Cleanup:** Uses finalizers to delete orphaned `ClusterPermission` resources when an MRA is deleted or clusters are removed from a placement.
+4. **Cleanup:** Uses finalizers to delete all of an MRA's dedicated `ClusterPermission` resources when the MRA is deleted or clusters are removed from a placement.
+5. **Migration:** Handles migration from the legacy shared `mra-managed-permissions` ClusterPermission model to the new dedicated model.
 
-**`ClusterPermissionEventHandler`** — watches `ClusterPermission` changes and enqueues the owning MRA for re-reconciliation, enabling status updates when downstream resources change.
+**`ClusterPermissionEventHandler`** — watches `ClusterPermission` changes and uses the `rbac.open-cluster-management.io/mra-owner` annotation to enqueue the owning MRA for re-reconciliation, enabling status updates when downstream resources change.
 
 **Field indexes** — `SetupIndexes()` creates indexes on MRA resources by Placement reference for efficient lookup when a Placement changes.
 

@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"maps"
-	"slices"
 	"testing"
 	"time"
 
@@ -33,368 +32,49 @@ import (
 	cpv1alpha1 "open-cluster-management.io/cluster-permission/api/v1alpha1"
 )
 
-func TestFindAffectedMRAs_Status(t *testing.T) {
+func TestEventHandlers_Create_DedicatedCP(t *testing.T) {
 	tests := []struct {
 		name         string
-		oldCP        *cpv1alpha1.ClusterPermission
-		newCP        *cpv1alpha1.ClusterPermission
-		expectedMRAs []string
+		cp           client.Object
+		expectedMRAs []reconcile.Request
 	}{
 		{
-			name: "no changes - no MRAs should be affected",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{},
+			name: "dedicated ClusterPermission with owner annotation",
+			cp: createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+				createCRB("binding1", "user1", "view")),
+			expectedMRAs: []reconcile.Request{
+				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-mra"}},
+			},
 		},
 		{
-			name: "status change - Clusterpermission status change of Condition Type",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "status change - Clusterpermission status change of Condition Status",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionFalse, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "no changes - Clusterpermission status change of Condition Reason",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "ReasonChanged", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "no changes - Clusterpermission status change of condition Message",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "MessageChanged")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name:  "status added - should affect owner",
-			oldCP: createCPStatus(), // Empty status
-			newCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "status removed - should NOT affect owner (binding removal reconciles via spec change)",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "default", "mra1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP:        createCPStatus(), // Empty status
-			expectedMRAs: []string{},
-		},
-		{
-			name: "status change for different mra",
-			oldCP: createCPStatus(
-				createStatus("default/mra2", "other-ns", "mra2", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra2", "other-ns", "mra2", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra2"},
-		},
-		{
-			name: "validation condition change enqueues all owners",
-			oldCP: func() *cpv1alpha1.ClusterPermission {
-				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
-				cp := createCPStatus(
-					createStatus("default/mra1", "", "binding1", applied),
-					createStatus("default/mra2", "", "binding2", applied),
-				)
-				cp.Status.Conditions = []metav1.Condition{
-					createCondition(
-						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
-						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
-				}
-				return cp
-			}(),
-			newCP: func() *cpv1alpha1.ClusterPermission {
-				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
-				cp := createCPStatus(
-					createStatus("default/mra1", "", "binding1", applied),
-					createStatus("default/mra2", "", "binding2", applied),
-				)
-				cp.Status.Conditions = []metav1.Condition{
-					createCondition(
-						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
-						metav1.ConditionFalse, "ClusterRolesNotFound",
-						"The following cluster roles were not found: missing-role"),
-				}
-				return cp
-			}(),
-			expectedMRAs: []string{"default/mra1", "default/mra2"},
-		},
-		{
-			name: "unchanged validation conditions do not enqueue owners",
-			oldCP: func() *cpv1alpha1.ClusterPermission {
-				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
-				cp := createCPStatus(
-					createStatus("default/mra1", "", "binding1", applied),
-				)
-				cp.Status.Conditions = []metav1.Condition{
-					createCondition(
-						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
-						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
-				}
-				return cp
-			}(),
-			newCP: func() *cpv1alpha1.ClusterPermission {
-				applied := createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")
-				cp := createCPStatus(
-					createStatus("default/mra1", "", "binding1", applied),
-				)
-				cp.Status.Conditions = []metav1.Condition{
-					createCondition(
-						cpv1alpha1.ConditionTypeValidateClusterRolesExist,
-						metav1.ConditionTrue, "AllClusterRolesFound", "ok"),
-				}
-				return cp
-			}(),
-			expectedMRAs: []string{},
-		},
-		// ClusterRoleBinding tests (empty namespace triggers CRB path)
-		{
-			name: "CRB: no changes - no MRAs should be affected",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{},
-		},
-		{
-			name: "CRB: status change - Condition Type change",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "CRB: status change - Condition Status change",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionFalse, "Failed", "Binding failed")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "CRB: status change - Condition Reason change",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "ReasonChanged", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "CRB: status change - Condition Message change",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "MessageChanged")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name:  "CRB: status added - should affect owner",
-			oldCP: createCPStatus(),
-			newCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "CRB: status removed - should NOT affect owner (binding removal reconciles via spec change)",
-			oldCP: createCPStatus(
-				createStatus("default/mra1", "", "crb1", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP:        createCPStatus(),
-			expectedMRAs: []string{},
-		},
-		{
-			name: "CRB: status change for different mra",
-			oldCP: createCPStatus(
-				createStatus("default/mra2", "", "crb2", createCondition("Applied", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			newCP: createCPStatus(
-				createStatus("default/mra2", "", "crb2", createCondition("Validation", metav1.ConditionTrue, "Reason", "Message")),
-			),
-			expectedMRAs: []string{"default/mra2"},
+			name: "ClusterPermission without owner annotation - no enqueue",
+			cp: &cpv1alpha1.ClusterPermission{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "unmanaged-cp",
+					Namespace: "cluster-a",
+				},
+			},
+			expectedMRAs: []reconcile.Request{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mras := findAffectedMRAs(tt.oldCP, tt.newCP)
+			queue := &fakeWorkqueue{}
+			handler := &clusterPermissionEventHandler{}
 
-			if len(mras) != len(tt.expectedMRAs) {
-				t.Errorf("got %d affected MRAs, want %d\nGot: %v\nWant: %v",
-					len(mras), len(tt.expectedMRAs), mras, tt.expectedMRAs)
-			}
+			handler.Create(context.Background(), event.TypedCreateEvent[client.Object]{
+				Object: tt.cp,
+			}, queue)
 
-			// verifies all items exist
-			for _, mra := range tt.expectedMRAs {
-				if !mras[mra] {
-					t.Errorf("expected MRA %q to be affected, but it wasn't\nAffected MRAs: %v", mra, mras)
-				}
-			}
-
-			// verifies no unexpected items exist
-			for mra := range mras {
-				if !slices.Contains(tt.expectedMRAs, mra) {
-					t.Errorf("unexpected MRA %q is affected\nExpected: %v\nGot: %v", mra, tt.expectedMRAs, mras)
-				}
+			if !areRequestsEqual(queue.items, tt.expectedMRAs) {
+				t.Errorf("Create() enqueued incorrect requests\nGot:  %v\nWant: %v", queue.items, tt.expectedMRAs)
 			}
 		})
 	}
 }
 
-func TestFindAffectedMRAs_Bindings(t *testing.T) {
-	tests := []struct {
-		name         string
-		oldCP        *cpv1alpha1.ClusterPermission
-		newCP        *cpv1alpha1.ClusterPermission
-		expectedMRAs []string
-	}{
-		{
-			name: "no changes - no MRAs should be affected",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view")),
-			expectedMRAs: []string{},
-		},
-		{
-			name: "binding added - only new owner affected",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "user2", "edit")),
-			expectedMRAs: []string{"default/mra2"},
-		},
-		{
-			name: "binding modified - selective reconciliation (1 of 3)",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "user2", "edit"),
-				createBinding("administrator", "", "default/mra3", "user3", "admin")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "CHANGED", "view"),
-				createBinding("editor", "", "default/mra2", "user2", "edit"),
-				createBinding("administrator", "", "default/mra3", "user3", "admin")),
-			expectedMRAs: []string{"default/mra1"},
-		},
-		{
-			name: "binding removed - only removed owner affected",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "user2", "edit")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view")),
-			expectedMRAs: []string{"default/mra2"},
-		},
-		{
-			name: "multiple ClusterRoleBindings changed - multiple owners affected",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "user2", "edit"),
-				createBinding("administrator", "", "default/mra3", "user3", "admin")),
-			newCP: createCP(
-				createBinding("CHANGED", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "CHANGED", "edit"),
-				createBinding("administrator", "", "default/mra3", "user3", "CHANGED")),
-			expectedMRAs: []string{"default/mra1", "default/mra2", "default/mra3"},
-		},
-		{
-			name: "multiple RoleBinding modified - multiple owners affected",
-			oldCP: createCP(
-				createBinding("viewer", "ns1", "default/mra1", "user1", "view"),
-				createBinding("editor", "ns2", "default/mra2", "user2", "edit"),
-				createBinding("administrator", "ns3", "default/mra3", "user3", "admin"),
-				createBinding("super-admin", "ns4", "default/mra4", "user4", "extra-admin"),
-				createBinding("monitor", "ns5", "default/mra5", "user5", "mon")),
-			newCP: createCP(
-				createBinding("CHANGED", "ns1", "default/mra1", "user1", "view"),
-				createBinding("editor", "CHANGED", "default/mra2", "user2", "edit"),
-				createBinding("administrator", "ns3", "default/mra3", "CHANGED", "admin"),
-				createBinding("super-admin", "ns4", "default/mra4", "user4", "CHANGED"),
-				createBinding("monitor", "ns5", "default/mra5", "user5", "mon")),
-			expectedMRAs: []string{"default/mra1", "default/mra2", "default/mra3", "default/mra4"},
-		},
-		{
-			name: "orphaned binding - fallback to reconcile all owners",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "default-user", "view"),
-				createBinding("editor", "", "default/mra2", "default-user", "edit")),
-			newCP: func() *cpv1alpha1.ClusterPermission {
-				result := createCP(
-					createBinding("viewer", "", "default/mra1", "default-user", "view"),
-					createBinding("editor", "", "default/mra2", "default-user", "edit"),
-					createBinding("orphan", "", "default/orphan", "default-user", "view"))
-				delete(result.Annotations, ownerAnnotationPrefix+"orphan")
-				return result
-			}(),
-			expectedMRAs: []string{"default/mra1", "default/mra2"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mras := findAffectedMRAs(tt.oldCP, tt.newCP)
-
-			if len(mras) != len(tt.expectedMRAs) {
-				t.Errorf("got %d affected MRAs, want %d\nGot: %v\nWant: %v",
-					len(mras), len(tt.expectedMRAs), mras, tt.expectedMRAs)
-			}
-
-			for _, mra := range tt.expectedMRAs {
-				if !mras[mra] {
-					t.Errorf("expected MRA %q to be affected, but it wasn't\nAffected MRAs: %v", mra, mras)
-				}
-			}
-
-			for mra := range mras {
-				if !slices.Contains(tt.expectedMRAs, mra) {
-					t.Errorf("unexpected MRA %q is affected\nExpected: %v\nGot: %v", mra, tt.expectedMRAs, mras)
-				}
-			}
-		})
-	}
-}
-
-func TestEventHandlers_Update(t *testing.T) {
+func TestEventHandlers_Update_DedicatedCP(t *testing.T) {
 	tests := []struct {
 		name         string
 		oldCP        client.Object
@@ -402,43 +82,29 @@ func TestEventHandlers_Update(t *testing.T) {
 		expectedMRAs []reconcile.Request
 	}{
 		{
-			name: "selective reconciliation - only affected MRA is enqueued",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "user1", "view"),
-				createBinding("editor", "", "default/mra2", "default-user", "edit"),
-				createBinding("administrator", "", "default/mra3", "default-user", "admin")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "CHANGED", "view"),
-				createBinding("editor", "", "default/mra2", "default-user", "edit"),
-				createBinding("administrator", "", "default/mra3", "default-user", "admin")),
+			name: "status change triggers owner reconciliation",
+			oldCP: createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+				createCRB("binding1", "user1", "view")),
+			newCP: func() *cpv1alpha1.ClusterPermission {
+				cp := createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+					createCRB("binding1", "user1", "view"))
+				cp.Status.Conditions = []metav1.Condition{
+					{Type: "Applied", Status: metav1.ConditionTrue},
+				}
+				return cp
+			}(),
 			expectedMRAs: []reconcile.Request{
-				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra1"}},
+				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-mra"}},
 			},
 		},
 		{
-			name: "no changes - shouldn't be any reconciliations",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "default-user", "view")),
-			newCP: createCP(
-				createBinding("viewer", "", "default/mra1", "default-user", "view")),
-			expectedMRAs: []reconcile.Request{},
-		},
-		{
-			name: "orphaned binding - fallback enqueues all owners",
-			oldCP: createCP(
-				createBinding("viewer", "", "default/mra1", "default-user", "view"),
-				createBinding("editor", "", "default/mra2", "default-user", "edit")),
-			newCP: func() *cpv1alpha1.ClusterPermission {
-				result := createCP(
-					createBinding("viewer", "", "default/mra1", "default-user", "view"),
-					createBinding("editor", "", "default/mra2", "default-user", "edit"),
-					createBinding("orphan", "", "default/orphan", "default-user", "view"))
-				delete(result.Annotations, ownerAnnotationPrefix+"orphan")
-				return result
-			}(),
+			name: "spec change triggers owner reconciliation",
+			oldCP: createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+				createCRB("binding1", "user1", "view")),
+			newCP: createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+				createCRB("binding1", "user1", "edit")), // role changed
 			expectedMRAs: []reconcile.Request{
-				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra1"}},
-				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra2"}},
+				{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-mra"}},
 			},
 		},
 	}
@@ -459,43 +125,19 @@ func TestEventHandlers_Update(t *testing.T) {
 	}
 }
 
-func TestEventHandlers_Create(t *testing.T) {
+func TestEventHandlers_Delete_DedicatedCP(t *testing.T) {
 	queue := &fakeWorkqueue{}
 	handler := &clusterPermissionEventHandler{}
 
-	testCP := createCP(
-		createBinding("viewer", "", "default/mra1", "default-user", "view"),
-		createBinding("editor", "", "default/mra2", "default-user", "edit"))
-
-	handler.Create(context.Background(), event.TypedCreateEvent[client.Object]{
-		Object: testCP,
-	}, queue)
-
-	expected := []reconcile.Request{
-		{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra1"}},
-		{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra2"}},
-	}
-
-	if !areRequestsEqual(queue.items, expected) {
-		t.Errorf("Create() enqueued incorrect requests\nGot:  %v\nWant: %v", queue.items, expected)
-	}
-}
-
-func TestEventHandlers_Delete(t *testing.T) {
-	queue := &fakeWorkqueue{}
-	handler := &clusterPermissionEventHandler{}
-
-	testCP := createCP(
-		createBinding("viewer", "", "default/mra1", "default-user", "view"),
-		createBinding("editor", "", "default/mra2", "default-user", "edit"))
+	cp := createDedicatedCP("mra-test-12345678", "cluster-a", "default/test-mra",
+		createCRB("binding1", "user1", "view"))
 
 	handler.Delete(context.Background(), event.TypedDeleteEvent[client.Object]{
-		Object: testCP,
+		Object: cp,
 	}, queue)
 
 	expected := []reconcile.Request{
-		{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra1"}},
-		{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra2"}},
+		{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-mra"}},
 	}
 
 	if !areRequestsEqual(queue.items, expected) {
@@ -503,77 +145,54 @@ func TestEventHandlers_Delete(t *testing.T) {
 	}
 }
 
-func TestGeneral(t *testing.T) {
-	t.Run("invalid MRA identifier format - validation", func(t *testing.T) {
+func TestEventHandlers_LegacyCP(t *testing.T) {
+	t.Run("legacy ClusterPermission with per-binding owner annotations", func(t *testing.T) {
 		queue := &fakeWorkqueue{}
+		handler := &clusterPermissionEventHandler{}
 
-		invalid := []string{"mra1", "/mra1", "ns/", "", "default/mra/x"}
+		// Legacy shared ClusterPermission with per-binding owner annotations
+		cp := createLegacyCP(
+			createLegacyBinding("binding1", "", "default/mra1", "user1", "view"),
+			createLegacyBinding("binding2", "", "default/mra2", "user2", "edit"),
+		)
 
-		for _, id := range invalid {
-			enqueueMRA(context.Background(), id, queue)
+		handler.Create(context.Background(), event.TypedCreateEvent[client.Object]{
+			Object: cp,
+		}, queue)
+
+		// Both MRAs should be enqueued
+		expected := []reconcile.Request{
+			{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra1"}},
+			{NamespacedName: types.NamespacedName{Namespace: "default", Name: "mra2"}},
+		}
+
+		if !areRequestsEqual(queue.items, expected) {
+			t.Errorf("Create() with legacy CP enqueued incorrect requests\nGot:  %v\nWant: %v", queue.items, expected)
+		}
+	})
+}
+
+func TestEnqueueMRA_InvalidIdentifier(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "missing namespace", id: "mra1"},
+		{name: "missing name", id: "ns/"},
+		{name: "missing namespace 2", id: "/mra1"},
+		{name: "empty", id: ""},
+		{name: "too many parts", id: "default/mra/x"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queue := &fakeWorkqueue{}
+			enqueueMRA(context.Background(), tt.id, queue)
 			if len(queue.items) != 0 {
-				t.Errorf("should not enqueue invalid identifier %q, but got %d items", id, len(queue.items))
-				queue.items = nil
+				t.Errorf("should not enqueue invalid identifier %q, but got %d items", tt.id, len(queue.items))
 			}
-		}
-	})
-
-	t.Run("orphaned ClusterRoleBinding detection", func(t *testing.T) {
-		testCP := &cpv1alpha1.ClusterPermission{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        "test",
-				Namespace:   "cluster1",
-				Annotations: map[string]string{
-					// No owner annotation for orphan binding
-				},
-			},
-			Spec: cpv1alpha1.ClusterPermissionSpec{
-				ClusterRoleBindings: &[]cpv1alpha1.ClusterRoleBinding{
-					{
-						Name:     "orphan",
-						Subjects: []rbacv1.Subject{{Kind: "User", Name: "user", APIGroup: rbacv1.GroupName}},
-						RoleRef:  &rbacv1.RoleRef{Kind: "ClusterRole", Name: "view", APIGroup: rbacv1.GroupName},
-					},
-				},
-			},
-		}
-
-		crbMap := buildClusterRoleBindingMap(testCP)
-		rbMap := buildRoleBindingMap(testCP)
-
-		if !hasOrphanedBindings(testCP, crbMap, rbMap) {
-			t.Error("should detect orphaned ClusterRoleBinding")
-		}
-	})
-
-	t.Run("orphaned RoleBinding detection", func(t *testing.T) {
-		testCP := &cpv1alpha1.ClusterPermission{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        "test",
-				Namespace:   "cluster1",
-				Annotations: map[string]string{
-					// No owner annotation for orphan RoleBinding
-				},
-			},
-			Spec: cpv1alpha1.ClusterPermissionSpec{
-				RoleBindings: &[]cpv1alpha1.RoleBinding{
-					{
-						Namespace: "default",
-						Name:      "orphan",
-						Subjects:  []rbacv1.Subject{{Kind: "User", Name: "user", APIGroup: rbacv1.GroupName}},
-						RoleRef:   cpv1alpha1.RoleRef{Kind: "Role", Name: "view", APIGroup: rbacv1.GroupName},
-					},
-				},
-			},
-		}
-
-		crbMap := buildClusterRoleBindingMap(testCP)
-		rbMap := buildRoleBindingMap(testCP)
-
-		if !hasOrphanedBindings(testCP, crbMap, rbMap) {
-			t.Error("should detect orphaned RoleBinding")
-		}
-	})
+		})
+	}
 }
 
 func TestRoleNameInValidationMessage(t *testing.T) {
@@ -631,8 +250,40 @@ func TestRoleNameInValidationMessage(t *testing.T) {
 	}
 }
 
-// binding represents a single RBAC binding (ClusterRoleBinding or RoleBinding).
-type binding struct {
+// createCRB creates a ClusterRoleBinding for testing
+func createCRB(name, subjectName, roleName string) cpv1alpha1.ClusterRoleBinding {
+	return cpv1alpha1.ClusterRoleBinding{
+		Name:     name,
+		Subjects: []rbacv1.Subject{{Kind: "User", Name: subjectName, APIGroup: rbacv1.GroupName}},
+		RoleRef:  &rbacv1.RoleRef{Kind: "ClusterRole", Name: roleName, APIGroup: rbacv1.GroupName},
+	}
+}
+
+// createDedicatedCP creates a dedicated ClusterPermission (new model) with the MRA owner annotation
+func createDedicatedCP(name, namespace, mraOwner string, bindings ...cpv1alpha1.ClusterRoleBinding) *cpv1alpha1.ClusterPermission {
+	cp := &cpv1alpha1.ClusterPermission{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+			},
+			Annotations: map[string]string{
+				clusterPermissionMRAOwnerAnn: mraOwner,
+			},
+		},
+		Spec: cpv1alpha1.ClusterPermissionSpec{},
+	}
+
+	if len(bindings) > 0 {
+		cp.Spec.ClusterRoleBindings = &bindings
+	}
+
+	return cp
+}
+
+// legacyBinding represents a binding in the legacy shared ClusterPermission model
+type legacyBinding struct {
 	bindingName string
 	namespace   string
 	mraOwner    string
@@ -640,90 +291,19 @@ type binding struct {
 	roleName    string
 }
 
-type status struct {
-	mraOwner   string
-	Namespace  string
-	Name       string
-	Conditions []metav1.Condition
+func createLegacyBinding(bindingName, namespace, mraOwner, subjectName, roleName string) legacyBinding {
+	return legacyBinding{bindingName, namespace, mraOwner, subjectName, roleName}
 }
 
-func createStatus(mraOwner, namespace, name string, conditions ...metav1.Condition) status {
-	return status{
-		mraOwner:   mraOwner,
-		Namespace:  namespace,
-		Name:       name,
-		Conditions: conditions,
-	}
-}
-
-func createCondition(condType string, status metav1.ConditionStatus, reason, message string) metav1.Condition {
-	return metav1.Condition{
-		Type:    condType,
-		Status:  status,
-		Reason:  reason,
-		Message: message,
-	}
-}
-
-// createBinding creates a binding. Pass empty string for namespace to create ClusterRoleBinding.
-func createBinding(bindingName, namespace, mraOwner, subjectName, roleName string) binding {
-	return binding{
-		bindingName,
-		namespace,
-		mraOwner,
-		subjectName,
-		roleName,
-	}
-}
-
-func createCPStatus(statuses ...status) *cpv1alpha1.ClusterPermission {
+// createLegacyCP creates a legacy shared ClusterPermission with per-binding owner annotations
+func createLegacyCP(bindings ...legacyBinding) *cpv1alpha1.ClusterPermission {
 	cp := &cpv1alpha1.ClusterPermission{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "mra-managed-permissions",
-			Namespace:   "test-cluster",
-			Annotations: make(map[string]string),
-		},
-		Spec: cpv1alpha1.ClusterPermissionSpec{},
-		Status: cpv1alpha1.ClusterPermissionStatus{
-			ResourceStatus: &cpv1alpha1.ResourceStatus{},
-		},
-	}
-
-	var crbs []cpv1alpha1.ClusterRoleBindingStatus
-	var rbs []cpv1alpha1.RoleBindingStatus
-
-	for _, s := range statuses {
-		cp.Annotations[ownerAnnotationPrefix+s.Name] = s.mraOwner
-		if s.Namespace != "" {
-			rbs = append(rbs, cpv1alpha1.RoleBindingStatus{
-				Name:       s.Name,
-				Namespace:  s.Namespace,
-				Conditions: s.Conditions,
-			})
-		} else {
-			crbs = append(crbs, cpv1alpha1.ClusterRoleBindingStatus{
-				Name:       s.Name,
-				Conditions: s.Conditions,
-			})
-		}
-	}
-
-	if len(crbs) > 0 {
-		cp.Status.ResourceStatus.ClusterRoleBindings = crbs
-	}
-	if len(rbs) > 0 {
-		cp.Status.ResourceStatus.RoleBindings = rbs
-	}
-
-	return cp
-}
-
-// createCP creates a ClusterPermission with the specified bindings.
-func createCP(bindings ...binding) *cpv1alpha1.ClusterPermission {
-	cp := &cpv1alpha1.ClusterPermission{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "mra-managed-permissions",
-			Namespace:   "test-cluster",
+			Name:      legacyClusterPermissionName,
+			Namespace: "test-cluster",
+			Labels: map[string]string{
+				clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
+			},
 			Annotations: make(map[string]string),
 		},
 		Spec: cpv1alpha1.ClusterPermissionSpec{},
@@ -734,23 +314,21 @@ func createCP(bindings ...binding) *cpv1alpha1.ClusterPermission {
 
 	for _, b := range bindings {
 		if b.namespace != "" {
-			// RoleBinding
 			rbs = append(rbs, cpv1alpha1.RoleBinding{
 				Namespace: b.namespace,
 				Name:      b.bindingName,
 				Subjects:  []rbacv1.Subject{{Kind: "User", Name: b.subjectName, APIGroup: rbacv1.GroupName}},
 				RoleRef:   cpv1alpha1.RoleRef{Kind: "ClusterRole", Name: b.roleName, APIGroup: rbacv1.GroupName},
 			})
-			cp.Annotations[ownerAnnotationPrefix+b.bindingName] = b.mraOwner
 		} else {
-			// ClusterRoleBinding
 			crbs = append(crbs, cpv1alpha1.ClusterRoleBinding{
 				Name:     b.bindingName,
 				Subjects: []rbacv1.Subject{{Kind: "User", Name: b.subjectName, APIGroup: rbacv1.GroupName}},
 				RoleRef:  &rbacv1.RoleRef{Kind: "ClusterRole", Name: b.roleName, APIGroup: rbacv1.GroupName},
 			})
-			cp.Annotations[ownerAnnotationPrefix+b.bindingName] = b.mraOwner
 		}
+		// Legacy per-binding owner annotation
+		cp.Annotations[legacyOwnerAnnotationPrefix+b.bindingName] = b.mraOwner
 	}
 
 	if len(crbs) > 0 {
@@ -783,10 +361,8 @@ func (f *fakeWorkqueue) Get() (item reconcile.Request, shutdown bool) {
 	if len(f.items) == 0 {
 		return reconcile.Request{}, true
 	}
-
 	item = f.items[0]
 	f.items = f.items[1:]
-
 	return item, false
 }
 

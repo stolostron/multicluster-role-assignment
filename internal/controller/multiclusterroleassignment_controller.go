@@ -58,9 +58,12 @@ import (
 const (
 	clusterPermissionManagedByLabel = "rbac.open-cluster-management.io/managed-by"
 	clusterPermissionManagedByValue = "multiclusterroleassignment-controller"
-	clusterPermissionManagedName    = "mra-managed-permissions"
+	clusterPermissionMRAOwnerAnn    = "rbac.open-cluster-management.io/mra-owner"
 	clusterRoleKind                 = "ClusterRole"
-	ownerAnnotationPrefix           = "owner/"
+
+	// Legacy constants for migration from shared ClusterPermission model.
+	legacyClusterPermissionName = "mra-managed-permissions"
+	legacyOwnerAnnotationPrefix = "owner/"
 )
 
 // Reconciliation constants.
@@ -128,14 +131,6 @@ type ClusterPermissionProcessingState struct {
 	SuccessClusters []string
 	// Names and errors of clusters where ClusterPermission applications failed
 	FailedClusters map[string]error
-}
-
-// ClusterPermissionBindingSlice represents a collection of bindings and annotations that can be related to a
-// ClusterPermission.
-type ClusterPermissionBindingSlice struct {
-	ClusterRoleBindings []cpv1alpha1.ClusterRoleBinding
-	RoleBindings        []cpv1alpha1.RoleBinding
-	OwnerAnnotations    map[string]string
 }
 
 // +kubebuilder:rbac:groups=rbac.open-cluster-management.io,resources=multiclusterroleassignments,verbs=get;list;watch;create;update;patch;delete
@@ -413,22 +408,24 @@ func (r *MulticlusterRoleAssignmentReconciler) resolveAllPlacementClusters(
 	return allClusters, nil
 }
 
-// getClusterPermission fetches the managed ClusterPermission for a specific cluster namespace. Returns nil if not
-// found or if it doesn't have the management label.
+// getClusterPermission fetches the dedicated ClusterPermission for an MRA in a specific cluster namespace.
+// Returns nil if not found. Returns error if found but not managed by this controller.
 func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
-	ctx context.Context, clusterNamespace string) (*cpv1alpha1.ClusterPermission, error) {
+	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment, clusterNamespace string,
+) (*cpv1alpha1.ClusterPermission, error) {
 
 	log := logf.FromContext(ctx)
+	cpName := r.generateClusterPermissionName(mra)
 
 	var clusterPermission cpv1alpha1.ClusterPermission
 	err := r.Get(ctx, client.ObjectKey{
-		Name:      clusterPermissionManagedName,
+		Name:      cpName,
 		Namespace: clusterNamespace,
 	}, &clusterPermission)
 
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("ClusterPermission not found", "namespace", clusterNamespace, "name", clusterPermissionManagedName)
+			log.V(1).Info("ClusterPermission not found", "namespace", clusterNamespace, "name", cpName)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get ClusterPermission: %w", err)
@@ -436,10 +433,40 @@ func (r *MulticlusterRoleAssignmentReconciler) getClusterPermission(
 
 	if !r.isClusterPermissionManaged(&clusterPermission) {
 		err := fmt.Errorf("ClusterPermission found but not managed by this controller in namespace %s with name %s",
-			clusterNamespace, clusterPermissionManagedName)
-		log.Error(err, "ClusterPermission conflict detected", "namespace", clusterNamespace, "name",
-			clusterPermissionManagedName)
+			clusterNamespace, cpName)
+		log.Error(err, "ClusterPermission conflict detected", "namespace", clusterNamespace, "name", cpName)
 		return nil, err
+	}
+
+	return &clusterPermission, nil
+}
+
+// getLegacyClusterPermission fetches the legacy shared ClusterPermission for migration purposes.
+// Returns nil if not found or if it doesn't have the management label.
+func (r *MulticlusterRoleAssignmentReconciler) getLegacyClusterPermission(
+	ctx context.Context, clusterNamespace string,
+) (*cpv1alpha1.ClusterPermission, error) {
+
+	log := logf.FromContext(ctx)
+
+	var clusterPermission cpv1alpha1.ClusterPermission
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      legacyClusterPermissionName,
+		Namespace: clusterNamespace,
+	}, &clusterPermission)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get legacy ClusterPermission: %w", err)
+	}
+
+	if !r.isClusterPermissionManaged(&clusterPermission) {
+		// Not managed by us, leave it alone
+		log.V(1).Info("Legacy ClusterPermission exists but is not managed by this controller",
+			"namespace", clusterNamespace, "name", legacyClusterPermissionName)
+		return nil, nil
 	}
 
 	return &clusterPermission, nil
@@ -716,7 +743,7 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatusesFromC
 	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment,
 	roleAssignmentClusters map[string][]string, allClusters []string) error {
 
-	clusterBindingsStatus, err := r.buildClusterBindingsStatusMap(ctx, allClusters)
+	clusterBindingsStatus, err := r.buildClusterBindingsStatusMap(ctx, mra, allClusters)
 
 	if err != nil {
 		return err
@@ -735,12 +762,13 @@ func (r *MulticlusterRoleAssignmentReconciler) updateRoleAssignmentStatusesFromC
 //
 // Binding keys use the format "CRB:<name>" for ClusterRoleBindings or "RB:<namespace>:<name>" for RoleBindings.
 func (r *MulticlusterRoleAssignmentReconciler) buildClusterBindingsStatusMap(
-	ctx context.Context, allClusters []string) (map[string]map[string]*metav1.Condition, error) {
+	ctx context.Context, mra *mrav1beta1.MulticlusterRoleAssignment, allClusters []string,
+) (map[string]map[string]*metav1.Condition, error) {
 
 	clusterBindingsStatus := make(map[string]map[string]*metav1.Condition)
 
 	for _, cluster := range allClusters {
-		cp, err := r.getClusterPermission(ctx, cluster)
+		cp, err := r.getClusterPermission(ctx, mra, cluster)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ClusterPermission for cluster %s: %w", cluster, err)
 		}
@@ -1061,94 +1089,297 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(ctx conte
 	return nil
 }
 
-// ensureClusterPermissionAttempt performs a single attempt to create or update a ClusterPermission.
+// ensureClusterPermissionAttempt performs a single attempt to create or update a dedicated ClusterPermission for this MRA.
+// It also handles migration from the legacy shared ClusterPermission model.
 func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ctx context.Context,
 	mra *mrav1beta1.MulticlusterRoleAssignment, cluster string, roleAssignmentClusters map[string][]string) error {
 
 	log := logf.FromContext(ctx)
+	cpName := r.generateClusterPermissionName(mra)
+	mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
 
-	existingCP, err := r.getClusterPermission(ctx, cluster)
+	// Calculate desired spec for the dedicated ClusterPermission
+	desiredSpec := r.calculateDesiredClusterPermissionSpec(mra, cluster, roleAssignmentClusters)
+
+	// Get the existing dedicated ClusterPermission (if any)
+	existingCP, err := r.getClusterPermission(ctx, mra, cluster)
 	if err != nil {
 		return err
 	}
 
-	// desiredSliceCP are the bindings and annotations for the ClusterPermission related to THIS cluster derived from
-	// the MulticlusterRoleAssignment
-	desiredSliceCP := r.calculateDesiredClusterPermissionSlice(mra, cluster, roleAssignmentClusters)
-
-	if existingCP == nil {
-		// Merging empty bindings for "others" because this is a new ClusterPermission
-		newSpec := r.mergeClusterPermissionSpecs(ClusterPermissionBindingSlice{}, desiredSliceCP)
-		newAnnotations := r.mergeClusterPermissionAnnotations(ClusterPermissionBindingSlice{}, desiredSliceCP)
-
-		if r.isClusterPermissionSpecEmpty(newSpec) {
-			return nil
+	// Handle the case where this MRA has no bindings for this cluster (cluster removed from placement)
+	if r.isClusterPermissionSpecEmpty(desiredSpec) {
+		// Delete the dedicated ClusterPermission if it exists
+		if existingCP != nil {
+			log.Info("Deleting ClusterPermission (no bindings for this cluster)", "name", cpName, "namespace", cluster)
+			if err := r.Delete(ctx, existingCP); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
 		}
+		// Also clean up any legacy bindings
+		if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
+			return err
+		}
+		return nil
+	}
 
-		log.Info("Creating new ClusterPermission", "name", clusterPermissionManagedName, "namespace", cluster)
+	// Create or update the dedicated ClusterPermission
+	if existingCP == nil {
+		log.Info("Creating dedicated ClusterPermission", "name", cpName, "namespace", cluster)
 
-		applyClusterPermissionValidate(&newSpec)
+		applyClusterPermissionValidate(&desiredSpec)
 		cp := &cpv1alpha1.ClusterPermission{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterPermissionManagedName,
+				Name:      cpName,
 				Namespace: cluster,
 				Labels: map[string]string{
 					clusterPermissionManagedByLabel: clusterPermissionManagedByValue,
 				},
-				Annotations: newAnnotations,
+				Annotations: map[string]string{
+					clusterPermissionMRAOwnerAnn: mraIdentifier,
+				},
 			},
-			Spec: newSpec,
+			Spec: desiredSpec,
 		}
 
 		if err := r.Create(ctx, cp); err != nil {
-			return err
+			if apierrors.IsAlreadyExists(err) {
+				// Race condition - another reconcile created it. Refetch and update.
+				log.Info("ClusterPermission already exists, will update instead", "name", cpName, "namespace", cluster)
+				var existing cpv1alpha1.ClusterPermission
+				if getErr := r.Get(ctx, client.ObjectKey{Name: cpName, Namespace: cluster}, &existing); getErr != nil {
+					return getErr
+				}
+				existingCP = &existing
+			} else {
+				return err
+			}
+		} else {
+			// Successfully created - now clean up legacy bindings
+			if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
+				return err
+			}
+			return nil
 		}
-
-		return nil
 	}
 
-	// otherSliceCP are the bindings and annotations for the given ClusterPermission that come from OTHER
-	// MulticlusterRoleAssignments. In other words, these are pre-existing bindings and annotations on the
-	// ClusterPermission that are not managed by this MulticlusterRoleAssignment.
-	otherSliceCP := r.extractOthersClusterPermissionSlice(existingCP, mra)
+	// Update existing dedicated ClusterPermission
+	applyClusterPermissionValidate(&desiredSpec)
 
-	newSpec := r.mergeClusterPermissionSpecs(otherSliceCP, desiredSliceCP)
-	newAnnotations := r.mergeClusterPermissionAnnotations(otherSliceCP, desiredSliceCP)
+	specChanged := !equality.Semantic.DeepEqual(existingCP.Spec, desiredSpec)
+	// Ensure the owner annotation is present
+	if existingCP.Annotations == nil {
+		existingCP.Annotations = make(map[string]string)
+	}
+	annotationsChanged := existingCP.Annotations[clusterPermissionMRAOwnerAnn] != mraIdentifier
 
-	if r.isClusterPermissionSpecEmpty(newSpec) {
-		log.Info("Deleting ClusterPermission", "clusterPermission", existingCP.Name)
-		if err := r.Delete(ctx, existingCP); err != nil {
+	if specChanged || annotationsChanged {
+		existingCP.Spec = desiredSpec
+		existingCP.Annotations[clusterPermissionMRAOwnerAnn] = mraIdentifier
+
+		log.Info("Updating dedicated ClusterPermission", "name", cpName, "namespace", cluster)
+		if err := r.Update(ctx, existingCP); err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Info("ClusterPermission already deleted, deletion not needed")
+				log.Info("ClusterPermission was deleted, will recreate on next reconcile")
 				return nil
 			}
 			return err
 		}
-		return nil
 	}
 
-	applyClusterPermissionValidate(&newSpec)
-
-	specChanged := !equality.Semantic.DeepEqual(existingCP.Spec, newSpec)
-	annotationsChanged := !equality.Semantic.DeepEqual(existingCP.Annotations, newAnnotations)
-
-	if !specChanged && !annotationsChanged {
-		return nil
-	}
-
-	existingCP.Spec = newSpec
-	existingCP.Annotations = newAnnotations
-
-	log.Info("Updating existing ClusterPermission", "name", clusterPermissionManagedName, "namespace", cluster)
-	if err := r.Update(ctx, existingCP); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("ClusterPermission already deleted, update not needed")
-			return nil
-		}
+	// After successful dedicated CP update, clean up legacy bindings
+	if err := r.cleanupLegacyBindings(ctx, mra, cluster); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// calculateDesiredClusterPermissionSpec computes the complete ClusterPermission spec for this MRA on this cluster.
+// Unlike the old model, this is the entire spec (not a slice to merge with others).
+func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermissionSpec(
+	mra *mrav1beta1.MulticlusterRoleAssignment, cluster string,
+	roleAssignmentClusters map[string][]string) cpv1alpha1.ClusterPermissionSpec {
+
+	var clusterRoleBindings []cpv1alpha1.ClusterRoleBinding
+	var roleBindings []cpv1alpha1.RoleBinding
+
+	for _, roleAssignment := range mra.Spec.RoleAssignments {
+		if !r.isRoleAssignmentTargetingCluster(roleAssignment, cluster, roleAssignmentClusters) {
+			continue
+		}
+
+		if len(roleAssignment.TargetNamespaces) == 0 {
+			bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole)
+			clusterRoleBindings = append(clusterRoleBindings, cpv1alpha1.ClusterRoleBinding{
+				Name: bindingName,
+				RoleRef: &rbacv1.RoleRef{
+					Kind:     clusterRoleKind,
+					Name:     roleAssignment.ClusterRole,
+					APIGroup: rbacv1.GroupName,
+				},
+				Subjects: []rbacv1.Subject{convertSubject(mra.Spec.Subject)},
+			})
+		} else {
+			for _, namespace := range roleAssignment.TargetNamespaces {
+				bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole, namespace)
+				roleBindings = append(roleBindings, cpv1alpha1.RoleBinding{
+					Name:      bindingName,
+					Namespace: namespace,
+					RoleRef: cpv1alpha1.RoleRef{
+						Kind:     clusterRoleKind,
+						Name:     roleAssignment.ClusterRole,
+						APIGroup: rbacv1.GroupName,
+					},
+					Subjects: []rbacv1.Subject{convertSubject(mra.Spec.Subject)},
+				})
+			}
+		}
+	}
+
+	spec := cpv1alpha1.ClusterPermissionSpec{}
+
+	if len(clusterRoleBindings) > 0 {
+		sort.Slice(clusterRoleBindings, func(i, j int) bool {
+			return clusterRoleBindings[i].Name < clusterRoleBindings[j].Name
+		})
+		spec.ClusterRoleBindings = &clusterRoleBindings
+	}
+
+	if len(roleBindings) > 0 {
+		sort.Slice(roleBindings, func(i, j int) bool {
+			return roleBindings[i].Name < roleBindings[j].Name
+		})
+		spec.RoleBindings = &roleBindings
+	}
+
+	return spec
+}
+
+// cleanupLegacyBindings removes this MRA's bindings from the legacy shared ClusterPermission (mra-managed-permissions).
+// This is the migration path from the old shared model to the new dedicated model.
+func (r *MulticlusterRoleAssignmentReconciler) cleanupLegacyBindings(ctx context.Context,
+	mra *mrav1beta1.MulticlusterRoleAssignment, cluster string) error {
+
+	log := logf.FromContext(ctx)
+
+	legacyCP, err := r.getLegacyClusterPermission(ctx, cluster)
+	if err != nil {
+		return fmt.Errorf("failed to get legacy ClusterPermission for migration: %w", err)
+	}
+
+	if legacyCP == nil {
+		// No legacy ClusterPermission exists, nothing to migrate
+		return nil
+	}
+
+	// Extract binding names owned by this MRA from the legacy ClusterPermission
+	ownedBindingNames := r.extractLegacyOwnedBindingNames(legacyCP, mra)
+	if len(ownedBindingNames) == 0 {
+		// This MRA has no bindings in the legacy ClusterPermission
+		return nil
+	}
+
+	log.Info("Migrating bindings from legacy ClusterPermission",
+		"legacyCP", legacyClusterPermissionName, "namespace", cluster, "bindingsToRemove", len(ownedBindingNames))
+
+	// Build a set of binding names to remove
+	ownedBindingNamesMap := make(map[string]bool)
+	for _, name := range ownedBindingNames {
+		ownedBindingNamesMap[name] = true
+	}
+
+	// Remove this MRA's bindings from the legacy ClusterPermission
+	var remainingCRBs []cpv1alpha1.ClusterRoleBinding
+	if legacyCP.Spec.ClusterRoleBindings != nil {
+		for _, crb := range *legacyCP.Spec.ClusterRoleBindings {
+			if !ownedBindingNamesMap[crb.Name] {
+				remainingCRBs = append(remainingCRBs, crb)
+			}
+		}
+	}
+
+	var remainingRBs []cpv1alpha1.RoleBinding
+	if legacyCP.Spec.RoleBindings != nil {
+		for _, rb := range *legacyCP.Spec.RoleBindings {
+			if !ownedBindingNamesMap[rb.Name] {
+				remainingRBs = append(remainingRBs, rb)
+			}
+		}
+	}
+
+	// Remove this MRA's owner annotations
+	mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
+	newAnnotations := make(map[string]string)
+	for key, value := range legacyCP.Annotations {
+		// Keep annotations that are not owner annotations for this MRA
+		if strings.HasPrefix(key, legacyOwnerAnnotationPrefix) && value == mraIdentifier {
+			continue
+		}
+		newAnnotations[key] = value
+	}
+
+	// Check if the legacy ClusterPermission is now empty (no more MRA-managed bindings)
+	hasRemainingBindings := len(remainingCRBs) > 0 || len(remainingRBs) > 0
+
+	if !hasRemainingBindings {
+		// Delete the legacy ClusterPermission
+		log.Info("Deleting empty legacy ClusterPermission", "name", legacyClusterPermissionName, "namespace", cluster)
+		if err := r.Delete(ctx, legacyCP); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete empty legacy ClusterPermission: %w", err)
+		}
+		return nil
+	}
+
+	// Update the legacy ClusterPermission with remaining bindings
+	if len(remainingCRBs) > 0 {
+		legacyCP.Spec.ClusterRoleBindings = &remainingCRBs
+	} else {
+		legacyCP.Spec.ClusterRoleBindings = nil
+	}
+
+	if len(remainingRBs) > 0 {
+		legacyCP.Spec.RoleBindings = &remainingRBs
+	} else {
+		legacyCP.Spec.RoleBindings = nil
+	}
+
+	legacyCP.Annotations = newAnnotations
+
+	log.Info("Updating legacy ClusterPermission to remove migrated bindings",
+		"name", legacyClusterPermissionName, "namespace", cluster,
+		"remainingBindings", len(remainingCRBs)+len(remainingRBs))
+
+	if err := r.Update(ctx, legacyCP); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Already deleted, that's fine
+			return nil
+		}
+		return fmt.Errorf("failed to update legacy ClusterPermission: %w", err)
+	}
+
+	return nil
+}
+
+// extractLegacyOwnedBindingNames returns the list of binding names owned by this MRA
+// in the legacy shared ClusterPermission, based on the old owner/* annotations.
+func (r *MulticlusterRoleAssignmentReconciler) extractLegacyOwnedBindingNames(
+	cp *cpv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment) []string {
+
+	if cp.Annotations == nil {
+		return nil
+	}
+
+	targetMRAIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
+	var ownedBindings []string
+
+	for key, value := range cp.Annotations {
+		if bindingName, found := strings.CutPrefix(key, legacyOwnerAnnotationPrefix); found && value == targetMRAIdentifier {
+			ownedBindings = append(ownedBindings, bindingName)
+		}
+	}
+
+	return ownedBindings
 }
 
 // isRoleAssignmentTargetingCluster checks if a role assignment targets a specific cluster using the pre-computed role
@@ -1231,10 +1462,42 @@ func (r *MulticlusterRoleAssignmentReconciler) generateBindingName(mra *mrav1bet
 	return sanitizedRoleName + "-" + hash
 }
 
-// generateOwnerAnnotationKey creates the ClusterPermission annotation key for tracking binding ownership in
-// annotations.
-func (r *MulticlusterRoleAssignmentReconciler) generateOwnerAnnotationKey(bindingName string) string {
-	return ownerAnnotationPrefix + bindingName
+// generateClusterPermissionName creates a deterministic, DNS-valid ClusterPermission name for an MRA.
+// The name is stable across reconciliations, unique within a managed-cluster namespace, and ≤63 characters.
+// Format: mra-<sanitized-mra-name>-<8-char-hash>
+func (r *MulticlusterRoleAssignmentReconciler) generateClusterPermissionName(
+	mra *mrav1beta1.MulticlusterRoleAssignment) string {
+
+	// Hash includes both namespace and name for uniqueness across namespaces
+	data := fmt.Sprintf("%s/%s", mra.Namespace, mra.Name)
+	h := sha256.Sum256([]byte(data))
+	hash := hex.EncodeToString(h[:])[:8]
+
+	// Sanitize the MRA name for DNS compatibility
+	invalidCharsRegex := regexp.MustCompile(`[^a-z0-9-]`)
+	sanitizedName := strings.ToLower(mra.Name)
+	sanitizedName = invalidCharsRegex.ReplaceAllString(sanitizedName, "-")
+	sanitizedName = strings.Trim(sanitizedName, "-")
+
+	// Collapse multiple consecutive dashes
+	multiDashRegex := regexp.MustCompile(`-+`)
+	sanitizedName = multiDashRegex.ReplaceAllString(sanitizedName, "-")
+
+	// Prefix "mra-" (4 chars) + hash "-xxxxxxxx" (9 chars) = 13 chars reserved
+	// Max name length is 63, so sanitized name can be at most 50 chars
+	const maxSanitizedLength = 50
+	if len(sanitizedName) > maxSanitizedLength {
+		sanitizedName = sanitizedName[:maxSanitizedLength]
+		sanitizedName = strings.TrimRight(sanitizedName, "-")
+	}
+
+	return fmt.Sprintf("mra-%s-%s", sanitizedName, hash)
+}
+
+// generateLegacyOwnerAnnotationKey creates the legacy ClusterPermission annotation key for tracking binding ownership.
+// Used only for migration from the shared ClusterPermission model.
+func (r *MulticlusterRoleAssignmentReconciler) generateLegacyOwnerAnnotationKey(bindingName string) string {
+	return legacyOwnerAnnotationPrefix + bindingName
 }
 
 // generateMulticlusterRoleAssignmentIdentifier creates the MulticlusterRoleAssignment identifier stored as annotation
@@ -1245,83 +1508,6 @@ func (r *MulticlusterRoleAssignmentReconciler) generateMulticlusterRoleAssignmen
 	return fmt.Sprintf("%s/%s", mra.Namespace, mra.Name)
 }
 
-// extractOwnedBindingNames returns the list of ClusterPermission binding names owned by this MulticlusterRoleAssignment
-// according to the current owner binding annotations.
-func (r *MulticlusterRoleAssignmentReconciler) extractOwnedBindingNames(
-	cp *cpv1alpha1.ClusterPermission, mra *mrav1beta1.MulticlusterRoleAssignment) []string {
-
-	if cp.Annotations == nil {
-		return nil
-	}
-
-	targetMRAIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
-	var ownedBindings []string
-
-	for key, value := range cp.Annotations {
-		if bindingName, found := strings.CutPrefix(key, ownerAnnotationPrefix); found && value == targetMRAIdentifier {
-			ownedBindings = append(ownedBindings, bindingName)
-		}
-	}
-
-	return ownedBindings
-}
-
-// calculateDesiredClusterPermissionSlice computes the desired bindings and annotations that this
-// MulticlusterRoleAssignment should contribute to the ClusterPermission for this cluster.
-func (r *MulticlusterRoleAssignmentReconciler) calculateDesiredClusterPermissionSlice(
-	mra *mrav1beta1.MulticlusterRoleAssignment, cluster string,
-	roleAssignmentClusters map[string][]string) ClusterPermissionBindingSlice {
-
-	desiredSlice := ClusterPermissionBindingSlice{
-		OwnerAnnotations: make(map[string]string),
-	}
-
-	mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
-
-	for _, roleAssignment := range mra.Spec.RoleAssignments {
-		if !r.isRoleAssignmentTargetingCluster(roleAssignment, cluster, roleAssignmentClusters) {
-			continue
-		}
-
-		if len(roleAssignment.TargetNamespaces) == 0 {
-			bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole)
-			ownerKey := r.generateOwnerAnnotationKey(bindingName)
-			desiredSlice.OwnerAnnotations[ownerKey] = mraIdentifier
-
-			clusterRoleBinding := cpv1alpha1.ClusterRoleBinding{
-				Name: bindingName,
-				RoleRef: &rbacv1.RoleRef{
-					Kind:     clusterRoleKind,
-					Name:     roleAssignment.ClusterRole,
-					APIGroup: rbacv1.GroupName,
-				},
-				Subjects: []rbacv1.Subject{convertSubject(mra.Spec.Subject)},
-			}
-			desiredSlice.ClusterRoleBindings = append(desiredSlice.ClusterRoleBindings, clusterRoleBinding)
-		} else {
-			for _, namespace := range roleAssignment.TargetNamespaces {
-				bindingName := r.generateBindingName(mra, roleAssignment.Name, roleAssignment.ClusterRole, namespace)
-				namespacedOwnerKey := r.generateOwnerAnnotationKey(bindingName)
-				desiredSlice.OwnerAnnotations[namespacedOwnerKey] = mraIdentifier
-
-				roleBinding := cpv1alpha1.RoleBinding{
-					Name:      bindingName,
-					Namespace: namespace,
-					RoleRef: cpv1alpha1.RoleRef{
-						Kind:     clusterRoleKind,
-						Name:     roleAssignment.ClusterRole,
-						APIGroup: rbacv1.GroupName,
-					},
-					Subjects: []rbacv1.Subject{convertSubject(mra.Spec.Subject)},
-				}
-				desiredSlice.RoleBindings = append(desiredSlice.RoleBindings, roleBinding)
-			}
-		}
-	}
-
-	return desiredSlice
-}
-
 // convertSubject converts a v1beta1.Subject to rbacv1.Subject for use in role bindings.
 func convertSubject(s mrav1beta1.Subject) rbacv1.Subject {
 	return rbacv1.Subject{
@@ -1330,133 +1516,6 @@ func convertSubject(s mrav1beta1.Subject) rbacv1.Subject {
 		Name:      s.Name,
 		Namespace: s.Namespace,
 	}
-}
-
-// extractOthersClusterPermissionSlice extracts all bindings and annotations NOT owned by this
-// MulticlusterRoleAssignment from this ClusterPermission. This represents the "others" part that should be preserved
-// when updating the ClusterPermission. Orphaned bindings with no ownership annotations are excluded to keep the
-// ClusterPermission clean.
-func (r *MulticlusterRoleAssignmentReconciler) extractOthersClusterPermissionSlice(cp *cpv1alpha1.ClusterPermission,
-	mra *mrav1beta1.MulticlusterRoleAssignment) ClusterPermissionBindingSlice {
-
-	othersSlice := ClusterPermissionBindingSlice{
-		OwnerAnnotations: make(map[string]string),
-	}
-
-	if cp == nil {
-		return othersSlice
-	}
-
-	ownedBindingNames := r.extractOwnedBindingNames(cp, mra)
-	ownedBindingNamesMap := make(map[string]bool)
-	for _, name := range ownedBindingNames {
-		ownedBindingNamesMap[name] = true
-	}
-
-	// allTrackedBindingNames are binding names that exist in annotations. This is used to exlude orphaned bindings that
-	// don't have owner tracking annotations
-	allTrackedBindingNames := make(map[string]bool)
-	if cp.Annotations != nil {
-		for key := range cp.Annotations {
-			if bindingName, found := strings.CutPrefix(key, ownerAnnotationPrefix); found {
-				allTrackedBindingNames[bindingName] = true
-			}
-		}
-	}
-
-	if cp.Spec.ClusterRoleBindings != nil {
-		for _, binding := range *cp.Spec.ClusterRoleBindings {
-			if !ownedBindingNamesMap[binding.Name] && allTrackedBindingNames[binding.Name] {
-				othersSlice.ClusterRoleBindings = append(othersSlice.ClusterRoleBindings, binding)
-			}
-		}
-	}
-
-	if cp.Spec.RoleBindings != nil {
-		for _, binding := range *cp.Spec.RoleBindings {
-			if !ownedBindingNamesMap[binding.Name] && allTrackedBindingNames[binding.Name] {
-				othersSlice.RoleBindings = append(othersSlice.RoleBindings, binding)
-			}
-		}
-	}
-
-	if cp.Annotations != nil {
-		mraIdentifier := r.generateMulticlusterRoleAssignmentIdentifier(mra)
-
-		// allExistingBindingNames are binding names that exist in RoleBindings and ClusterRoleBindings. This is used to
-		// exlude orphaned binding annotations that don't have an active binding.
-		allExistingBindingNames := make(map[string]bool)
-		if cp.Spec.ClusterRoleBindings != nil {
-			for _, binding := range *cp.Spec.ClusterRoleBindings {
-				allExistingBindingNames[binding.Name] = true
-			}
-		}
-		if cp.Spec.RoleBindings != nil {
-			for _, binding := range *cp.Spec.RoleBindings {
-				allExistingBindingNames[binding.Name] = true
-			}
-		}
-
-		for key, value := range cp.Annotations {
-			if !strings.HasPrefix(key, ownerAnnotationPrefix) {
-				othersSlice.OwnerAnnotations[key] = value
-				continue
-			}
-
-			if value == mraIdentifier {
-				continue
-			}
-
-			bindingName := strings.TrimPrefix(key, ownerAnnotationPrefix)
-			if allExistingBindingNames[bindingName] {
-				othersSlice.OwnerAnnotations[key] = value
-			}
-		}
-	}
-
-	return othersSlice
-}
-
-// mergeClusterPermissionSpecs combines the "others" slice (bindings from other MulticlusterRoleAssignments) with the
-// "desired" slice (this MulticlusterRoleAssignment's bindings) to create the complete desired spec for the
-// ClusterPermission.
-func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionSpecs(
-	others, desired ClusterPermissionBindingSlice) cpv1alpha1.ClusterPermissionSpec {
-
-	cpSpec := cpv1alpha1.ClusterPermissionSpec{}
-
-	allClusterRoleBindings := append(others.ClusterRoleBindings, desired.ClusterRoleBindings...)
-
-	if len(allClusterRoleBindings) > 0 {
-		sort.Slice(allClusterRoleBindings, func(i, j int) bool {
-			return allClusterRoleBindings[i].Name < allClusterRoleBindings[j].Name
-		})
-		cpSpec.ClusterRoleBindings = &allClusterRoleBindings
-	}
-
-	allRoleBindings := append(others.RoleBindings, desired.RoleBindings...)
-
-	if len(allRoleBindings) > 0 {
-		sort.Slice(allRoleBindings, func(i, j int) bool {
-			return allRoleBindings[i].Name < allRoleBindings[j].Name
-		})
-		cpSpec.RoleBindings = &allRoleBindings
-	}
-
-	return cpSpec
-}
-
-// mergeClusterPermissionAnnotations combines the "others" annotations with the "desired" annotations to create all
-// owner binding annotations for the ClusterPermission.
-func (r *MulticlusterRoleAssignmentReconciler) mergeClusterPermissionAnnotations(
-	others, desired ClusterPermissionBindingSlice) map[string]string {
-
-	cpAnnotations := make(map[string]string)
-
-	maps.Copy(cpAnnotations, others.OwnerAnnotations)
-	maps.Copy(cpAnnotations, desired.OwnerAnnotations)
-
-	return cpAnnotations
 }
 
 // isClusterPermissionSpecEmpty returns true if the ClusterPermissionSpec has no bindings.
