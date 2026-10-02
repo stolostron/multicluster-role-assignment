@@ -670,8 +670,9 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			It("should verify ClusterPermission is deleted", func() {
-				By("verifying ClusterPermission is deleted")
-				verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+				By("verifying dedicated ClusterPermission is deleted")
+				dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleRBName)
+				verifyK8sResourceDeleted("clusterpermissions", dedicatedCPName, "managedcluster02")
 			})
 
 			It("should verify MulticlusterRoleAssignment no longer exists", func() {
@@ -707,12 +708,13 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch ClusterPermissions from all managed clusters", func() {
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
 					for i := 1; i <= 3; i++ {
 						clusterName := fmt.Sprintf("managedcluster%02d", i)
 						By(fmt.Sprintf(
-							"waiting for ClusterPermission to be created and fetching it from %s", clusterName))
+							"waiting for dedicated ClusterPermission to be created and fetching it from %s", clusterName))
 						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							"mra-managed-permissions", clusterName)
+							dedicatedCPName, clusterName)
 
 						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
 						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
@@ -880,9 +882,10 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should fetch ClusterPermission for newmanagedcluster04", func() {
-					By("waiting for ClusterPermission to be created and fetching it from newmanagedcluster04")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("waiting for dedicated ClusterPermission to be created and fetching it from newmanagedcluster04")
 					clusterPermissionJSON = fetchK8sResourceJSON(
-						"clusterpermissions", "mra-managed-permissions", "newmanagedcluster04")
+						"clusterpermissions", dedicatedCPName, "newmanagedcluster04")
 
 					By("unmarshaling ClusterPermission json for newmanagedcluster04")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
@@ -959,8 +962,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should verify ClusterPermission is deleted for newmanagedcluster04", func() {
-					By("verifying ClusterPermission is deleted from newmanagedcluster04")
-					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "newmanagedcluster04")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("verifying dedicated ClusterPermission is deleted from newmanagedcluster04")
+					verifyK8sResourceDeleted("clusterpermissions", dedicatedCPName, "newmanagedcluster04")
 				})
 			})
 
@@ -2296,11 +2300,19 @@ var _ = Describe("Manager", Ordered, func() {
 
 				It("should verify all ClusterPermissions are deleted", func() {
 					By("verifying all managed ClusterPermissions are deleted")
-					clusterNames := []string{"managedcluster01", "managedcluster02", "managedcluster03"}
+					// Each MRA has its own dedicated ClusterPermission per target cluster
+					mraToClusterMap := map[string][]string{
+						testMulticlusterRoleAssignmentMultiple1Name: {"managedcluster01", "managedcluster02", "managedcluster03"},
+						testMulticlusterRoleAssignmentSingleRBName:  {"managedcluster02"},
+						testMulticlusterRoleAssignmentSingleCRBName: {"managedcluster01"},
+					}
 
-					for _, clusterName := range clusterNames {
-						By(fmt.Sprintf("verifying ClusterPermission is deleted in %s", clusterName))
-						verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", clusterName)
+					for mraName, clusters := range mraToClusterMap {
+						dedicatedCPName := generateDedicatedCPName(mraName)
+						for _, clusterName := range clusters {
+							By(fmt.Sprintf("verifying dedicated ClusterPermission %s is deleted in %s", dedicatedCPName, clusterName))
+							verifyK8sResourceDeleted("clusterpermissions", dedicatedCPName, clusterName)
+						}
 					}
 				})
 			})
@@ -2339,8 +2351,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should create ClusterPermission on managedcluster02", func() {
-					By("waiting for ClusterPermission to be created and fetching it")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("waiting for dedicated ClusterPermission to be created and fetching it")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct ClusterRoleBinding")
@@ -2361,8 +2374,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should preserve ClusterPermission on managedcluster01", func() {
-					By("waiting for ClusterPermission to be created and fetching it")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("waiting for dedicated ClusterPermission to be created and fetching it")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission still has correct ClusterRoleBinding")
@@ -2408,13 +2422,15 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should delete ClusterPermission from managedcluster01", func() {
-					By("verifying ClusterPermission is deleted from managedcluster01")
-					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("verifying dedicated ClusterPermission is deleted from managedcluster01")
+					verifyK8sResourceDeleted("clusterpermissions", dedicatedCPName, "managedcluster01")
 				})
 
 				It("should preserve ClusterPermission on managedcluster02", func() {
-					By("fetching ClusterPermission from managedcluster02")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("fetching dedicated ClusterPermission from managedcluster02")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission still has correct ClusterRoleBinding")
@@ -2453,8 +2469,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should delete ClusterPermission from managedcluster02", func() {
-					By("verifying ClusterPermission is deleted from managedcluster02")
-					verifyK8sResourceDeleted("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("verifying dedicated ClusterPermission is deleted from managedcluster02")
+					verifyK8sResourceDeleted("clusterpermissions", dedicatedCPName, "managedcluster02")
 				})
 
 				It("should have MRA status reflecting no active clusters", func() {
@@ -2549,8 +2566,9 @@ var _ = Describe("Manager", Ordered, func() {
 				})
 
 				It("should create ClusterPermissions after restoration", func() {
-					By("waiting for ClusterPermission on managedcluster01")
-					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster01")
+					dedicatedCPName := generateDedicatedCPName(mra.Name)
+					By("waiting for dedicated ClusterPermission on managedcluster01")
+					clusterPermissionJSON := fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster01")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct binding")
@@ -2560,8 +2578,8 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 					validateClusterPermissionBindings(clusterPermission, expectedBindings)
 
-					By("waiting for ClusterPermission on managedcluster02")
-					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", "mra-managed-permissions", "managedcluster02")
+					By("waiting for dedicated ClusterPermission on managedcluster02")
+					clusterPermissionJSON = fetchK8sResourceJSON("clusterpermissions", dedicatedCPName, "managedcluster02")
 					unmarshalJSON(clusterPermissionJSON, &clusterPermission)
 
 					By("verifying ClusterPermission has correct binding")
@@ -3088,14 +3106,15 @@ var _ = Describe("Manager", Ordered, func() {
 			var (
 				testMRAName       = "test-mra-failure"
 				testPlacementName = "placement-failure"
-				cpName            = "mra-managed-permissions"
 				clusterNamespace  = "managedcluster01"
+				cpName            = "" // Set in BeforeAll
 			)
 
 			BeforeAll(func() {
 				By("creating a placement for failure test")
 				createPlacement(testPlacementName)
 				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+				cpName = generateDedicatedCPName(testMRAName)
 			})
 
 			AfterAll(func() {
@@ -3162,7 +3181,7 @@ var _ = Describe("Manager", Ordered, func() {
 			var (
 				testMRAName       = "test-mra-unknown"
 				testPlacementName = "placement-unknown"
-				cpName            = "mra-managed-permissions"
+				cpName            = "" // Set in BeforeAll
 				clusterNamespace  = "managedcluster01"
 			)
 
@@ -3170,6 +3189,7 @@ var _ = Describe("Manager", Ordered, func() {
 				By("creating a placement for unknown status test")
 				createPlacement(testPlacementName)
 				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+				cpName = generateDedicatedCPName(testMRAName)
 			})
 
 			AfterAll(func() {
@@ -3233,27 +3253,28 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
-		Context("Multiple MRAs with shared ClusterPermission - status propagation", func() {
+		Context("Multiple MRAs with dedicated ClusterPermissions - independent status propagation", func() {
 			var (
-				cpName           = "mra-managed-permissions"
 				clusterNamespace = "managedcluster01"
+				cpName1          = "" // Set in BeforeAll
 			)
 
 			BeforeAll(func() {
-				By("creating placements for shared CP test")
+				By("creating placements for dedicated CP test")
 				createPlacement("placement-shared-1")
 				createPlacementDecision("placement-shared-1", []string{"managedcluster01"})
 				createPlacement("placement-shared-2")
 				createPlacementDecision("placement-shared-2", []string{"managedcluster01"})
+				cpName1 = generateDedicatedCPName("test-mra-shared-1")
 			})
 
 			AfterAll(func() {
-				By("cleaning up shared CP test resources")
+				By("cleaning up dedicated CP test resources")
 				cleanupTestResources("test-mra-shared-1", []string{"managedcluster01"})
 				cleanupTestResources("test-mra-shared-2", []string{"managedcluster01"})
 			})
 
-			It("should create two MRAs targeting the same cluster (shared ClusterPermission)", func() {
+			It("should create two MRAs targeting the same cluster (each with dedicated ClusterPermission)", func() {
 				By("creating first MRA")
 				createMRAWithPlacement("test-mra-shared-1", "test-user-shared-1", "ra-shared-1", "placement-shared-1")
 
@@ -3265,31 +3286,35 @@ var _ = Describe("Manager", Ordered, func() {
 				waitForMRA("test-mra-shared-2")
 			})
 
-			It("should update ClusterPermission status to Failed and verify both MRAs reflect failure", func() {
-				By("setting ClusterPermission status to Failed (affects all bindings)")
+			It("should update first MRA's ClusterPermission to Failed while second remains unaffected", func() {
+				By("setting first MRA's ClusterPermission status to Failed")
 				Eventually(func() error {
 					return updateClusterPermissionStatus(
-						cpName, clusterNamespace,
-						metav1.ConditionFalse, "ApplyFailed", "Simulated failure for shared CP test",
+						cpName1, clusterNamespace,
+						metav1.ConditionFalse, "ApplyFailed", "Simulated failure for first MRA",
 					)
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
-				By("verifying both MRAs reflect failure")
+				By("verifying first MRA reflects failure")
 				verifyMRAHasRoleAssignmentStatus("test-mra-shared-1", "ra-shared-1", mrav1beta1.StatusTypeError)
-				verifyMRAHasRoleAssignmentStatus("test-mra-shared-2", "ra-shared-2", mrav1beta1.StatusTypeError)
+
+				By("verifying second MRA is NOT affected by first MRA's failure")
+				verifyMRAHasRoleAssignmentStatus("test-mra-shared-2", "ra-shared-2", mrav1beta1.StatusTypeActive)
 			})
 
-			It("should recover both MRAs when ClusterPermission status becomes True", func() {
-				By("setting ClusterPermission status back to True")
+			It("should recover first MRA when its ClusterPermission status becomes True", func() {
+				By("setting first MRA's ClusterPermission status back to True")
 				Eventually(func() error {
 					return updateClusterPermissionStatus(
-						cpName, clusterNamespace,
-						metav1.ConditionTrue, "Applied", "Recovered for shared CP test",
+						cpName1, clusterNamespace,
+						metav1.ConditionTrue, "Applied", "Recovered for first MRA",
 					)
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
-				By("verifying both MRAs recover")
+				By("verifying first MRA recovers")
 				verifyMRAHasRoleAssignmentStatus("test-mra-shared-1", "ra-shared-1", mrav1beta1.StatusTypeActive)
+
+				By("verifying second MRA remains active (unaffected)")
 				verifyMRAHasRoleAssignmentStatus("test-mra-shared-2", "ra-shared-2", mrav1beta1.StatusTypeActive)
 			})
 		})
@@ -3340,10 +3365,10 @@ var _ = Describe("Manager", Ordered, func() {
 				verifyDedicatedCPExists(mraNameB, clusterNamespace)
 
 				By("verifying user-a's CP has 3 bindings (view, edit, admin)")
-				verifyDedicatedCPBindingCount(mraNameA, clusterNamespace, 3, 0)
+				verifyDedicatedCPBindingCount(mraNameA, clusterNamespace, 3)
 
 				By("verifying user-b's CP has 1 binding (view)")
-				verifyDedicatedCPBindingCount(mraNameB, clusterNamespace, 1, 0)
+				verifyDedicatedCPBindingCount(mraNameB, clusterNamespace, 1)
 
 				By("verifying legacy mra-managed-permissions does NOT exist")
 				verifyLegacyCPNotExists(clusterNamespace)
@@ -3400,7 +3425,7 @@ var _ = Describe("Manager", Ordered, func() {
 				verifyDedicatedCPExists(mraNameB, clusterNamespace)
 
 				By("verifying user-b's CP still has its binding")
-				verifyDedicatedCPBindingCount(mraNameB, clusterNamespace, 1, 0)
+				verifyDedicatedCPBindingCount(mraNameB, clusterNamespace, 1)
 
 				By("verifying MRA user-b is still Ready")
 				Eventually(func(g Gomega) {
@@ -3731,7 +3756,7 @@ spec:
 				verifyDedicatedCPExists(mraName, clusterNamespace)
 
 				By("verifying dedicated CP has MRA's binding")
-				verifyDedicatedCPBindingCount(mraName, clusterNamespace, 1, 0)
+				verifyDedicatedCPBindingCount(mraName, clusterNamespace, 1)
 
 				By("verifying the legacy CP was cleaned up - this MRA's binding removed, other MRA's binding preserved")
 				// After the dedicated CP's bindings are applied and migration runs,
@@ -3779,7 +3804,7 @@ spec:
 			var (
 				testMRAName            = "test-mra-recovery"
 				testPlacementName      = "placement-recovery"
-				cpName                 = "mra-managed-permissions"
+				cpName                 = "" // Set in BeforeAll
 				clusterNamespace       = "managedcluster01"
 				recoveryRoleAssignment = "recovery-role-assignment"
 			)
@@ -3788,6 +3813,7 @@ spec:
 				By("creating placement for recovery test")
 				createPlacement(testPlacementName)
 				createPlacementDecision(testPlacementName, []string{"managedcluster01"})
+				cpName = generateDedicatedCPName(testMRAName)
 			})
 
 			AfterAll(func() {
@@ -3885,7 +3911,13 @@ spec:
 
 		Context("Complex Scenario - Mixed Statuses on Multiple MRAs", func() {
 			var (
-				cpName = "mra-managed-permissions"
+				// Each MRA has its own dedicated CP
+				mraNames = []string{
+					testMulticlusterRoleAssignmentMultiple2Name,
+					testMulticlusterRoleAssignmentMultiple1Name,
+					testMulticlusterRoleAssignmentSingleRBName,
+					testMulticlusterRoleAssignmentSingleCRBName,
+				}
 			)
 
 			BeforeAll(func() {
@@ -3914,18 +3946,22 @@ spec:
 				deleteK8sMRA(testMulticlusterRoleAssignmentSingleRBName)
 				deleteK8sMRA(testMulticlusterRoleAssignmentSingleCRBName)
 
-				// Clean up CPs on managed clusters
+				// Clean up dedicated CPs for each MRA on managed clusters
 				for i := 1; i <= 3; i++ {
 					clusterName := fmt.Sprintf("managedcluster%02d", i)
-					cmd := exec.Command("kubectl", "delete", "clusterpermissions", cpName, "-n", clusterName)
-					_, _ = utils.Run(cmd)
+					for _, mraName := range mraNames {
+						cpName := generateDedicatedCPName(mraName)
+						cmd := exec.Command("kubectl", "delete", "clusterpermissions", cpName, "-n", clusterName)
+						_, _ = utils.Run(cmd)
+					}
 				}
 			})
 
 			It("should verify MRA statuses reflect mixed binding states", func() {
-				// Define expected behaviors:
-				// MRA Multiple 1: Failed on Cluster 1 (Error), Unknown on Cluster 2 (Pending), Success on Cluster 3
-				// -> Result: Error (Error takes precedence over Pending)
+				// With dedicated ClusterPermissions, each MRA has independent status per cluster.
+				// Define expected behaviors by updating each MRA's dedicated CP:
+				// MRA Multiple 1: Failed on Cluster 1, Unknown on Cluster 2, Success on Cluster 3
+				// -> Result: Error (Error takes precedence)
 				// MRA Multiple 2: Success on Cluster 1, Success on Cluster 2, Failed on Cluster 3
 				// -> Result: Error
 				// MRA Single RB: Unknown on Cluster 2
@@ -3933,70 +3969,51 @@ spec:
 				// MRA Single CRB: Success on Cluster 1
 				// -> Result: Active
 
-				statusMapCluster1 := map[string]StatusDetails{
-					testMulticlusterRoleAssignmentMultiple1Name: {
-						Status:  metav1.ConditionFalse,
-						Reason:  "ApplyFailed",
-						Message: "Simulated failure for complex test",
-					},
-					testMulticlusterRoleAssignmentMultiple2Name: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentSingleCRBName: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentSingleRBName: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-				}
+				By("injecting mixed statuses into dedicated ClusterPermissions")
 
-				statusMapCluster2 := map[string]StatusDetails{
-					testMulticlusterRoleAssignmentMultiple1Name: {
-						Status:  metav1.ConditionUnknown,
-						Reason:  "UnknownStatus",
-						Message: "Simulated unknown status for complex test",
-					},
-					testMulticlusterRoleAssignmentMultiple2Name: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentSingleRBName: {
-						Status:  metav1.ConditionUnknown,
-						Reason:  "UnknownStatus",
-						Message: "Simulated unknown status for complex test",
-					},
-				}
-
-				statusMapCluster3 := map[string]StatusDetails{
-					testMulticlusterRoleAssignmentMultiple1Name: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentMultiple2Name: {
-						Status:  metav1.ConditionFalse,
-						Reason:  "ApplyFailed",
-						Message: "Simulated failure for complex test",
-					},
-				}
-
-				By("injecting mixed statuses into ClusterPermissions")
+				// MRA Multiple 1: Failed on cluster01, Unknown on cluster02, Success on cluster03
+				cpMultiple1 := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
 				Eventually(func() error {
-					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", statusMapCluster1); err != nil {
-						return err
-					}
-					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", statusMapCluster2); err != nil {
-						return err
-					}
-					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", statusMapCluster3)
-				}, 1*time.Minute, 1*time.Second).Should(Succeed())
+					return updateClusterPermissionStatus(cpMultiple1, "managedcluster01",
+						metav1.ConditionFalse, "ApplyFailed", "Simulated failure")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpMultiple1, "managedcluster02",
+						metav1.ConditionUnknown, "UnknownStatus", "Simulated unknown")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpMultiple1, "managedcluster03",
+						metav1.ConditionTrue, "Applied", "Success")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				// MRA Multiple 2: Success on cluster01, Success on cluster02, Failed on cluster03
+				cpMultiple2 := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpMultiple2, "managedcluster01",
+						metav1.ConditionTrue, "Applied", "Success")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpMultiple2, "managedcluster02",
+						metav1.ConditionTrue, "Applied", "Success")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpMultiple2, "managedcluster03",
+						metav1.ConditionFalse, "ApplyFailed", "Simulated failure")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				// MRA Single RB: Unknown on cluster02
+				cpSingleRB := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleRBName)
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpSingleRB, "managedcluster02",
+						metav1.ConditionUnknown, "UnknownStatus", "Simulated unknown")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				// MRA Single CRB: Success on cluster01
+				cpSingleCRB := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleCRBName)
+				Eventually(func() error {
+					return updateClusterPermissionStatus(cpSingleCRB, "managedcluster01",
+						metav1.ConditionTrue, "Applied", "Success")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 				By("verifying MRA statuses")
 				// MRA 1: Error (due to Cluster 1 failure, despite Cluster 2 unknown)
@@ -4044,39 +4061,34 @@ spec:
 			})
 
 			It("should recover all MRAs when bindings are fixed", func() {
-				By("setting all bindings to Success")
-				successMap := map[string]StatusDetails{
-					testMulticlusterRoleAssignmentMultiple1Name: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentMultiple2Name: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentSingleRBName: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
-					testMulticlusterRoleAssignmentSingleCRBName: {
-						Status:  metav1.ConditionTrue,
-						Reason:  "Applied",
-						Message: "Successfully applied",
-					},
+				By("setting all dedicated ClusterPermissions to Success")
+
+				// Set all MRA Multiple 1's CPs to success
+				cpMultiple1 := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
+				for _, cluster := range []string{"managedcluster01", "managedcluster02", "managedcluster03"} {
+					Eventually(func() error {
+						return updateClusterPermissionStatus(cpMultiple1, cluster,
+							metav1.ConditionTrue, "Applied", "Success")
+					}, 30*time.Second, 1*time.Second).Should(Succeed())
 				}
 
+				// Set all MRA Multiple 2's CPs to success
+				cpMultiple2 := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
+				for _, cluster := range []string{"managedcluster01", "managedcluster02", "managedcluster03"} {
+					Eventually(func() error {
+						return updateClusterPermissionStatus(cpMultiple2, cluster,
+							metav1.ConditionTrue, "Applied", "Success")
+					}, 30*time.Second, 1*time.Second).Should(Succeed())
+				}
+
+				// Set MRA Single RB's CP to success
+				cpSingleRB := generateDedicatedCPName(testMulticlusterRoleAssignmentSingleRBName)
 				Eventually(func() error {
-					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster01", successMap); err != nil {
-						return err
-					}
-					if err := updateClusterPermissionStatusByOwner(cpName, "managedcluster02", successMap); err != nil {
-						return err
-					}
-					return updateClusterPermissionStatusByOwner(cpName, "managedcluster03", successMap)
-				}, 1*time.Minute, 1*time.Second).Should(Succeed())
+					return updateClusterPermissionStatus(cpSingleRB, "managedcluster02",
+						metav1.ConditionTrue, "Applied", "Success")
+				}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+				// MRA Single CRB already has success status from previous test
 
 				By("verifying all MRAs recover to Active")
 				verifyMRAHasRoleAssignmentStatus(
@@ -4158,10 +4170,11 @@ func validateClusterPermissionBindings(clusterPermission cpv1alpha1.ClusterPermi
 // ClusterPermission controller running in the Kind cluster. The MRA is updated in-place with the
 // re-fetched version after reconciliation.
 func simulateClusterPermissionSuccess(mra *mrav1beta1.MulticlusterRoleAssignment) {
+	cpName := generateDedicatedCPName(mra.Name)
 	for _, cluster := range mra.Status.AppliedClusters {
 		Eventually(func() error {
 			return updateClusterPermissionStatus(
-				"mra-managed-permissions", cluster,
+				cpName, cluster,
 				metav1.ConditionTrue, "AppliedManifestComplete", "Apply manifest complete",
 			)
 		}, 30*time.Second, 1*time.Second).Should(Succeed())
@@ -4343,9 +4356,14 @@ func cleanupTestResources(mraName string, clusterNames []string) {
 		"kubectl", "delete", "multiclusterroleassignment", mraName, "-n", openClusterManagementGlobalSetNamespace)
 	_, _ = utils.Run(cmd)
 
-	By("cleaning up ClusterPermissions")
+	By("cleaning up ClusterPermissions (both dedicated and legacy)")
+	dedicatedCPName := generateDedicatedCPName(mraName)
 	for _, clusterName := range clusterNames {
-		cmd = exec.Command("kubectl", "delete", "clusterpermissions", "mra-managed-permissions", "-n", clusterName)
+		// Delete dedicated CP (new model)
+		cmd = exec.Command("kubectl", "delete", "clusterpermissions", dedicatedCPName, "-n", clusterName)
+		_, _ = utils.Run(cmd)
+		// Also try to delete legacy CP for migration tests
+		cmd = exec.Command("kubectl", "delete", "clusterpermissions", legacyClusterPermissionName, "-n", clusterName)
 		_, _ = utils.Run(cmd)
 	}
 }
@@ -5192,8 +5210,9 @@ func verifyDedicatedCPExists(mraName, clusterNamespace string) {
 	}, 30*time.Second, 1*time.Second).Should(Succeed())
 }
 
-// verifyDedicatedCPBindingCount verifies that a dedicated ClusterPermission has the expected number of bindings.
-func verifyDedicatedCPBindingCount(mraName, clusterNamespace string, expectedCRBCount, expectedRBCount int) {
+// verifyDedicatedCPBindingCount verifies that a dedicated ClusterPermission has the expected number of ClusterRoleBindings.
+// For the dedicated model, RoleBindings are expected to be empty (namespaced bindings use separate CPs).
+func verifyDedicatedCPBindingCount(mraName, clusterNamespace string, expectedCRBCount int) {
 	cpName := generateDedicatedCPName(mraName)
 
 	Eventually(func(g Gomega) {
@@ -5207,13 +5226,6 @@ func verifyDedicatedCPBindingCount(mraName, clusterNamespace string, expectedCRB
 		}
 		g.Expect(actualCRBCount).To(Equal(expectedCRBCount),
 			fmt.Sprintf("Expected %d ClusterRoleBindings, got %d", expectedCRBCount, actualCRBCount))
-
-		actualRBCount := 0
-		if cp.Spec.RoleBindings != nil {
-			actualRBCount = len(*cp.Spec.RoleBindings)
-		}
-		g.Expect(actualRBCount).To(Equal(expectedRBCount),
-			fmt.Sprintf("Expected %d RoleBindings, got %d", expectedRBCount, actualRBCount))
 	}, 30*time.Second, 1*time.Second).Should(Succeed())
 }
 

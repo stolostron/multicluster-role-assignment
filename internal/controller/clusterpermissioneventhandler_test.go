@@ -47,6 +47,14 @@ func TestEventHandlers_Create_DedicatedCP(t *testing.T) {
 			},
 		},
 		{
+			name: "dedicated ClusterPermission with different binding name",
+			cp: createDedicatedCP("mra-other-87654321", "cluster-b", "kube-system/other-mra",
+				createCRB("admin-binding", "admin-user", "admin")),
+			expectedMRAs: []reconcile.Request{
+				{NamespacedName: types.NamespacedName{Namespace: "kube-system", Name: "other-mra"}},
+			},
+		},
+		{
 			name: "ClusterPermission without owner annotation - no enqueue",
 			cp: &cpv1alpha1.ClusterPermission{
 				ObjectMeta: metav1.ObjectMeta{
