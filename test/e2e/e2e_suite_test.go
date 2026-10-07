@@ -17,9 +17,11 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -62,10 +64,12 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("undeploying the controller-manager")
-	cmd := exec.Command("make", "undeploy")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "make", "undeploy")
 	_, _ = utils.Run(cmd)
 
 	By("removing manager namespace")
-	cmd = exec.Command("kubectl", "delete", "ns", namespace)
+	cmd = exec.CommandContext(ctx, "kubectl", "delete", "ns", namespace)
 	_, _ = utils.Run(cmd)
 })

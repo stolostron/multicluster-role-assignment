@@ -60,6 +60,7 @@ const (
 	clusterPermissionManagedByValue = "multiclusterroleassignment-controller"
 	clusterPermissionMRAOwnerAnn    = "rbac.open-cluster-management.io/mra-owner"
 	clusterRoleKind                 = "ClusterRole"
+	conditionTypeApplied            = "Applied"
 
 	// Legacy constants for migration from shared ClusterPermission model.
 	legacyClusterPermissionName = "mra-managed-permissions"
@@ -1467,7 +1468,7 @@ func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
 		for _, crbStatus := range cp.Status.ResourceStatus.ClusterRoleBindings {
 			if _, expected := expectedBindings[crbStatus.Name]; expected {
 				for _, cond := range crbStatus.Conditions {
-					if cond.Type == "Applied" && cond.Status == metav1.ConditionTrue {
+					if cond.Type == conditionTypeApplied && cond.Status == metav1.ConditionTrue {
 						expectedBindings[crbStatus.Name] = true
 						break
 					}
@@ -1481,7 +1482,7 @@ func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
 		for _, rbStatus := range cp.Status.ResourceStatus.RoleBindings {
 			if _, expected := expectedBindings[rbStatus.Name]; expected {
 				for _, cond := range rbStatus.Conditions {
-					if cond.Type == "Applied" && cond.Status == metav1.ConditionTrue {
+					if cond.Type == conditionTypeApplied && cond.Status == metav1.ConditionTrue {
 						expectedBindings[rbStatus.Name] = true
 						break
 					}
