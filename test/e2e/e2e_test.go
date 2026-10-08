@@ -995,7 +995,6 @@ var _ = Describe("Manager", Ordered, func() {
 		Context("should create multiple MulticlusterRoleAssignments and ClusterPermissions - tests MRA create and "+
 			"ClusterPermissions modify", func() {
 
-			var clusterPermissions [3]cpv1alpha1.ClusterPermission
 			var mras [4]mrav1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
@@ -1009,7 +1008,6 @@ var _ = Describe("Manager", Ordered, func() {
 
 			Context("resource creation and fetching", func() {
 				var mraJSONs [4]string
-				var clusterPermissionJSONs [3]string
 
 				It("should create and fetch all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and MODIFY operations")
@@ -1041,38 +1039,32 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch ClusterPermissions for all managed clusters", func() {
-					// With dedicated model, fetch Multiple2 MRA's CP (targets all 3 clusters)
-					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
-					for i := 1; i <= 3; i++ {
-						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf(
-							"waiting for dedicated ClusterPermission to be ready and fetching it from %s", clusterName))
-						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							dedicatedCPName, clusterName)
-
-						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
-						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+				It("should create dedicated ClusterPermissions for each MRA on targeted clusters", func() {
+					for i := range mras {
+						for _, clusterName := range getTargetedClustersFromMRA(mras[i]) {
+							By(fmt.Sprintf("waiting for dedicated ClusterPermission for %s on %s",
+								mras[i].Name, clusterName))
+							cp := fetchDedicatedClusterPermission(mras[i].Name, clusterName)
+							validateMRAOwnerAnnotations(cp, mras[i])
+						}
 					}
 				})
 			})
 
-			//nolint:dupl
-			Context("ClusterPermission merged content validation", func() {
-				It("should have correctly merged content for managedcluster01", func() {
-					By("verifying merged ClusterPermission content in managedcluster01 namespace")
-					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(4))
-					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(7))
+			Context("ClusterPermission dedicated content validation", func() {
+				subjectNames := []string{
+					"test-user-multiple-2",
+					"test-user-multiple-1",
+					"test-user-single-rolebinding",
+					"test-user-single-clusterrolebinding",
+				}
 
-					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
+				It("should have correct dedicated ClusterPermission content for managedcluster01", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
-						// RoleBindings
 						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
@@ -1081,20 +1073,12 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs("managedcluster01", mras[:], subjectNames, mergedExpected)
 				})
 
-				It("should have correctly merged content for managedcluster02", func() {
-					By("verifying merged ClusterPermission content in managedcluster02 namespace")
-					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
-					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(13))
-
-					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
+				It("should have correct dedicated ClusterPermission content for managedcluster02", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
-						// RoleBindings
 						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
 						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
@@ -1109,21 +1093,13 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs("managedcluster02", mras[:], subjectNames, mergedExpected)
 				})
 
-				It("should have correctly merged content for managedcluster03", func() {
-					By("verifying merged ClusterPermission content in managedcluster03 namespace")
-					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(2))
-					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(6))
-
-					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
+				It("should have correct dedicated ClusterPermission content for managedcluster03", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
-						// RoleBindings
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
@@ -1131,21 +1107,7 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
-				})
-
-				It("should have correct owner annotations for all clusters", func() {
-					By("verifying ClusterPermission owner annotations for all clusters")
-					for _, cp := range clusterPermissions {
-						for _, mra := range mras {
-							validateMRAOwnerAnnotations(cp, mra)
-						}
-					}
-
-					By("verifying binding annotations have semantic consistency")
-					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, mras[:])
-					}
+					validateDedicatedCPOnClusterForMRAs("managedcluster03", mras[:], subjectNames, mergedExpected)
 				})
 			})
 
@@ -1214,7 +1176,6 @@ var _ = Describe("Manager", Ordered, func() {
 		Context("should modify multiple MulticlusterRoleAssignments with comprehensive changes and update "+
 			"ClusterPermissions accordingly", func() {
 
-			var clusterPermissions [3]cpv1alpha1.ClusterPermission
 			var mras [4]mrav1beta1.MulticlusterRoleAssignment
 
 			AfterAll(func() {
@@ -1228,7 +1189,6 @@ var _ = Describe("Manager", Ordered, func() {
 
 			Context("resource creation and comprehensive modification", func() {
 				var mraJSONs [4]string
-				var clusterPermissionJSONs [3]string
 				const groupSubjectKind = "Group"
 
 				It("should create and comprehensively modify all MulticlusterRoleAssignments", func() {
@@ -1315,32 +1275,28 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch updated ClusterPermissions for all managed clusters", func() {
-					// With dedicated model, fetch Multiple2 MRA's CP
-					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple2Name)
-					for i := 1; i <= 3; i++ {
-						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf("waiting for updated dedicated ClusterPermission to be ready and "+
-							"fetching it from %s", clusterName))
-						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON(
-							"clusterpermissions", dedicatedCPName, clusterName)
-
-						By(fmt.Sprintf(
-							"unmarshaling updated ClusterPermission json for %s", clusterName))
-						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+				It("should have updated dedicated ClusterPermissions for each MRA on targeted clusters", func() {
+					for i := range mras {
+						for _, clusterName := range getTargetedClustersFromMRA(mras[i]) {
+							By(fmt.Sprintf("waiting for updated dedicated ClusterPermission for %s on %s",
+								mras[i].Name, clusterName))
+							cp := fetchDedicatedClusterPermission(mras[i].Name, clusterName)
+							validateMRAOwnerAnnotations(cp, mras[i])
+						}
 					}
 				})
 			})
 
 			//nolint:dupl
-			Context("ClusterPermission merged content validation after comprehensive modifications", func() {
-				It("should have correctly updated content for managedcluster01 with comprehensive changes", func() {
-					By("verifying comprehensively updated ClusterPermission content in managedcluster01 namespace")
-					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(3))
-					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(18))
+			Context("ClusterPermission dedicated content validation after comprehensive modifications", func() {
+				subjectNames := []string{
+					"modified-group-multiple-2",
+					"test-user-multiple-1",
+					"modified-user-single-rolebinding",
+					"modified-group-single-clusterrolebinding",
+				}
 
+				It("should have correctly updated dedicated content for managedcluster01", func() {
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
 						{RoleName: "edit", Namespace: "", SubjectName: "modified-group-multiple-2"},
@@ -1366,16 +1322,10 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
 						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs("managedcluster01", mras[:], subjectNames, expectedBindings)
 				})
 
-				It("should have correctly updated content for managedcluster02 with comprehensive changes", func() {
-					By("verifying comprehensively updated ClusterPermission content in managedcluster02 namespace")
-					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
-					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(20))
-
+				It("should have correctly updated dedicated content for managedcluster02", func() {
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "modified-group-multiple-2"},
@@ -1401,16 +1351,10 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
 						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs("managedcluster02", mras[:], subjectNames, expectedBindings)
 				})
 
-				It("should have correctly updated content for managedcluster03 with comprehensive changes", func() {
-					By("verifying comprehensively updated ClusterPermission content in managedcluster03 namespace")
-					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(2))
-					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(17))
-
+				It("should have correctly updated dedicated content for managedcluster03", func() {
 					expectedBindings := []ExpectedBinding{
 						// ClusterRoleBindings
 						{RoleName: "view", Namespace: "", SubjectName: "modified-group-multiple-2"},
@@ -1434,21 +1378,7 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "admin", Namespace: "kube-system", SubjectName: "modified-group-single-clusterrolebinding"},
 						{RoleName: "admin", Namespace: "applications", SubjectName: "modified-group-single-clusterrolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
-				})
-
-				It("should have correct owner annotations for all clusters after comprehensive modifications", func() {
-					By("verifying ClusterPermission owner annotations for all clusters after comprehensive changes")
-					for _, cp := range clusterPermissions {
-						for _, mra := range mras {
-							validateMRAOwnerAnnotations(cp, mra)
-						}
-					}
-
-					By("verifying binding annotations have semantic consistency after comprehensive modifications")
-					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, mras[:])
-					}
+					validateDedicatedCPOnClusterForMRAs("managedcluster03", mras[:], subjectNames, expectedBindings)
 				})
 			})
 
@@ -2095,12 +2025,10 @@ var _ = Describe("Manager", Ordered, func() {
 		Context("should delete MulticlusterRoleAssignments and update ClusterPermissions - tests MRA deletion "+
 			"with shared ClusterPermissions", func() {
 
-			var clusterPermissions [3]cpv1alpha1.ClusterPermission
 			var mras [4]mrav1beta1.MulticlusterRoleAssignment
 
 			Context("resource creation and deletion", func() {
 				var mraJSONs [4]string
-				var clusterPermissionJSONs [3]string
 
 				It("should create all MulticlusterRoleAssignments in sequence", func() {
 					By("creating all MulticlusterRoleAssignments sequentially to test CREATE and DELETE operations")
@@ -2138,51 +2066,43 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should fetch updated ClusterPermissions for all managed clusters", func() {
-					// After deleting Multiple2, use Multiple1's CP
-					dedicatedCPName := generateDedicatedCPName(testMulticlusterRoleAssignmentMultiple1Name)
-					for i := 1; i <= 3; i++ {
-						clusterName := fmt.Sprintf("managedcluster%02d", i)
-						By(fmt.Sprintf(
-							"waiting for dedicated ClusterPermission to be ready and fetching it from %s", clusterName))
-						clusterPermissionJSONs[i-1] = fetchK8sResourceJSON("clusterpermissions",
-							dedicatedCPName, clusterName)
-
-						By(fmt.Sprintf("unmarshaling ClusterPermission json for %s", clusterName))
-						unmarshalJSON(clusterPermissionJSONs[i-1], &clusterPermissions[i-1])
+				It("should have dedicated ClusterPermissions for remaining MRAs after deletion", func() {
+					for i := 1; i < len(mras); i++ {
+						for _, clusterName := range getTargetedClustersFromMRA(mras[i]) {
+							By(fmt.Sprintf("waiting for dedicated ClusterPermission for %s on %s",
+								mras[i].Name, clusterName))
+							cp := fetchDedicatedClusterPermission(mras[i].Name, clusterName)
+							validateMRAOwnerAnnotations(cp, mras[i])
+						}
 					}
 				})
 			})
 
-			Context("ClusterPermission updated content validation after deletion", func() {
-				It("should have correctly updated content for managedcluster01 after deletion", func() {
-					By("verifying updated ClusterPermission content in managedcluster01 namespace")
-					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(2))
-					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(4))
+			Context("ClusterPermission dedicated content validation after deletion", func() {
+				remainingMRAs := func() []mrav1beta1.MulticlusterRoleAssignment {
+					return mras[1:]
+				}
+				subjectNames := []string{
+					"test-user-multiple-1",
+					"test-user-single-rolebinding",
+					"test-user-single-clusterrolebinding",
+				}
 
-					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
+				It("should have correct dedicated content for managedcluster01 after deletion", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
-						// RoleBindings
 						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster01", remainingMRAs(), subjectNames, mergedExpected)
 				})
 
-				It("should have correctly updated content for managedcluster02 after deletion", func() {
-					By("verifying updated ClusterPermission content in managedcluster02 namespace")
-					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).To(BeNil())
-					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(9))
-
-					expectedBindings := []ExpectedBinding{
-						// RoleBindings
+				It("should have correct dedicated content for managedcluster02 after deletion", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
@@ -2193,38 +2113,18 @@ var _ = Describe("Manager", Ordered, func() {
 						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
 						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster02", remainingMRAs(), subjectNames, mergedExpected)
 				})
 
-				It("should have correctly updated content for managedcluster03 after deletion", func() {
-					By("verifying updated ClusterPermission content in managedcluster03 namespace")
-					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(1))
-					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(2))
-
-					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
+				It("should have correct dedicated content for managedcluster03 after deletion", func() {
+					mergedExpected := []ExpectedBinding{
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
-						// RoleBindings
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
-				})
-
-				It("should have correct owner annotations for all clusters after deletion", func() {
-					By("verifying ClusterPermission owner annotations for remaining MRAs")
-					for _, cp := range clusterPermissions {
-						for i := 1; i < len(mras); i++ {
-							validateMRAOwnerAnnotations(cp, mras[i])
-						}
-					}
-
-					By("verifying binding annotations have semantic consistency after deletion")
-					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, mras[1:])
-					}
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster03", remainingMRAs(), subjectNames, mergedExpected)
 				})
 			})
 
@@ -3023,93 +2923,49 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				})
 
-				It("should have correctly merged content for managedcluster01 after drift correction", func() {
-					By("verifying ClusterPermission was fully restored in managedcluster01")
-					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).To(HaveLen(4))
-					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[0].Spec.RoleBindings).To(HaveLen(7))
-
+				It("should restore Multiple1 dedicated ClusterPermission on managedcluster01 after drift correction", func() {
 					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
-						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "admin", Namespace: "", SubjectName: "test-user-multiple-1"},
-						{RoleName: "view", Namespace: "", SubjectName: "test-user-single-clusterrolebinding"},
-						// RoleBindings
-						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[0], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster01",
+						[]mrav1beta1.MulticlusterRoleAssignment{mras[1]},
+						[]string{"test-user-multiple-1"},
+						expectedBindings,
+					)
 				})
 
-				It("should have correctly merged content for managedcluster02 after drift correction", func() {
-					By("verifying ClusterPermission was fully restored in managedcluster02")
-					Expect(clusterPermissions[1].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.ClusterRoleBindings).To(HaveLen(1))
-					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(13))
-
+				It("should restore Multiple1 dedicated ClusterPermission on managedcluster02 after drift correction", func() {
 					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
-						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
-						// RoleBindings
-						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-multiple-2"},
-						{RoleName: "edit", Namespace: "development", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
 						{RoleName: "view", Namespace: "default", SubjectName: "test-user-multiple-1"},
 						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
-						{RoleName: "edit", Namespace: "default", SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: "kube-system", SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: "monitoring", SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: "observability", SubjectName: "test-user-single-rolebinding"},
-						{RoleName: "edit", Namespace: "logging", SubjectName: "test-user-single-rolebinding"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[1], expectedBindings)
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster02",
+						[]mrav1beta1.MulticlusterRoleAssignment{mras[1]},
+						[]string{"test-user-multiple-1"},
+						expectedBindings,
+					)
 				})
 
-				It("should have correctly merged content for managedcluster03 after drift correction", func() {
-					By("verifying ClusterPermission was fully restored in managedcluster03")
-					Expect(clusterPermissions[2].Spec.ClusterRoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.ClusterRoleBindings).To(HaveLen(2))
-					Expect(clusterPermissions[2].Spec.RoleBindings).NotTo(BeNil())
-					Expect(*clusterPermissions[2].Spec.RoleBindings).To(HaveLen(6))
-
+				It("should restore Multiple1 dedicated ClusterPermission on managedcluster03 after drift correction", func() {
 					expectedBindings := []ExpectedBinding{
-						// ClusterRoleBindings
-						{RoleName: "view", Namespace: "", SubjectName: "test-user-multiple-2"},
 						{RoleName: "edit", Namespace: "", SubjectName: "test-user-multiple-1"},
-						// RoleBindings
-						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-2"},
-						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "logging", SubjectName: "test-user-multiple-2"},
-						{RoleName: "view", Namespace: "kube-system", SubjectName: "test-user-multiple-2"},
 						{RoleName: "system:mon", Namespace: "monitoring", SubjectName: "test-user-multiple-1"},
 						{RoleName: "system:mon", Namespace: "observability", SubjectName: "test-user-multiple-1"},
 					}
-					validateClusterPermissionBindings(clusterPermissions[2], expectedBindings)
-				})
-
-				It("should have correct owner annotations for all clusters after drift correction", func() {
-					By("verifying ClusterPermission owner annotations restored for all clusters")
-					for _, cp := range clusterPermissions {
-						for _, mra := range mras {
-							validateMRAOwnerAnnotations(cp, mra)
-						}
-					}
-
-					By("verifying binding annotations have semantic consistency after drift correction")
-					for _, cp := range clusterPermissions {
-						validateBindingConsistency(cp, mras[:])
-					}
+					validateDedicatedCPOnClusterForMRAs(
+						"managedcluster03",
+						[]mrav1beta1.MulticlusterRoleAssignment{mras[1]},
+						[]string{"test-user-multiple-1"},
+						expectedBindings,
+					)
 				})
 			})
 		})
@@ -4417,6 +4273,54 @@ func getTargetedClustersFromMRA(mra mrav1beta1.MulticlusterRoleAssignment) []str
 	return uniqueClusters
 }
 
+// fetchDedicatedClusterPermission fetches the dedicated ClusterPermission for an MRA on a managed cluster.
+func fetchDedicatedClusterPermission(mraName, clusterNamespace string) cpv1alpha1.ClusterPermission {
+	cpName := generateDedicatedCPName(mraName)
+	cpJSON := fetchK8sResourceJSON("clusterpermissions", cpName, clusterNamespace)
+	var cp cpv1alpha1.ClusterPermission
+	unmarshalJSON(cpJSON, &cp)
+
+	return cp
+}
+
+// bindingsForSubject returns expected bindings that belong to a single MRA subject.
+func bindingsForSubject(bindings []ExpectedBinding, subjectName string) []ExpectedBinding {
+	filtered := make([]ExpectedBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding.SubjectName == subjectName {
+			filtered = append(filtered, binding)
+		}
+	}
+
+	return filtered
+}
+
+// validateDedicatedCPOnClusterForMRAs checks each MRA's dedicated ClusterPermission on one cluster.
+func validateDedicatedCPOnClusterForMRAs(
+	clusterName string,
+	mras []mrav1beta1.MulticlusterRoleAssignment,
+	subjectNames []string,
+	mergedExpected []ExpectedBinding,
+) {
+	Expect(mras).To(HaveLen(len(subjectNames)), "mras and subjectNames must have the same length")
+
+	for i, mra := range mras {
+		clusters := getTargetedClustersFromMRA(mra)
+		if !slices.Contains(clusters, clusterName) {
+			continue
+		}
+
+		expected := bindingsForSubject(mergedExpected, subjectNames[i])
+		Expect(expected).NotTo(BeEmpty(),
+			fmt.Sprintf("expected bindings for MRA %s on cluster %s", mra.Name, clusterName))
+
+		cp := fetchDedicatedClusterPermission(mra.Name, clusterName)
+		validateClusterPermissionBindings(cp, expected)
+		validateMRAOwnerAnnotations(cp, mra)
+		validateBindingConsistency(cp, []mrav1beta1.MulticlusterRoleAssignment{mra})
+	}
+}
+
 // validateMRAOwnerAnnotations validates that this ClusterPermission has the correct owner annotation
 // for the dedicated ClusterPermission model (single mra-owner annotation).
 func validateMRAOwnerAnnotations(cp cpv1alpha1.ClusterPermission, mra mrav1beta1.MulticlusterRoleAssignment) {
@@ -5020,7 +4924,6 @@ func verifyDedicatedCPExists(mraName, clusterNamespace string) {
 
 // verifyDedicatedCPBindingCount verifies that a dedicated ClusterPermission has
 // the expected number of ClusterRoleBindings. RoleBindings are not checked.
-// For the dedicated model, RoleBindings are expected to be empty (namespaced bindings use separate CPs).
 func verifyDedicatedCPBindingCount(mraName, clusterNamespace string, expectedCRBCount int) {
 	cpName := generateDedicatedCPName(mraName)
 
