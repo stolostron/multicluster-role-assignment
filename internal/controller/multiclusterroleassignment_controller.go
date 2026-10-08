@@ -60,7 +60,6 @@ const (
 	clusterPermissionManagedByValue = "multiclusterroleassignment-controller"
 	clusterPermissionMRAOwnerAnn    = "rbac.open-cluster-management.io/mra-owner"
 	clusterRoleKind                 = "ClusterRole"
-	conditionTypeApplied            = "Applied"
 
 	// Legacy constants for migration from shared ClusterPermission model.
 	legacyClusterPermissionName = "mra-managed-permissions"
@@ -1182,7 +1181,9 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ct
 		} else {
 			// Successfully created - DO NOT cleanup legacy bindings yet.
 			// Wait until dedicated CP bindings are confirmed applied on the managed cluster.
-			// Legacy cleanup happens in cleanupLegacyBindingsIfDedicatedApplied() called later.
+			// Legacy cleanup happens on a subsequent reconcile: once existingCP is non-nil, the
+			// "Update existing dedicated ClusterPermission" branch below calls
+			// areDedicatedCPBindingsApplied() and, if true, cleanupLegacyBindings().
 			return nil
 		}
 	}
@@ -1459,7 +1460,9 @@ func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
 	}
 
 	if len(expectedBindings) == 0 {
-		// No bindings expected, nothing to verify
+		// Defensive guard: with the current call site (only reached when desiredSpec is non-empty),
+		// expectedBindings is never empty here. Kept in case this helper is reused where that
+		// invariant doesn't hold.
 		return true
 	}
 
@@ -1468,7 +1471,7 @@ func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
 		for _, crbStatus := range cp.Status.ResourceStatus.ClusterRoleBindings {
 			if _, expected := expectedBindings[crbStatus.Name]; expected {
 				for _, cond := range crbStatus.Conditions {
-					if cond.Type == conditionTypeApplied && cond.Status == metav1.ConditionTrue {
+					if cond.Type == string(mrav1beta1.ConditionTypeApplied) && cond.Status == metav1.ConditionTrue {
 						expectedBindings[crbStatus.Name] = true
 						break
 					}
@@ -1482,7 +1485,7 @@ func (r *MulticlusterRoleAssignmentReconciler) areDedicatedCPBindingsApplied(
 		for _, rbStatus := range cp.Status.ResourceStatus.RoleBindings {
 			if _, expected := expectedBindings[rbStatus.Name]; expected {
 				for _, cond := range rbStatus.Conditions {
-					if cond.Type == conditionTypeApplied && cond.Status == metav1.ConditionTrue {
+					if cond.Type == string(mrav1beta1.ConditionTypeApplied) && cond.Status == metav1.ConditionTrue {
 						expectedBindings[rbStatus.Name] = true
 						break
 					}
