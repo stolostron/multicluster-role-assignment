@@ -2856,10 +2856,12 @@ var _ = Describe("Manager", Ordered, func() {
 			Context("drift correction after radical manual modifications", func() {
 				It("should manually modify ClusterPermissions with various drift scenarios", func() {
 					By("modifying managedcluster01 ClusterPermission")
+					Expect(clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.ClusterRoleBindings).NotTo(BeEmpty())
 					(*clusterPermissions[0].Spec.ClusterRoleBindings)[0].RoleRef.Name = "cluster-admin"
+					Expect(clusterPermissions[0].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[0].Spec.RoleBindings).NotTo(BeEmpty())
 					(*clusterPermissions[0].Spec.RoleBindings)[0].RoleRef.Name = "admin"
-					*clusterPermissions[0].Spec.ClusterRoleBindings = slices.Delete(
-						*clusterPermissions[0].Spec.ClusterRoleBindings, 1, 2)
 
 					orphanedBinding := cpv1alpha1.ClusterRoleBinding{
 						Name: "orphaned-binding",
@@ -2878,8 +2880,11 @@ var _ = Describe("Manager", Ordered, func() {
 						clusterPermissions[0].Spec)
 
 					By("modifying managedcluster02 ClusterPermission")
+					Expect(clusterPermissions[1].Spec.RoleBindings).NotTo(BeNil())
+					Expect(*clusterPermissions[1].Spec.RoleBindings).To(HaveLen(4))
 					*clusterPermissions[1].Spec.RoleBindings = slices.Delete(
 						*clusterPermissions[1].Spec.RoleBindings, 0, 3)
+					Expect(*clusterPermissions[1].Spec.RoleBindings).NotTo(BeEmpty())
 					(*clusterPermissions[1].Spec.RoleBindings)[0].Subjects[0].Name = "blah-blah-user"
 
 					orphanedRoleBinding := cpv1alpha1.RoleBinding{
