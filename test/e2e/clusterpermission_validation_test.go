@@ -36,9 +36,9 @@ import (
 const (
 	managedCluster01        = "managedcluster01"
 	managedCluster02        = "managedcluster02"
-	placementCluster01           = "placement-cluster-01"
-	placementCluster01And02      = "placement-cluster-01-02"
-	placementCluster02           = "placement-cluster-02"
+	placementCluster01      = "placement-cluster-01"
+	placementCluster01And02 = "placement-cluster-01-02"
+	placementCluster02      = "placement-cluster-02"
 )
 
 // registerClusterPermissionValidationSpecs adds ClusterPermission spec.validate and
