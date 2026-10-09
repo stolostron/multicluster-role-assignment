@@ -21,6 +21,18 @@ RBAC_GO_URL = (
     "main/pkg/resources/cluster/rbac.go"
 )
 RBAC_GO_REF = "kubevirt/kubevirt-migration-operator@main:pkg/resources/cluster/rbac.go"
+KNOWN_MIGRATION_VERBS = frozenset(
+    {
+        "get",
+        "list",
+        "watch",
+        "create",
+        "update",
+        "patch",
+        "delete",
+        "deletecollection",
+    }
+)
 
 
 def fetch_rbac_go(url: str = RBAC_GO_URL) -> str:
@@ -103,6 +115,27 @@ def merge_policy_rules(rule_sets: list[list[dict]]) -> list[dict]:
     return out
 
 
+def _yaml_list_items(block: str) -> list[str]:
+    return [line.strip() for line in re.findall(r"^\s+- (.+)$", block, re.MULTILINE)]
+
+
+def _validate_migration_verbs(verbs: list[str], role_name: str) -> list[str]:
+    normalized: list[str] = []
+    bad: list[str] = []
+    for verb in verbs:
+        cleaned = verb.strip().strip("'\"")
+        if cleaned == "*" or cleaned not in KNOWN_MIGRATION_VERBS:
+            bad.append(verb)
+        else:
+            normalized.append(cleaned)
+    if bad:
+        raise ValueError(
+            f"ClusterRole {role_name}: unsupported migrations.kubevirt.io verbs {bad}; "
+            f"expected only {sorted(KNOWN_MIGRATION_VERBS)}"
+        )
+    return sorted(normalized)
+
+
 def extract_role_migration_rules(yaml_text: str, role_name: str) -> list[dict]:
     marker = f"name: {role_name}"
     start = yaml_text.find(marker)
@@ -116,23 +149,23 @@ def extract_role_migration_rules(yaml_text: str, role_name: str) -> list[dict]:
         block = yaml_text[start:next_role]
 
     rules: list[dict] = []
-    verb_token = r"(?:get|list|watch|create|update|patch|delete|deletecollection)"
     migration_rule = re.compile(
         r"- apiGroups:\s*\n"
         r"\s+- migrations\.kubevirt\.io\s*\n"
         r"\s+resources:\s*\n"
         r"((?:\s+- .+\n)+?)"
         r"\s+verbs:\s*\n"
-        rf"((?:\s+- {verb_token}\s*\n)+)",
+        r"((?:\s+- .+\n)+?)"
+        r"(?=\s+- apiGroups:|\Z)",
     )
     for rule_block in migration_rule.finditer(block):
-        resources = re.findall(r"^\s+- (.+)$", rule_block.group(1), re.MULTILINE)
-        verbs = re.findall(r"^\s+- (.+)$", rule_block.group(2), re.MULTILINE)
+        resources = _yaml_list_items(rule_block.group(1))
+        verbs = _validate_migration_verbs(_yaml_list_items(rule_block.group(2)), role_name)
         rules.append(
             {
                 "apiGroups": ["migrations.kubevirt.io"],
                 "resources": sorted(resources),
-                "verbs": sorted(verbs),
+                "verbs": verbs,
             }
         )
     return rules
@@ -186,8 +219,12 @@ def main() -> int:
     )
 
     template = ADDON_TEMPLATE.read_text(encoding="utf-8")
-    actual_view = extract_role_migration_rules(template, "acm-vm-extended:view")
-    actual_admin = extract_role_migration_rules(template, "acm-vm-extended:admin")
+    try:
+        actual_view = extract_role_migration_rules(template, "acm-vm-extended:view")
+        actual_admin = extract_role_migration_rules(template, "acm-vm-extended:admin")
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     ok = True
     if not rules_equal(expected_view, actual_view):
