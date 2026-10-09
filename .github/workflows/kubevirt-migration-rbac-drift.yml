@@ -1,0 +1,83 @@
+name: KubeVirt migration RBAC drift
+
+on:
+  pull_request:
+    paths:
+      - charts/fine-grained-rbac/templates/acm-roles-addontemplate.yaml
+      - charts/fine-grained-rbac/templates/policy-virt-clusterroles-policy.yaml
+      - hack/check-kubevirt-migration-rbac-sync.py
+      - .github/workflows/kubevirt-migration-rbac-drift.yml
+  schedule:
+    # Weekly alarm if kubevirt-migration-operator rbac.go changes on main
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # https://redhat.enterprise.slack.com/archives/C0BKJ8P30J1
+  SLACK_CHANNEL_ID: C0BKJ8P30J1
+
+jobs:
+  drift:
+    name: Compare acm-vm-extended vs kubevirt-migration-operator
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check migration RBAC alignment
+        id: drift
+        run: |
+          set +e
+          python3 hack/check-kubevirt-migration-rbac-sync.py > drift.log 2>&1
+          code=$?
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          cat drift.log
+          exit 0
+
+      - name: Notify Slack on drift or upstream failure
+        if: steps.drift.outputs.exit_code == '1' || steps.drift.outputs.exit_code == '2'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          if [ -z "$SLACK_BOT_TOKEN" ]; then
+            echo "::warning::SLACK_BOT_TOKEN is not configured; cannot post to Slack channel ${SLACK_CHANNEL_ID}"
+            exit 0
+          fi
+          case "${{ steps.drift.outputs.exit_code }}" in
+            1) REASON="acm-vm-extended migration rules are out of sync with kubevirt/kubevirt-migration-operator main (rbac.go)" ;;
+            2) REASON="could not fetch upstream rbac.go from kubevirt-migration-operator" ;;
+            *) REASON="unknown failure" ;;
+          esac
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          LOG_TAIL="$(tail -n 50 drift.log)"
+          TEXT=$(printf '%s\n' \
+            "*KubeVirt migration RBAC drift check failed*" \
+            "• Exit code: ${{ steps.drift.outputs.exit_code }} — ${REASON}" \
+            "• Repository: \`${{ github.repository }}\` (\`${{ github.ref_name }}\`, \`${{ github.sha }}\`)" \
+            "• Workflow: ${RUN_URL}" \
+            "• Channel: https://redhat.enterprise.slack.com/archives/${SLACK_CHANNEL_ID}" \
+            "" \
+            "\`\`\`" \
+            "${LOG_TAIL}" \
+            "\`\`\`")
+          payload=$(jq -n \
+            --arg channel "$SLACK_CHANNEL_ID" \
+            --arg text "$TEXT" \
+            '{channel: $channel, text: $text, unfurl_links: false, unfurl_media: false}')
+          response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$payload")
+          ok=$(echo "$response" | jq -r '.ok')
+          if [ "$ok" != "true" ]; then
+            echo "$response"
+            echo "::error::Slack chat.postMessage failed (invite the bot to channel ${SLACK_CHANNEL_ID} and verify SLACK_BOT_TOKEN)"
+            exit 1
+          fi
+
+      - name: Enforce check result
+        if: steps.drift.outputs.exit_code != '0'
+        run: exit "${{ steps.drift.outputs.exit_code }}"
