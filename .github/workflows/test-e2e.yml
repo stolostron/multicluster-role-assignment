@@ -33,3 +33,7 @@ jobs:
         run: |
           go mod tidy
           make test-e2e
+
+      - name: Tear down Kind cluster
+        if: always()
+        run: make cleanup-test-e2e

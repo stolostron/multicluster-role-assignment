@@ -21,7 +21,7 @@ This operator simplifies the management of RBAC policies in multicluster environ
 
 Creating `MulticlusterRoleAssignment` resources will create `ClusterPermission` resources which in turn creates the RBAC resources in the targeted managed clusters. The RBAC resources can be `ClusterRoleBinding` or `RoleBinding`. For more information on `ClusterPermission` resources, refer to the [ClusterPermission repo](https://github.com/stolostron/cluster-permission).
 
-The operator uses annotation-based ownership tracking to support multiple MulticlusterRoleAssignments managing the same ClusterPermission. Each binding in the ClusterPermission is annotated with its owning MulticlusterRoleAssignment, allowing safe concurrent management.
+Each `MulticlusterRoleAssignment` creates a **dedicated** `ClusterPermission` for each of its target managed clusters. This design ensures isolation between MRAs and avoids ManifestWork size limits. See [docs/CLUSTERPERMISSION-DESIGN.md](docs/CLUSTERPERMISSION-DESIGN.md) for details on the ClusterPermission management model.
 
 ## Quick Start
 

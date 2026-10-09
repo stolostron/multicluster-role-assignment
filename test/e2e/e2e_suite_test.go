@@ -17,9 +17,11 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,6 +33,10 @@ var (
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "example.com/multicluster-role-assignment:v0.0.1"
+
+	// afterSuiteCleanupTimeout bounds AfterSuite teardown so the go test deadline is not consumed
+	// by kubectl waiting on finalizers (make undeploy has hung in CI for several minutes).
+	afterSuiteCleanupTimeout = 90 * time.Second
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -60,12 +66,29 @@ var _ = BeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install CRDs")
 })
 
-var _ = AfterSuite(func() {
-	By("undeploying the controller-manager")
-	cmd := exec.Command("make", "undeploy")
-	_, _ = utils.Run(cmd)
+// runBoundedCleanup runs a kubectl (or other) command with a hard timeout. Errors are logged and ignored.
+func runBoundedCleanup(description string, args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), afterSuiteCleanupTimeout)
+	defer cancel()
 
-	By("removing manager namespace")
-	cmd = exec.Command("kubectl", "delete", "ns", namespace)
-	_, _ = utils.Run(cmd)
+	By(description)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	if _, err := utils.Run(cmd); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "AfterSuite cleanup (%s): %v\n", description, err)
+	}
+}
+
+var _ = AfterSuite(func() {
+	// Do not run `make undeploy`: piping kustomize into `kubectl delete -f` can block until
+	// namespace finalizers clear and exhaust the default 10m go test timeout in CI.
+	runBoundedCleanup(
+		"deleting controller-manager deployment (best effort)",
+		"kubectl", "delete", "deployment", "controller-manager",
+		"-n", namespace, "--ignore-not-found", "--wait=false",
+	)
+	runBoundedCleanup(
+		"deleting manager namespace (best effort)",
+		"kubectl", "delete", "namespace", namespace,
+		"--ignore-not-found", "--wait=false", "--grace-period=0",
+	)
 })

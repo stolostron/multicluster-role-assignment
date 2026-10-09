@@ -34,12 +34,11 @@ import (
 )
 
 const (
-	clusterPermissionManagedName = "mra-managed-permissions"
-	managedCluster01             = "managedcluster01"
-	managedCluster02             = "managedcluster02"
-	placementCluster01           = "placement-cluster-01"
-	placementCluster01And02      = "placement-cluster-01-02"
-	placementCluster02           = "placement-cluster-02"
+	managedCluster01        = "managedcluster01"
+	managedCluster02        = "managedcluster02"
+	placementCluster01      = "placement-cluster-01"
+	placementCluster01And02 = "placement-cluster-01-02"
+	placementCluster02      = "placement-cluster-02"
 )
 
 // registerClusterPermissionValidationSpecs adds ClusterPermission spec.validate and
@@ -61,7 +60,7 @@ func registerClusterPermissionValidationSpecs() {
 				createMRAWithClusterRole(mraName, "test-user-cp-validate-flag",
 					assignmentName, "view", placementCluster01, nil)
 
-				cp := waitForManagedClusterPermission(managedCluster01)
+				cp := waitForDedicatedClusterPermission(mraName, managedCluster01)
 				Expect(cp.Spec.Validate).NotTo(BeNil())
 				Expect(*cp.Spec.Validate).To(BeTrue())
 			})
@@ -81,7 +80,7 @@ func registerClusterPermissionValidationSpecs() {
 				createMRAWithClusterRole(mraName, "test-user-cp-validate-flag-rb",
 					assignmentName, "edit", placementCluster02, []string{"default"})
 
-				cp := waitForManagedClusterPermission(managedCluster02)
+				cp := waitForDedicatedClusterPermission(mraName, managedCluster02)
 				Expect(cp.Spec.Validate).NotTo(BeNil())
 				Expect(*cp.Spec.Validate).To(BeTrue())
 				Expect(cp.Spec.RoleBindings).NotTo(BeNil())
@@ -90,33 +89,29 @@ func registerClusterPermissionValidationSpecs() {
 
 		Context("restores spec.validate=true when updating an existing ClusterPermission", func() {
 			const (
-				mraNameA        = "test-mra-cp-validate-restore-a"
-				mraNameB        = "test-mra-cp-validate-restore-b"
-				assignmentNameA = "validate-restore-assignment-a"
-				assignmentNameB = "validate-restore-assignment-b"
+				mraName        = "test-mra-cp-validate-restore"
+				assignmentName = "validate-restore-assignment"
 			)
 
 			AfterAll(func() {
-				cleanupTestResources(mraNameA, []string{managedCluster01})
-				cleanupTestResources(mraNameB, []string{managedCluster01})
+				cleanupTestResources(mraName, []string{managedCluster01})
 			})
 
-			It("should set spec.validate=true again when another MRA updates the shared ClusterPermission", func() {
-				createMRAWithClusterRole(mraNameA, "test-user-cp-validate-restore-a",
-					assignmentNameA, "view", placementCluster01, nil)
-				_ = waitForManagedClusterPermission(managedCluster01)
+			It("should set spec.validate=true again when the MRA reconciles its dedicated ClusterPermission", func() {
+				createMRAWithClusterRole(mraName, "test-user-cp-validate-restore",
+					assignmentName, "view", placementCluster01, nil)
+				_ = waitForDedicatedClusterPermission(mraName, managedCluster01)
 
 				By("clearing spec.validate to simulate a pre-validation ClusterPermission")
-				cmd := exec.Command("kubectl", "patch", "clusterpermission", clusterPermissionManagedName,
+				cpName := generateDedicatedCPName(mraName)
+				cmd := exec.Command("kubectl", "patch", "clusterpermission", cpName,
 					"-n", managedCluster01, "--type=merge", "-p", `{"spec":{"validate":false}}`)
 				_, err := utils.Run(cmd)
 				Expect(err).NotTo(HaveOccurred())
-
-				createMRAWithClusterRole(mraNameB, "test-user-cp-validate-restore-b",
-					assignmentNameB, "admin", placementCluster01, nil)
+				waitForController()
 
 				Eventually(func(g Gomega) {
-					cp := getManagedClusterPermission(managedCluster01)
+					cp := getDedicatedClusterPermission(mraName, managedCluster01)
 					g.Expect(cp.Spec.Validate).NotTo(BeNil())
 					g.Expect(*cp.Spec.Validate).To(BeTrue())
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
@@ -165,9 +160,9 @@ func registerClusterPermissionValidationSpecs() {
 					assignmentName, missingRole, placementCluster01And02, nil)
 				waitForMRA(mraName)
 
-				setClusterPermissionValidation(managedCluster01, metav1.ConditionTrue,
+				setClusterPermissionValidation(mraName, managedCluster01, metav1.ConditionTrue,
 					"AllClusterRolesFound", "All referenced cluster roles exist")
-				setClusterPermissionValidation(managedCluster02, metav1.ConditionFalse,
+				setClusterPermissionValidation(mraName, managedCluster02, metav1.ConditionFalse,
 					"ClusterRolesNotFound",
 					fmt.Sprintf("The following cluster roles were not found: %s", missingRole))
 
@@ -203,8 +198,8 @@ func registerClusterPermissionValidationSpecs() {
 				waitForMRA(mraName)
 
 				msg := fmt.Sprintf("The following cluster roles were not found: %s", missingRole)
-				setClusterPermissionValidation(managedCluster01, metav1.ConditionFalse, "ClusterRolesNotFound", msg)
-				setClusterPermissionValidation(managedCluster02, metav1.ConditionFalse, "ClusterRolesNotFound", msg)
+				setClusterPermissionValidation(mraName, managedCluster01, metav1.ConditionFalse, "ClusterRolesNotFound", msg)
+				setClusterPermissionValidation(mraName, managedCluster02, metav1.ConditionFalse, "ClusterRolesNotFound", msg)
 
 				Eventually(func(g Gomega) {
 					mra := getMRA(mraName)
@@ -234,7 +229,7 @@ func registerClusterPermissionValidationSpecs() {
 						assignmentName, missingRole, placementCluster02, []string{"default"})
 					waitForMRA(mraName)
 
-					setClusterPermissionValidation(managedCluster02, metav1.ConditionFalse,
+					setClusterPermissionValidation(mraName, managedCluster02, metav1.ConditionFalse,
 						"ClusterRolesNotFound",
 						fmt.Sprintf("The following cluster roles were not found: %s", missingRole))
 
@@ -248,7 +243,7 @@ func registerClusterPermissionValidationSpecs() {
 				})
 		})
 
-		Context("shared ClusterPermission validation is attributed per ClusterRole", func() {
+		Context("dedicated ClusterPermission validation is attributed per ClusterRole", func() {
 			const (
 				mraValidName   = "test-mra-validate-other-role"
 				mraMissingName = "test-mra-validate-other-role-missing"
@@ -270,7 +265,9 @@ func registerClusterPermissionValidationSpecs() {
 				waitForMRA(mraValidName)
 				waitForMRA(mraMissingName)
 
-				setClusterPermissionValidation(managedCluster01, metav1.ConditionFalse,
+				setClusterPermissionValidation(mraValidName, managedCluster01, metav1.ConditionTrue,
+					"AllClusterRolesFound", "All referenced cluster roles exist")
+				setClusterPermissionValidation(mraMissingName, managedCluster01, metav1.ConditionFalse,
 					"ClusterRolesNotFound",
 					fmt.Sprintf("The following cluster roles were not found: %s", missingRole))
 
@@ -304,7 +301,7 @@ func registerClusterPermissionValidationSpecs() {
 				waitForMRA(mraName)
 
 				By("marking ClusterRole validation as not yet reported")
-				setClusterPermissionValidation(managedCluster01, metav1.ConditionUnknown,
+				setClusterPermissionValidation(mraName, managedCluster01, metav1.ConditionUnknown,
 					"ValidationInProgress", "ClusterRole validation has not completed")
 
 				Eventually(func(g Gomega) {
@@ -315,7 +312,7 @@ func registerClusterPermissionValidationSpecs() {
 				}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 				By("reporting that the ClusterRole does not exist")
-				setClusterPermissionValidation(managedCluster01, metav1.ConditionFalse,
+				setClusterPermissionValidation(mraName, managedCluster01, metav1.ConditionFalse,
 					"ClusterRolesNotFound",
 					fmt.Sprintf("The following cluster roles were not found: %s", missingRole))
 
@@ -373,17 +370,19 @@ spec:
 	waitForController()
 }
 
-func waitForManagedClusterPermission(clusterName string) cpv1alpha1.ClusterPermission {
+func waitForDedicatedClusterPermission(mraName, clusterName string) cpv1alpha1.ClusterPermission {
+	cpName := generateDedicatedCPName(mraName)
 	var cp cpv1alpha1.ClusterPermission
 	Eventually(func(g Gomega) {
-		cp = getManagedClusterPermission(clusterName)
-		g.Expect(cp.Name).To(Equal(clusterPermissionManagedName))
+		cp = getDedicatedClusterPermission(mraName, clusterName)
+		g.Expect(cp.Name).To(Equal(cpName))
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
 	return cp
 }
 
-func getManagedClusterPermission(clusterName string) cpv1alpha1.ClusterPermission {
-	cpJSON := fetchK8sResourceJSON("clusterpermissions", clusterPermissionManagedName, clusterName)
+func getDedicatedClusterPermission(mraName, clusterName string) cpv1alpha1.ClusterPermission {
+	cpName := generateDedicatedCPName(mraName)
+	cpJSON := fetchK8sResourceJSON("clusterpermissions", cpName, clusterName)
 	var cp cpv1alpha1.ClusterPermission
 	unmarshalJSON(cpJSON, &cp)
 	return cp
@@ -406,9 +405,12 @@ func roleAssignmentByName(mra mrav1beta1.MulticlusterRoleAssignment, name string
 	return mrav1beta1.RoleAssignmentStatus{}
 }
 
-func setClusterPermissionValidation(clusterName string, status metav1.ConditionStatus, reason, message string) {
+func setClusterPermissionValidation(
+	mraName, clusterName string, status metav1.ConditionStatus, reason, message string,
+) {
+	cpName := generateDedicatedCPName(mraName)
 	Eventually(func() error {
-		cpJSON := fetchK8sResourceJSON("clusterpermissions", clusterPermissionManagedName, clusterName)
+		cpJSON := fetchK8sResourceJSON("clusterpermissions", cpName, clusterName)
 		var cp cpv1alpha1.ClusterPermission
 		unmarshalJSON(cpJSON, &cp)
 		setClusterPermissionCondition(&cp, cpv1alpha1.ConditionTypeValidateClusterRolesExist, status, reason, message)
@@ -417,7 +419,7 @@ func setClusterPermissionValidation(clusterName string, status metav1.ConditionS
 		if err != nil {
 			return err
 		}
-		tmpFile := fmt.Sprintf("/tmp/%s-%s-validation-status.json", clusterPermissionManagedName, clusterName)
+		tmpFile := fmt.Sprintf("/tmp/%s-%s-validation-status.json", cpName, clusterName)
 		if err := os.WriteFile(tmpFile, cpBytes, 0644); err != nil {
 			return err
 		}
