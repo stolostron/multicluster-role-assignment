@@ -282,9 +282,25 @@ func TestConvertCipherSuites(t *testing.T) {
 		expected []uint16
 	}{
 		{
-			name:     "known OpenSSL cipher names convert to crypto/tls constants",
-			ciphers:  []string{opensslCipherECDHERSAAES128GCM, "AES128-SHA"},
-			expected: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_AES_128_CBC_SHA},
+			name:     "supported OpenSSL cipher names convert to crypto/tls constants",
+			ciphers:  []string{opensslCipherECDHERSAAES128GCM, "AES128-GCM-SHA256"},
+			expected: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_AES_128_GCM_SHA256},
+		},
+		{
+			name: "legacy CBC and 3DES cipher names are skipped",
+			ciphers: []string{
+				"ECDHE-ECDSA-AES128-SHA256",
+				"ECDHE-RSA-AES128-SHA256",
+				"ECDHE-ECDSA-AES128-SHA",
+				"ECDHE-RSA-AES128-SHA",
+				"ECDHE-ECDSA-AES256-SHA",
+				"ECDHE-RSA-AES256-SHA",
+				"AES128-SHA256",
+				"AES128-SHA",
+				"AES256-SHA",
+				"DES-CBC3-SHA",
+			},
+			expected: []uint16{},
 		},
 		{
 			name:     "TLS 1.3 cipher names are not configurable and are skipped",
