@@ -1103,8 +1103,8 @@ func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermission(ctx conte
 	return nil
 }
 
-// ensureClusterPermissionAttempt performs a single attempt to create or update a dedicated ClusterPermission for this MRA.
-// It also handles migration from the legacy shared ClusterPermission model.
+// ensureClusterPermissionAttempt performs a single attempt to create or update a dedicated
+// ClusterPermission for this MRA. It also handles migration from the legacy shared ClusterPermission model.
 func (r *MulticlusterRoleAssignmentReconciler) ensureClusterPermissionAttempt(ctx context.Context,
 	mra *mrav1beta1.MulticlusterRoleAssignment, cluster string, roleAssignmentClusters map[string][]string) error {
 
