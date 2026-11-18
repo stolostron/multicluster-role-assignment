@@ -642,13 +642,6 @@ spec:
               - watch
               - update
               - patch
-            # Create when kubevirt-external-ca is absent (create cannot use resourceName; bind in openshift-cnv).
-            - apiGroups:
-              - ""
-              resources:
-              - configmaps
-              verbs:
-              - create
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
