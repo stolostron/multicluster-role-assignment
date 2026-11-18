@@ -468,8 +468,6 @@ spec:
               rbac.open-cluster-management.io/filter: vm-clusterroles
               clusterview.open-cluster-management.io/discoverable: "true"
             name: acm-vm-fleet:admin
-            annotations:
-              acm.vmfleet/kubevirt-ca-configmaps-namespace: openshift-cnv
           rules:
             - apiGroups:
               - forklift.konveyor.io
@@ -529,6 +527,7 @@ spec:
               - get
               - list
               - watch
+              - patch
             - apiGroups:
               - project.openshift.io
               resources:
