@@ -315,6 +315,30 @@ spec:
               - get
               - list
               - watch
+            # openshift-cnv — Proxy CCLM KubeVirt CA exchange (ACM-51107). Named ConfigMaps apply when
+            # acm-vm-extended:admin is bound in openshift-cnv (MRA targetNamespaces).
+            - apiGroups:
+              - ""
+              resources:
+              - configmaps
+              resourceNames:
+              - kubevirt-ca
+              verbs:
+              - get
+              - list
+              - watch
+            - apiGroups:
+              - ""
+              resources:
+              - configmaps
+              resourceNames:
+              - kubevirt-external-ca
+              verbs:
+              - get
+              - list
+              - watch
+              - update
+              - patch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
@@ -461,30 +485,6 @@ spec:
               verbs:
               - get
               - watch
-            # openshift-cnv — Proxy CCLM KubeVirt CA exchange (ACM-51107). Named ConfigMaps apply when
-            # acm-vm-extended:admin is bound in openshift-cnv (MRA targetNamespaces).
-            - apiGroups:
-              - ""
-              resources:
-              - configmaps
-              resourceNames:
-              - kubevirt-ca
-              verbs:
-              - get
-              - list
-              - watch
-            - apiGroups:
-              - ""
-              resources:
-              - configmaps
-              resourceNames:
-              - kubevirt-external-ca
-              verbs:
-              - get
-              - list
-              - watch
-              - update
-              - patch
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
           metadata:
